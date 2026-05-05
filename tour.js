@@ -45,6 +45,62 @@
   let speechRate = parseFloat(localStorage.getItem("aws-viz.rate") || "1") || 1;
   let speakEnabled = localStorage.getItem("aws-viz.speak") !== "0" && speechSupported;
   let currentUtter = null;
+  let utterQueue = []; // utterances we've queued for the current step
+  let keepAliveTimer = null;
+
+  // Some browsers (notably Chrome) silently stop speechSynthesis after ~15s.
+  // Toggling pause/resume periodically keeps the engine alive.
+  function startKeepAlive() {
+    stopKeepAlive();
+    keepAliveTimer = setInterval(() => {
+      if (synth.speaking && !synth.paused) {
+        try { synth.pause(); synth.resume(); } catch (_) {}
+      }
+    }, 8000);
+  }
+  function stopKeepAlive() {
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+
+  // Preprocess text so the TTS reads things naturally.
+  function prepareForSpeech(text) {
+    if (!text) return "";
+    let t = String(text);
+
+    // CIDRs and IPv4 addresses: drop the dots so digits are read consecutively
+    // ("zero zero zero zero slash zero" instead of "zero dot zero dot zero…").
+    t = t.replace(
+      /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(\/(\d{1,2}))?\b/g,
+      (_m, a, b, c, d, _slash, mask) =>
+        `${a} ${b} ${c} ${d}${mask ? " slash " + mask : ""}`,
+    );
+
+    // Bare CIDR like "/24" — read the slash
+    t = t.replace(/(^|\s)\/(\d{1,2})\b/g, "$1slash $2");
+
+    // Dotted segment lists like "us-east-1a" read fine; leave alone.
+    return t;
+  }
+
+  // Split text into ~180-char sentence chunks so each utterance stays short
+  // enough to dodge the Chrome cutoff bug.
+  function chunkForSpeech(text, maxLen = 180) {
+    const parts = text.split(/(?<=[.!?])\s+/);
+    const out = [];
+    let cur = "";
+    for (const s of parts) {
+      const candidate = cur ? cur + " " + s : s;
+      if (candidate.length > maxLen && cur) {
+        out.push(cur);
+        cur = s;
+      } else {
+        cur = candidate;
+      }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
 
   function reflectSpeakState() {
     if (!speechSupported) {
@@ -113,12 +169,12 @@
 
   function stopSpeaking() {
     if (!speechSupported) return;
-    if (currentUtter) {
-      currentUtter.onend = null;
-      currentUtter.onerror = null;
-      currentUtter = null;
-    }
+    // Detach handlers so cancel()'s synthetic onend/onerror don't leak through.
+    utterQueue.forEach((u) => { u.onend = null; u.onerror = null; });
+    utterQueue = [];
+    currentUtter = null;
     try { synth.cancel(); } catch (_) {}
+    stopKeepAlive();
     els.speak.classList.remove("speaking");
   }
 
@@ -128,32 +184,59 @@
       return 0;
     }
     stopSpeaking();
-    const u = new SpeechSynthesisUtterance(text);
-    const v = pickVoice();
-    if (v) u.voice = v;
-    u.lang = (v && v.lang) || "en-US";
-    u.rate = speechRate;
-    u.pitch = 1;
-    u.volume = 1;
-    u.onend = () => {
-      if (currentUtter !== u) return;
-      currentUtter = null;
-      els.speak.classList.remove("speaking");
+
+    const prepared = prepareForSpeech(text);
+    const chunks = chunkForSpeech(prepared);
+    if (!chunks.length) {
       if (onEnd) onEnd("end");
-    };
-    u.onerror = () => {
-      if (currentUtter !== u) return;
+      return 0;
+    }
+
+    const v = pickVoice();
+    const totalEstMs = estimateMs(prepared, speechRate);
+    let endedCount = 0;
+    let finalized = false;
+
+    const finalize = (reason) => {
+      if (finalized) return;
+      finalized = true;
+      utterQueue = [];
       currentUtter = null;
+      stopKeepAlive();
       els.speak.classList.remove("speaking");
-      if (onEnd) onEnd("error");
+      if (onEnd) onEnd(reason);
     };
-    currentUtter = u;
+
+    chunks.forEach((c) => {
+      const u = new SpeechSynthesisUtterance(c);
+      if (v) u.voice = v;
+      u.lang = (v && v.lang) || "en-US";
+      u.rate = speechRate;
+      u.pitch = 1;
+      u.volume = 1;
+      u.onend = () => {
+        endedCount++;
+        if (endedCount >= chunks.length) finalize("end");
+      };
+      u.onerror = () => {
+        endedCount++;
+        if (endedCount >= chunks.length) finalize("error");
+      };
+      utterQueue.push(u);
+    });
+
+    currentUtter = utterQueue[utterQueue.length - 1];
     els.speak.classList.add("speaking");
-    // Some browsers (Chrome) hang if speak is called too quickly; defer slightly.
+    startKeepAlive();
+
+    // Defer slightly so Chrome's cancel() has time to settle before speak().
     setTimeout(() => {
-      try { synth.speak(u); } catch (e) { if (onEnd) onEnd("error"); }
+      utterQueue.forEach((u) => {
+        try { synth.speak(u); } catch (_) {}
+      });
     }, 30);
-    return estimateMs(text, speechRate);
+
+    return totalEstMs;
   }
 
   // --- Step generation -------------------------------------------------
