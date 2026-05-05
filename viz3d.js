@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05f — day/night theme + pedestrian spawn");
+console.log("[viz3d] build 2026-05-05g — street ground + sparser skyline + brighter yards");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -19,8 +19,8 @@ let lastT = 0;
 let focusEffect = null; // { group, targetMesh, baseEmissive }
 
 // Theme handles, populated by init()
-let sky, sunLight, rimLight, hemiLight, ambientLight, stars;
-let nightSkyTex, daySkyTex;
+let sky, sunLight, rimLight, hemiLight, ambientLight, stars, ground;
+let nightSkyTex, daySkyTex, nightGroundTex, dayGroundTex;
 let currentTheme = "night";
 
 // Explore (first-person walk) state
@@ -73,19 +73,22 @@ function init(container) {
   rimLight.position.set(60, 80, -120);
   scene.add(rimLight);
 
-  // Ground — looks like a data-centre floor: rows of server racks with
-  // glowing LEDs, tiled across a large plane so every direction reads
-  // "this network city is sitting on top of physical infrastructure".
-  const groundTex = makeServerFloorTexture();
-  groundTex.repeat.set(20, 20);
-  const ground = new THREE.Mesh(
+  // Ground — city street pattern: paving tiles framed by sidewalks with
+  // dashed centre-lines, crosswalks at intersections, and the occasional
+  // manhole cover. The colourful subnet platforms drop on top like yards.
+  // Two textures are pre-baked (day + night) and swapped by setTheme().
+  nightGroundTex = makeStreetTexture("night");
+  nightGroundTex.repeat.set(8, 8);
+  dayGroundTex = makeStreetTexture("day");
+  dayGroundTex.repeat.set(8, 8);
+  ground = new THREE.Mesh(
     new THREE.PlaneGeometry(3000, 3000),
     new THREE.MeshStandardMaterial({
-      map: groundTex,
-      roughness: 0.85,
-      metalness: 0.25,
-      emissive: 0x0a1426,
-      emissiveIntensity: 0.35,
+      map: nightGroundTex,
+      roughness: 0.78,
+      metalness: 0.18,
+      emissive: 0x1a2440,
+      emissiveIntensity: 0.18,
     }),
   );
   ground.rotation.x = -Math.PI / 2;
@@ -283,11 +286,13 @@ function addSubnet(s) {
   const p = pos3D(s);
   const { w, d } = dim3D(s);
   const tier = s.tier || "private";
+  // Palettes brightened so each subnet reads as a coloured "yard" sitting
+  // on top of the grey-blue street ground rather than a dim panel.
   const palette = {
-    public:  { base: 0x07291f, glow: 0x2dd4bf },
-    private: { base: 0x09183a, glow: 0x60a5fa },
-    data:    { base: 0x1d0e34, glow: 0xc084fc },
-  }[tier] || { base: 0x09183a, glow: 0x60a5fa };
+    public:  { base: 0x0d4a36, glow: 0x2dd4bf }, // teal lawn
+    private: { base: 0x102b6a, glow: 0x60a5fa }, // blue lawn
+    data:    { base: 0x361b5a, glow: 0xc084fc }, // violet lawn
+  }[tier] || { base: 0x102b6a, glow: 0x60a5fa };
 
   const grp = new THREE.Group();
 
@@ -295,9 +300,9 @@ function addSubnet(s) {
   const mat = new THREE.MeshStandardMaterial({
     color: palette.base,
     emissive: palette.glow,
-    emissiveIntensity: 0.22,
-    roughness: 0.7,
-    metalness: 0.2,
+    emissiveIntensity: 0.32,
+    roughness: 0.65,
+    metalness: 0.15,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(p.x, 1.1, p.z);
@@ -629,14 +634,14 @@ function makeSkyTexture() {
   // canvas (smaller y) so they appear above the horizon when viewed from
   // inside the sphere.
 
-  // Sky gradient
+  // Sky gradient — deep indigo overhead, soft purple haze near the horizon
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0,    "#020512");  // overhead
-  grad.addColorStop(0.3,  "#0a1432");
-  grad.addColorStop(0.45, "#1a2a55");  // just above horizon
-  grad.addColorStop(0.5,  "#2a2244");  // horizon glow
-  grad.addColorStop(0.55, "#1f1832");
-  grad.addColorStop(1,    "#050410");  // beneath horizon (mostly hidden)
+  grad.addColorStop(0,    "#0a0524");  // overhead — purple-tinted navy
+  grad.addColorStop(0.3,  "#170c3c");
+  grad.addColorStop(0.45, "#2a1a55");  // just above horizon, vivid purple
+  grad.addColorStop(0.5,  "#3a2360");  // horizon — saturated purple
+  grad.addColorStop(0.55, "#2a1a45");
+  grad.addColorStop(1,    "#0a0420");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
@@ -651,30 +656,30 @@ function makeSkyTexture() {
     ctx.fill();
   }
 
-  // Horizon glow band — centred on canvas y = H/2
+  // Horizon glow band — centred on canvas y = H/2, with a richer magenta-pink hue
   const horizon = ctx.createLinearGradient(0, H * 0.4, 0, H * 0.56);
-  horizon.addColorStop(0,   "rgba(160, 100, 50, 0)");
-  horizon.addColorStop(0.5, "rgba(200, 110, 60, 0.18)");
-  horizon.addColorStop(1,   "rgba(100, 60, 130, 0.18)");
+  horizon.addColorStop(0,   "rgba(120, 60, 180, 0)");
+  horizon.addColorStop(0.5, "rgba(190, 90, 200, 0.22)");
+  horizon.addColorStop(1,   "rgba(80, 40, 130, 0.20)");
   ctx.fillStyle = horizon;
   ctx.fillRect(0, H * 0.4, W, H * 0.16);
 
-  // Skyline silhouettes — bases sit at the horizon and tops climb UP into
-  // the sky (smaller canvas y). Three layers give a sense of depth.
+  // Skyline silhouettes — sparse so the sky stays open. Three thin layers
+  // for depth.
   function drawSkyline(yBase, alpha, heightFactor, windowChance) {
     let x = 0;
     while (x < W) {
       const w = 28 + Math.random() * 80;
       const h = (60 + Math.random() * 240) * heightFactor;
       const top = yBase - h;
-      ctx.fillStyle = `rgba(${8 + Math.random() * 10},${12 + Math.random() * 12},${24 + Math.random() * 18},${alpha})`;
+      ctx.fillStyle = `rgba(${10 + Math.random() * 12},${10 + Math.random() * 14},${28 + Math.random() * 22},${alpha})`;
       ctx.fillRect(x, top, w, h);
 
       // Antenna or rooftop unit
-      if (Math.random() < 0.18) {
+      if (Math.random() < 0.14) {
         const aw = 2 + Math.random() * 4;
         ctx.fillRect(x + w * 0.5 - aw / 2, top - 8 - Math.random() * 14, aw, 8 + Math.random() * 14);
-      } else if (Math.random() < 0.25) {
+      } else if (Math.random() < 0.18) {
         const bw = w * (0.25 + Math.random() * 0.3);
         ctx.fillRect(x + (w - bw) / 2, top - 6, bw, 6);
       }
@@ -690,18 +695,19 @@ function makeSkyTexture() {
             const warm = Math.random() < 0.7;
             ctx.fillStyle = warm
               ? `rgba(${230 + Math.random() * 25},${200 + Math.random() * 40},120,${0.55 + Math.random() * 0.4})`
-              : `rgba(120,200,${230 + Math.random() * 25},${0.5 + Math.random() * 0.4})`;
+              : `rgba(180,150,${235 + Math.random() * 20},${0.5 + Math.random() * 0.4})`;
             ctx.fillRect(wx, wy, 5, 7);
           }
         }
       }
-      x += w + Math.random() * 4;
+      // Big spacing so the skyline reads "city in the distance" not "wall"
+      x += w + 80 + Math.random() * 160;
     }
   }
 
-  drawSkyline(H * 0.50, 0.80, 0.55, 0.28); // far layer
-  drawSkyline(H * 0.51, 0.92, 0.80, 0.45); // mid
-  drawSkyline(H * 0.52, 1.00, 1.00, 0.55); // near
+  drawSkyline(H * 0.50, 0.78, 0.55, 0.26); // far
+  drawSkyline(H * 0.51, 0.90, 0.80, 0.42); // mid
+  drawSkyline(H * 0.52, 0.96, 1.00, 0.50); // near
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -718,14 +724,14 @@ function makeDaySkyTexture() {
   c.width = W; c.height = H;
   const ctx = c.getContext("2d");
 
-  // Sky gradient: zenith blue → pale-white at horizon
+  // Sky gradient: deep saturated blue, only a hint of haze at the horizon
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0,    "#3f8ec7");
-  grad.addColorStop(0.35, "#7ab1d9");
-  grad.addColorStop(0.45, "#bcd6e8");
-  grad.addColorStop(0.5,  "#e2eaf2");  // horizon haze
-  grad.addColorStop(0.55, "#dbe3eb");
-  grad.addColorStop(1,    "#b6c4d1");
+  grad.addColorStop(0,    "#1c5fa6");  // zenith — deep blue
+  grad.addColorStop(0.35, "#3a86c8");
+  grad.addColorStop(0.45, "#6aa9d8");
+  grad.addColorStop(0.5,  "#90c2e4");  // horizon — light blue, NOT white
+  grad.addColorStop(0.55, "#7dade0");
+  grad.addColorStop(1,    "#5a8ec3");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
@@ -756,42 +762,42 @@ function makeDaySkyTexture() {
     ctx.fill();
   }
 
-  // City silhouettes in muted blue-grey daylight tones
+  // City silhouettes — sparse so the blue sky dominates
   function drawSkyline(yBase, alpha, heightFactor) {
     let x = 0;
     while (x < W) {
       const w = 28 + Math.random() * 80;
       const h = (40 + Math.random() * 200) * heightFactor;
       const top = yBase - h;
-      const tint = 95 + Math.random() * 30;
-      ctx.fillStyle = `rgba(${tint},${tint + 14},${tint + 36},${alpha})`;
+      const tint = 110 + Math.random() * 30;
+      ctx.fillStyle = `rgba(${tint},${tint + 14},${tint + 32},${alpha})`;
       ctx.fillRect(x, top, w, h);
 
-      if (Math.random() < 0.18) {
+      if (Math.random() < 0.16) {
         const aw = 2 + Math.random() * 4;
         ctx.fillRect(x + w * 0.5 - aw / 2, top - 8 - Math.random() * 14, aw, 8 + Math.random() * 14);
-      } else if (Math.random() < 0.22) {
+      } else if (Math.random() < 0.18) {
         const bw = w * (0.25 + Math.random() * 0.3);
         ctx.fillRect(x + (w - bw) / 2, top - 6, bw, 6);
       }
 
-      // A few darker windows so they read as glass in daylight
       const rows = Math.floor(h / 14);
       const cols = Math.max(1, Math.floor(w / 11));
       for (let j = 0; j < rows; j++) {
         for (let i = 0; i < cols; i++) {
-          if (Math.random() < 0.18) {
-            ctx.fillStyle = "rgba(40, 55, 75, 0.55)";
+          if (Math.random() < 0.14) {
+            ctx.fillStyle = "rgba(35, 50, 75, 0.5)";
             ctx.fillRect(x + 3 + i * 11, top + 6 + j * 14, 5, 7);
           }
         }
       }
-      x += w + Math.random() * 4;
+      // Big spacing between buildings (matches night skyline)
+      x += w + 80 + Math.random() * 160;
     }
   }
-  drawSkyline(H * 0.50, 0.55, 0.55);
-  drawSkyline(H * 0.51, 0.72, 0.80);
-  drawSkyline(H * 0.52, 0.90, 1.00);
+  drawSkyline(H * 0.50, 0.50, 0.55);
+  drawSkyline(H * 0.51, 0.66, 0.80);
+  drawSkyline(H * 0.52, 0.82, 1.00);
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -799,114 +805,127 @@ function makeDaySkyTexture() {
   return tex;
 }
 
-// Procedural tileable "data centre floor" texture: dark substrate with
-// server-rack rectangles, slot lines, and lit LED indicators. Wrapped
-// over the ground plane so the network city sits on top of physical
-// infrastructure.
-function makeServerFloorTexture() {
+// Procedural tileable city-block ground texture: a 4×4 grid of paving
+// tiles separated by darker road seams, with sidewalks framing each tile,
+// dashed road centre lines, and a few crosswalks/manhole covers — so the
+// open space between subnet platforms reads as actual streets, and the
+// colourful subnet platforms sit on top like yards.
+function makeStreetTexture(theme) {
+  const isDay = theme === "day";
   const S = 512;
+  const tile = S / 4; // 4 city blocks per texture tile
   const c = document.createElement("canvas");
   c.width = c.height = S;
   const ctx = c.getContext("2d");
 
-  // Base
-  ctx.fillStyle = "#0a1326";
+  // Asphalt base — much brighter than the old server floor.
+  ctx.fillStyle = isDay ? "#7d8aa3" : "#384866";
   ctx.fillRect(0, 0, S, S);
 
-  // Subtle grid lines (panel seams)
-  ctx.strokeStyle = "rgba(40, 60, 100, 0.35)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= S; i += 32) {
-    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, S); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(S, i); ctx.stroke();
+  // Subtle grain
+  for (let i = 0; i < 1800; i++) {
+    const x = Math.random() * S;
+    const y = Math.random() * S;
+    const a = 0.05 + Math.random() * 0.12;
+    ctx.fillStyle = isDay
+      ? `rgba(40, 50, 70, ${a})`
+      : `rgba(140, 160, 200, ${a * 0.8})`;
+    ctx.fillRect(x, y, 1, 1);
   }
 
   // Diagonal ambient hatching for depth
-  ctx.strokeStyle = "rgba(80, 110, 180, 0.05)";
+  ctx.strokeStyle = isDay
+    ? "rgba(40, 55, 80, 0.06)"
+    : "rgba(140, 160, 220, 0.05)";
   ctx.lineWidth = 1;
   for (let i = -S; i < S * 2; i += 6) {
     ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + S, S); ctx.stroke();
   }
 
-  const racks = [
-    { x: 24,  y: 28,  w: 200, h: 78 },
-    { x: 248, y: 38,  w: 224, h: 100 },
-    { x: 32,  y: 134, w: 256, h: 78 },
-    { x: 312, y: 158, w: 168, h: 64 },
-    { x: 28,  y: 240, w: 192, h: 96 },
-    { x: 244, y: 250, w: 232, h: 70 },
-    { x: 56,  y: 360, w: 224, h: 84 },
-    { x: 308, y: 350, w: 174, h: 96 },
-  ];
+  // Inner tile (paving block) — slightly darker square framed by sidewalks
+  const sidewalkW = 10;
+  for (let bx = 0; bx < 4; bx++) {
+    for (let by = 0; by < 4; by++) {
+      const ox = bx * tile, oy = by * tile;
+      // Block tile interior
+      ctx.fillStyle = isDay ? "#67768f" : "#293b58";
+      ctx.fillRect(
+        ox + sidewalkW, oy + sidewalkW,
+        tile - sidewalkW * 2, tile - sidewalkW * 2,
+      );
+      // Sidewalk lines (lighter band around the block)
+      ctx.fillStyle = isDay
+        ? "rgba(220, 228, 238, 0.55)"
+        : "rgba(180, 195, 220, 0.20)";
+      // top, bottom, left, right strips
+      ctx.fillRect(ox + 4, oy + 4, tile - 8, sidewalkW - 4);
+      ctx.fillRect(ox + 4, oy + tile - sidewalkW, tile - 8, sidewalkW - 4);
+      ctx.fillRect(ox + 4, oy + 4, sidewalkW - 4, tile - 8);
+      ctx.fillRect(ox + tile - sidewalkW, oy + 4, sidewalkW - 4, tile - 8);
+    }
+  }
 
-  racks.forEach((r) => {
-    // Soft drop shadow
-    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-    ctx.fillRect(r.x + 2, r.y + 3, r.w, r.h);
+  // Road seams between tile blocks (slightly darker than asphalt)
+  ctx.fillStyle = isDay ? "#414d63" : "#1c2640";
+  for (let i = 0; i <= 4; i++) {
+    ctx.fillRect(i * tile - 1.5, 0, 3, S);
+    ctx.fillRect(0, i * tile - 1.5, S, 3);
+  }
 
-    // Rack body — vertical gradient so it looks lit from above
-    const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y + r.h);
-    g.addColorStop(0, "#1a2a48");
-    g.addColorStop(1, "#0e1830");
-    ctx.fillStyle = g;
-    ctx.fillRect(r.x, r.y, r.w, r.h);
+  // Yellow dashed centre line along main horizontal/vertical roads (every
+  // other seam) so the streets read clearly.
+  ctx.fillStyle = isDay
+    ? "rgba(240, 200, 70, 0.95)"
+    : "rgba(240, 200, 70, 0.75)";
+  for (let row = 1; row < 4; row += 2) {
+    const y = row * tile - 1;
+    for (let x = 4; x < S; x += 22) {
+      ctx.fillRect(x, y, 12, 2);
+    }
+  }
+  for (let col = 1; col < 4; col += 2) {
+    const x = col * tile - 1;
+    for (let y = 4; y < S; y += 22) {
+      ctx.fillRect(x, y, 2, 12);
+    }
+  }
 
-    // Rack outline
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+  // Crosswalks at the four interior intersections
+  const stripeColor = isDay
+    ? "rgba(245, 250, 255, 0.95)"
+    : "rgba(225, 235, 250, 0.6)";
+  ctx.fillStyle = stripeColor;
+  for (let row = 1; row < 4; row++) {
+    for (let col = 1; col < 4; col++) {
+      const ix = col * tile;
+      const iy = row * tile;
+      // 4 short stripes on each of the 4 approach legs
+      // North leg
+      for (let s = 0; s < 4; s++) ctx.fillRect(ix - 14 + s * 8, iy - tile * 0.16, 4, 10);
+      // South leg
+      for (let s = 0; s < 4; s++) ctx.fillRect(ix - 14 + s * 8, iy + tile * 0.16 - 10, 4, 10);
+      // West leg
+      for (let s = 0; s < 4; s++) ctx.fillRect(ix - tile * 0.16, iy - 14 + s * 8, 10, 4);
+      // East leg
+      for (let s = 0; s < 4; s++) ctx.fillRect(ix + tile * 0.16 - 10, iy - 14 + s * 8, 10, 4);
+    }
+  }
+
+  // A few manhole covers scattered on the inner tile interiors
+  for (let i = 0; i < 6; i++) {
+    const x = (Math.random() * 0.8 + 0.1) * S;
+    const y = (Math.random() * 0.8 + 0.1) * S;
+    ctx.fillStyle = isDay ? "rgba(40, 50, 70, 0.55)" : "rgba(15, 25, 45, 0.7)";
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = isDay ? "rgba(120, 135, 160, 0.6)" : "rgba(80, 100, 140, 0.55)";
     ctx.lineWidth = 1;
-    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-
-    // Slot lines (horizontal divisions)
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
-    for (let y = r.y + 8; y < r.y + r.h - 1; y += 8) {
-      ctx.beginPath();
-      ctx.moveTo(r.x + 3, y);
-      ctx.lineTo(r.x + r.w - 3, y);
-      ctx.stroke();
-    }
-    // Subtle highlight line at top of each slot
-    ctx.strokeStyle = "rgba(120, 150, 220, 0.08)";
-    for (let y = r.y + 8; y < r.y + r.h - 1; y += 8) {
-      ctx.beginPath();
-      ctx.moveTo(r.x + 3, y - 0.5);
-      ctx.lineTo(r.x + r.w - 3, y - 0.5);
-      ctx.stroke();
-    }
-
-    // LED column on the right edge
-    const ledY0 = r.y + 6;
-    for (let i = 0; ledY0 + i * 8 < r.y + r.h - 4; i++) {
-      const cx = r.x + r.w - 6;
-      const cy = ledY0 + i * 8;
-      if (Math.random() < 0.72) {
-        const isGreen = Math.random() < 0.62;
-        const isAmber = !isGreen && Math.random() < 0.4;
-        const color = isGreen
-          ? "rgba(80, 220, 120,"
-          : isAmber
-          ? "rgba(255, 180, 80,"
-          : "rgba(80, 160, 255,";
-        ctx.fillStyle = color + "0.95)";
-        ctx.beginPath(); ctx.arc(cx, cy, 1.4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = color + "0.22)";
-        ctx.beginPath(); ctx.arc(cx, cy, 3.8, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-
-    // Brand label panel
-    ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
-    ctx.fillRect(r.x + 6, r.y + r.h - 6, 24, 3);
-  });
-
-  // A few faint cable-like traces between racks
-  ctx.strokeStyle = "rgba(80, 140, 220, 0.18)";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(0, 220);   ctx.lineTo(S, 220);
-  ctx.moveTo(0, 340);   ctx.lineTo(S, 340);
-  ctx.moveTo(228, 0);   ctx.lineTo(228, S);
-  ctx.moveTo(298, 0);   ctx.lineTo(298, S);
-  ctx.stroke();
+    ctx.stroke();
+    // Cross detail
+    ctx.beginPath();
+    ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y);
+    ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4);
+    ctx.stroke();
+  }
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -1238,6 +1257,12 @@ function setTheme(theme) {
   if (sky && sky.material) {
     sky.material.map = isDay ? daySkyTex : nightSkyTex;
     sky.material.needsUpdate = true;
+  }
+  if (ground && ground.material) {
+    ground.material.map = isDay ? dayGroundTex : nightGroundTex;
+    ground.material.emissive.setHex(isDay ? 0x202938 : 0x1a2440);
+    ground.material.emissiveIntensity = isDay ? 0.05 : 0.18;
+    ground.material.needsUpdate = true;
   }
   if (stars) stars.visible = !isDay;
 
