@@ -22,6 +22,7 @@
         <input id="file-input" type="file" accept="application/json,.json" hidden />
       </label>
       <button id="load-sample" class="btn ghost">Load sample</button>
+      <button id="start-tour" class="btn primary">Start tour</button>
       <button id="toggle-flow" class="btn ghost">Pause traffic</button>
       <button id="reset-zoom" class="btn ghost">Reset view</button>
     </div>
@@ -100,5 +101,40 @@
   </main>
 
   <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+
+  <div id="tour-bar" class="tour-bar" role="region" aria-label="Network tour">
+    <div class="tour-progress" id="tour-progress"><span></span></div>
+    <div class="tour-body">
+      <div class="tour-text">
+        <div class="tour-eyebrow">
+          <span id="tour-stage">Welcome</span>
+          <span class="step-count" id="tour-step-count"></span>
+        </div>
+        <h3 class="tour-title" id="tour-title">Press play to begin</h3>
+        <p class="tour-narration" id="tour-narration">
+          The tour walks through the network in the order traffic flows: from the
+          public internet, through gateways and load balancers, into application
+          servers, and finally to data stores.
+        </p>
+      </div>
+      <div class="tour-controls" role="group" aria-label="Tour controls">
+        <button class="tour-btn" id="tour-prev" title="Previous (←)" aria-label="Previous step">
+          <svg viewBox="0 0 24 24"><path d="M15.5 19l-7-7 7-7v14z"/></svg>
+        </button>
+        <button class="tour-btn primary" id="tour-play" title="Play / Pause (space)" aria-label="Play or pause">
+          <svg id="tour-play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="tour-btn" id="tour-next" title="Next (→)" aria-label="Next step">
+          <svg viewBox="0 0 24 24"><path d="M8.5 5l7 7-7 7V5z"/></svg>
+        </button>
+        <button class="tour-btn" id="tour-close" title="Exit tour (esc)" aria-label="Exit tour">
+          <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="tour-extra" id="tour-extra"></div>
+  </div>
+
+  <script src="tour.js" defer></script>
 </body>
 </html>

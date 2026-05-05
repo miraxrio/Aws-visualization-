@@ -113,6 +113,7 @@
             w,
             h,
             az,
+            parent: vpc.id,
             children: [],
           };
           // place children (resources/gateways) inside
@@ -210,6 +211,8 @@
   let svg;
   let lastLayout;
   let lastData;
+  let lastViewBox;
+  let spotlight;
 
   function render(data) {
     lastData = data;
@@ -221,27 +224,28 @@
 
     // ViewBox padded
     const padding = 40;
-    svg.attr(
-      "viewBox",
-      `${-padding} ${-padding} ${lay.width + padding * 2} ${lay.height + padding * 2}`,
-    );
+    const vb = {
+      x: -padding,
+      y: -padding,
+      w: lay.width + padding * 2,
+      h: lay.height + padding * 2,
+    };
+    svg.attr("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     svg.attr("preserveAspectRatio", "xMidYMid meet");
+    lastViewBox = vb;
 
     const defs = svg.append("defs");
-    defs
-      .append("marker")
-      .attr("id", "arrow")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 9)
-      .attr("refY", 0)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M0,-4L8,0L0,4")
-      .attr("fill", "rgba(120, 160, 220, 0.6)");
+    buildDefs(defs);
 
     rootG = svg.append("g").attr("class", "root");
+
+    // Spotlight overlay (used by tour) – sits above main content but below tooltip
+    spotlight = svg.append("rect")
+      .attr("class", "spotlight")
+      .attr("x", vb.x).attr("y", vb.y)
+      .attr("width", vb.w).attr("height", vb.h)
+      .style("opacity", 0)
+      .style("pointer-events", "none");
 
     zoomBehavior = d3
       .zoom()
@@ -256,12 +260,91 @@
     bindHoverInteractions(lay);
   }
 
+  // Build per-type gradients, drop-shadow and glow filters once per render.
+  function buildDefs(defs) {
+    const colors = window.AWS_COLORS || {};
+
+    Object.keys(colors).forEach((type) => {
+      const c = colors[type];
+      const grad = defs
+        .append("linearGradient")
+        .attr("id", `grad-${type}`)
+        .attr("x1", "0%").attr("y1", "0%")
+        .attr("x2", "0%").attr("y2", "100%");
+      grad.append("stop").attr("offset", "0%").attr("stop-color", c.a);
+      grad.append("stop").attr("offset", "100%").attr("stop-color", c.b);
+
+      // Radial halo for the icon disc
+      const halo = defs
+        .append("radialGradient")
+        .attr("id", `halo-${type}`)
+        .attr("cx", "50%").attr("cy", "40%").attr("r", "60%");
+      halo.append("stop").attr("offset", "0%").attr("stop-color", c.a).attr("stop-opacity", 1);
+      halo.append("stop").attr("offset", "70%").attr("stop-color", c.b).attr("stop-opacity", 0.95);
+      halo.append("stop").attr("offset", "100%").attr("stop-color", c.b).attr("stop-opacity", 0.6);
+
+      // Per-type glow
+      const glow = defs.append("filter")
+        .attr("id", `glow-${type}`)
+        .attr("x", "-40%").attr("y", "-40%")
+        .attr("width", "180%").attr("height", "180%");
+      glow.append("feGaussianBlur").attr("stdDeviation", 4).attr("result", "blur");
+      const flood = glow.append("feFlood").attr("flood-color", c.glow).attr("flood-opacity", 0.85);
+      glow.append("feComposite").attr("in", "blur").attr("in2", "blur").attr("operator", "in");
+      const merge = glow.append("feMerge");
+      merge.append("feMergeNode");
+      merge.append("feMergeNode").attr("in", "SourceGraphic");
+    });
+
+    // Generic drop shadow
+    const ds = defs.append("filter")
+      .attr("id", "drop-shadow")
+      .attr("x", "-20%").attr("y", "-20%")
+      .attr("width", "140%").attr("height", "160%");
+    ds.append("feGaussianBlur").attr("in", "SourceAlpha").attr("stdDeviation", 4);
+    ds.append("feOffset").attr("dx", 0).attr("dy", 4).attr("result", "off");
+    const dsMerge = ds.append("feMerge");
+    dsMerge.append("feMergeNode").attr("in", "off");
+    dsMerge.append("feMergeNode").attr("in", "SourceGraphic");
+
+    // Subnet soft-glow
+    const sg = defs.append("filter")
+      .attr("id", "subnet-glow")
+      .attr("x", "-10%").attr("y", "-10%")
+      .attr("width", "120%").attr("height", "120%");
+    sg.append("feGaussianBlur").attr("stdDeviation", 8).attr("result", "b");
+    const sgMerge = sg.append("feMerge");
+    sgMerge.append("feMergeNode").attr("in", "b");
+    sgMerge.append("feMergeNode").attr("in", "SourceGraphic");
+
+    // Arrow marker
+    defs
+      .append("marker")
+      .attr("id", "arrow")
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 6).attr("markerHeight", 6)
+      .attr("orient", "auto")
+      .append("path")
+      .attr("d", "M0,-4L8,0L0,4")
+      .attr("fill", "rgba(160, 200, 255, 0.7)");
+
+    // Gloss highlight gradient (top sheen on cards)
+    const gloss = defs.append("linearGradient")
+      .attr("id", "gloss")
+      .attr("x1", "0%").attr("y1", "0%")
+      .attr("x2", "0%").attr("y2", "100%");
+    gloss.append("stop").attr("offset", "0%").attr("stop-color", "#ffffff").attr("stop-opacity", 0.28);
+    gloss.append("stop").attr("offset", "100%").attr("stop-color", "#ffffff").attr("stop-opacity", 0);
+  }
+
   function drawInternet(g, n) {
     const grp = g
       .append("g")
       .attr("class", "node-group internet-group")
       .attr("data-id", "internet")
-      .attr("data-type", "internet");
+      .attr("data-type", "internet")
+      .attr("filter", "url(#drop-shadow)");
 
     grp
       .append("rect")
@@ -269,19 +352,51 @@
       .attr("x", n.x)
       .attr("y", n.y)
       .attr("width", n.w)
-      .attr("height", n.h);
+      .attr("height", n.h)
+      .attr("fill", "url(#grad-internet)");
+
+    grp
+      .append("rect")
+      .attr("class", "internet-gloss")
+      .attr("x", n.x).attr("y", n.y)
+      .attr("width", n.w).attr("height", n.h * 0.5)
+      .attr("rx", 28).attr("ry", 28)
+      .attr("fill", "url(#gloss)");
+
+    // Orbiting dots to suggest "global"
+    const cx = n.x + n.w / 2;
+    const cy = n.y + n.h / 2;
+    const orbit = grp.append("g").attr("class", "orbit").attr("transform", `translate(${cx} ${cy})`);
+    orbit.append("ellipse")
+      .attr("class", "orbit-ring")
+      .attr("rx", n.w / 2 - 14).attr("ry", n.h / 2 - 6)
+      .attr("fill", "none")
+      .attr("stroke", "rgba(255,255,255,0.25)")
+      .attr("stroke-dasharray", "2 6");
+    [0, 120, 240].forEach((deg, i) => {
+      orbit.append("circle")
+        .attr("class", "orbit-dot")
+        .attr("r", 3)
+        .attr("cx", (n.w / 2 - 14) * Math.cos((deg * Math.PI) / 180))
+        .attr("cy", (n.h / 2 - 6) * Math.sin((deg * Math.PI) / 180))
+        .attr("fill", "#fff")
+        .style("animation-delay", `${i * -1.2}s`);
+    });
 
     grp
       .append("text")
       .attr("class", "internet-label")
-      .attr("x", n.x + n.w / 2)
-      .attr("y", n.y + n.h / 2 + 5)
+      .attr("x", cx).attr("y", cy + 5)
       .attr("text-anchor", "middle")
       .text("INTERNET");
   }
 
   function drawVpc(g, v) {
-    const vpcG = g.append("g").attr("class", "vpc-group");
+    const vpcG = g
+      .append("g")
+      .attr("class", "vpc-group")
+      .attr("data-id", v.id)
+      .attr("data-type", "vpc");
 
     vpcG
       .append("rect")
@@ -316,7 +431,12 @@
 
   function drawSubnet(g, s) {
     const tier = s.tier || "private";
-    const sg = g.append("g").attr("class", "subnet-group");
+    const sg = g
+      .append("g")
+      .attr("class", "subnet-group")
+      .attr("data-id", s.id)
+      .attr("data-type", "subnet")
+      .attr("data-tier", tier);
 
     sg
       .append("rect")
@@ -328,6 +448,15 @@
       .attr("y", s.y)
       .attr("width", s.w)
       .attr("height", s.h);
+
+    // Top sheen for depth
+    sg.append("rect")
+      .attr("class", "subnet-gloss")
+      .attr("x", s.x + 4).attr("y", s.y + 3)
+      .attr("width", s.w - 8).attr("height", 18)
+      .attr("rx", 10).attr("ry", 10)
+      .attr("fill", "url(#gloss)")
+      .style("pointer-events", "none");
 
     sg
       .append("text")
@@ -349,40 +478,83 @@
 
   function drawNode(g, n) {
     const meta = window.AWS_EXPLAIN[n.type] || window.AWS_EXPLAIN.unknown;
+    const colors = (window.AWS_COLORS && window.AWS_COLORS[n.type]) || window.AWS_COLORS.unknown;
     const grp = g
       .append("g")
       .attr("class", "node-group")
       .attr("data-id", n.id)
-      .attr("data-type", n.type);
+      .attr("data-type", n.type)
+      .attr("filter", "url(#drop-shadow)");
 
     grp
       .append("circle")
       .attr("class", "pulse")
       .attr("cx", n.x + n.w / 2)
       .attr("cy", n.y + n.h / 2)
-      .attr("r", n.h / 2 + 6);
+      .attr("r", n.h / 2 + 6)
+      .attr("stroke", colors.glow);
 
+    // Card body (gradient)
     grp
       .append("rect")
       .attr("class", "node-bg")
       .attr("x", n.x)
       .attr("y", n.y)
       .attr("width", n.w)
-      .attr("height", n.h);
+      .attr("height", n.h)
+      .attr("fill", "#152139");
 
-    // Icon
+    grp
+      .append("rect")
+      .attr("class", "node-accent")
+      .attr("x", n.x).attr("y", n.y)
+      .attr("width", 4).attr("height", n.h)
+      .attr("rx", 2).attr("ry", 2)
+      .attr("fill", `url(#grad-${n.type in window.AWS_COLORS ? n.type : "unknown"})`);
+
+    grp
+      .append("rect")
+      .attr("class", "node-gloss")
+      .attr("x", n.x + 4).attr("y", n.y + 2)
+      .attr("width", n.w - 8).attr("height", 14)
+      .attr("rx", 8).attr("ry", 8)
+      .attr("fill", "url(#gloss)")
+      .style("pointer-events", "none");
+
+    // Icon disc with halo + animated ring
     const cy = n.y + n.h / 2;
+    const ix = n.x + 22;
+
+    grp.append("circle")
+      .attr("class", "icon-ring")
+      .attr("cx", ix).attr("cy", cy).attr("r", 19)
+      .attr("fill", "none")
+      .attr("stroke", colors.glow)
+      .attr("stroke-opacity", 0.55)
+      .attr("stroke-width", 1.2)
+      .attr("stroke-dasharray", "3 4");
+
     grp
       .append("circle")
-      .attr("class", "icon-circle")
-      .attr("cx", n.x + 22)
+      .attr("class", "icon-disc")
+      .attr("cx", ix)
       .attr("cy", cy)
-      .attr("r", 16);
+      .attr("r", 16)
+      .attr("fill", `url(#halo-${n.type in window.AWS_COLORS ? n.type : "unknown"})`)
+      .attr("stroke", "rgba(255,255,255,0.18)")
+      .attr("stroke-width", 1);
+
+    // Tiny glossy highlight on the icon disc (top-left)
+    grp.append("ellipse")
+      .attr("cx", ix - 4).attr("cy", cy - 5)
+      .attr("rx", 6).attr("ry", 3)
+      .attr("fill", "rgba(255,255,255,0.45)")
+      .style("pointer-events", "none");
 
     grp
       .append("text")
       .attr("class", "icon-glyph")
-      .attr("x", n.x + 22)
+      .attr("x", ix)
       .attr("y", cy + 1)
       .text(meta.glyph || (n.type || "?").toUpperCase().slice(0, 3));
 
@@ -609,12 +781,99 @@
 
   function resetZoom() {
     if (!svg || !zoomBehavior) return;
-    svg.transition().duration(400).call(zoomBehavior.transform, d3.zoomIdentity);
+    svg.transition().duration(500).call(zoomBehavior.transform, d3.zoomIdentity);
+    clearHighlight();
+  }
+
+  // Focus the camera on a node by id, with optional padding around the node.
+  function focus(id, opts = {}) {
+    if (!svg || !zoomBehavior || !lastLayout) return;
+    const node = lastLayout.nodes.get(id);
+    if (!node) return;
+
+    const pad = opts.pad ?? 80;
+    const vb = lastViewBox;
+
+    const targetW = node.w + pad * 2;
+    const targetH = node.h + pad * 2;
+
+    const k = Math.max(
+      0.6,
+      Math.min(2.4, Math.min(vb.w / targetW, vb.h / targetH) * 0.85),
+    );
+
+    // Center of the node in viewBox coords
+    const cx = node.x + node.w / 2;
+    const cy = node.y + node.h / 2;
+
+    // We want T such that T(cx, cy) maps to the center of the visible area in SVG-pixel
+    // space. After d3.zoom transform, an SVG point p maps to: T.k * p + (T.x, T.y)
+    // expressed in *SVG user units* (viewBox), since rootG transforms in user units.
+    // The center of the viewBox (in user units) is (vb.x + vb.w/2, vb.y + vb.h/2).
+    const tx = vb.x + vb.w / 2 - cx * k;
+    const ty = vb.y + vb.h / 2 - cy * k;
+
+    svg
+      .transition()
+      .duration(opts.duration ?? 700)
+      .call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+  }
+
+  function highlight(id) {
+    if (!svg) return;
+    clearHighlight();
+    if (!id) return;
+
+    d3.selectAll(`[data-id="${id}"]`).classed("is-tour", true);
+
+    // Walk up to ancestor subnet/VPC and tag them as "context" so they don't
+    // sit fully dimmed behind the focused element.
+    const node = lastLayout && lastLayout.nodes.get(id);
+    if (node) {
+      if (node.parent && node.parent !== id) {
+        d3.selectAll(`[data-id="${node.parent}"]`).classed("is-tour-context", true);
+        const parentNode = lastLayout.nodes.get(node.parent);
+        if (parentNode && parentNode.parent && parentNode.parent !== node.parent) {
+          d3.selectAll(`[data-id="${parentNode.parent}"]`).classed("is-tour-context", true);
+        }
+      }
+    }
+
+    // Highlight related flows
+    d3.selectAll(".flow-group").each(function () {
+      const from = this.getAttribute("data-from");
+      const to = this.getAttribute("data-to");
+      if (from === id || to === id) {
+        d3.select(this).classed("is-tour-flow", true);
+      }
+    });
+
+    rootG.classed("tour-active", true);
+  }
+
+  function clearHighlight() {
+    if (!svg) return;
+    d3.selectAll(".is-tour, .is-tour-context").classed("is-tour is-tour-context", false);
+    d3.selectAll(".is-tour-flow").classed("is-tour-flow", false);
+    if (rootG) rootG.classed("tour-active", false);
+  }
+
+  function getLayout() {
+    return lastLayout;
+  }
+
+  function getData() {
+    return lastData;
   }
 
   window.AwsViz = {
     render,
     resetZoom,
+    focus,
+    highlight,
+    clearHighlight,
+    getLayout,
+    getData,
     onSelect: null,
     onSelectFlow: null,
   };

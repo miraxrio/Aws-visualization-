@@ -2,6 +2,45 @@
 // Used by the sidebar and tooltip to describe what an element does and how
 // traffic moves through it.
 
+// Per-type color palette (paired light/dark for gradients, plus a glow color).
+window.AWS_COLORS = {
+  internet:   { a: "#ff8aa8", b: "#d63b6e", glow: "#ff5f86" },
+  vpc:        { a: "#ffb86b", b: "#d97f00", glow: "#ff9900" },
+  subnet:     { a: "#9fb6e6", b: "#3b5fa3", glow: "#7a9bd6" },
+
+  igw:        { a: "#a78bfa", b: "#5b21b6", glow: "#8b5cf6" },
+  nat:        { a: "#f5c451", b: "#b8860b", glow: "#f5c451" },
+  tgw:        { a: "#c084fc", b: "#6b21a8", glow: "#c084fc" },
+  vpn:        { a: "#94a3b8", b: "#475569", glow: "#94a3b8" },
+  dx:         { a: "#94a3b8", b: "#334155", glow: "#cbd5e1" },
+  endpoint:   { a: "#a78bfa", b: "#4c1d95", glow: "#a78bfa" },
+
+  alb:        { a: "#5eead4", b: "#0f766e", glow: "#2dd4bf" },
+  nlb:        { a: "#7dd3fc", b: "#0369a1", glow: "#38bdf8" },
+
+  ec2:        { a: "#fdba74", b: "#c2410c", glow: "#fb923c" },
+  asg:        { a: "#fdba74", b: "#9a3412", glow: "#fb923c" },
+  ecs:        { a: "#fbbf24", b: "#a16207", glow: "#f59e0b" },
+  eks:        { a: "#86efac", b: "#15803d", glow: "#22c55e" },
+  lambda:     { a: "#f0abfc", b: "#86198f", glow: "#e879f9" },
+
+  rds:        { a: "#93c5fd", b: "#1d4ed8", glow: "#60a5fa" },
+  aurora:     { a: "#7dd3fc", b: "#1e40af", glow: "#3b82f6" },
+  dynamodb:   { a: "#67e8f9", b: "#155e75", glow: "#22d3ee" },
+  s3:         { a: "#86efac", b: "#166534", glow: "#22c55e" },
+
+  cloudfront: { a: "#fda4af", b: "#9f1239", glow: "#fb7185" },
+  route53:    { a: "#fca5a5", b: "#991b1b", glow: "#f87171" },
+  waf:        { a: "#fdba74", b: "#7c2d12", glow: "#f97316" },
+
+  apigw:      { a: "#fcd34d", b: "#92400e", glow: "#fbbf24" },
+
+  sg:         { a: "#fde68a", b: "#854d0e", glow: "#fbbf24" },
+  nacl:       { a: "#fde68a", b: "#713f12", glow: "#facc15" },
+
+  unknown:    { a: "#cbd5e1", b: "#475569", glow: "#94a3b8" },
+};
+
 window.AWS_EXPLAIN = {
   internet: {
     title: "Public Internet",

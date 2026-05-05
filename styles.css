@@ -267,25 +267,50 @@ pre {
 
 .subnet-cidr { fill: var(--muted); font-size: 10.5px; }
 
-.node-group { cursor: pointer; }
+.node-group { cursor: pointer; transition: transform 0.25s ease; transform-box: fill-box; }
 .node-bg {
-  fill: var(--bg-elev-2);
-  stroke: var(--border);
-  stroke-width: 1.4;
-  rx: 10; ry: 10;
-  transition: stroke 0.2s ease, filter 0.2s ease;
+  stroke: rgba(255,255,255,0.08);
+  stroke-width: 1;
+  rx: 12; ry: 12;
+  transition: stroke 0.2s ease;
 }
+.node-accent { rx: 2; ry: 2; opacity: 0.95; }
+.node-group:hover,
+.node-group.is-hover { transform: translateY(-2px); }
 .node-group:hover .node-bg,
 .node-group.is-hover .node-bg {
-  stroke: var(--accent);
-  filter: drop-shadow(0 0 10px rgba(255, 153, 0, 0.35));
+  stroke: rgba(255,255,255,0.35);
 }
 
-.node-label { fill: var(--text); font-size: 12px; font-weight: 600; }
-.node-sub { fill: var(--muted); font-size: 10.5px; }
+.icon-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin 9s linear infinite;
+}
+.node-group:hover .icon-ring,
+.node-group.is-hover .icon-ring,
+.node-group.is-tour .icon-ring {
+  animation-duration: 2.4s;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 
-.icon-circle { fill: rgba(255, 153, 0, 0.12); stroke: rgba(255, 153, 0, 0.6); }
-.icon-glyph { fill: var(--accent); font-size: 13px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.icon-disc {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bob 3.4s ease-in-out infinite;
+}
+@keyframes bob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-1px) scale(1.04); }
+}
+
+.node-label { fill: #f4f7fc; font-size: 12px; font-weight: 600; }
+.node-sub { fill: var(--muted); font-size: 10.5px; letter-spacing: 0.06em; }
+
+.icon-glyph { fill: #fff; font-size: 12px; font-weight: 800; text-anchor: middle; dominant-baseline: central; letter-spacing: 0.02em; }
 
 .flow-path {
   fill: none;
@@ -309,6 +334,9 @@ pre {
 .flow-anim.egress   { stroke: var(--warn);     filter: drop-shadow(0 0 4px rgba(245, 196, 81, 0.5)); }
 .flow-anim.is-hot   { stroke-width: 3; stroke-dasharray: 8 8; animation-duration: 0.7s; }
 
+.is-tour-flow .flow-anim { stroke-width: 3; stroke-dasharray: 8 8; animation-duration: 0.7s; }
+.is-tour-flow .flow-path { stroke: rgba(255, 200, 90, 0.85); stroke-width: 2.4; }
+
 @keyframes flow-dash {
   to { stroke-dashoffset: -36; }
 }
@@ -327,13 +355,18 @@ pre {
 
 /* Internet cloud */
 .internet-cloud {
-  fill: rgba(255, 111, 145, 0.07);
-  stroke: rgba(255, 111, 145, 0.55);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 4;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1;
   rx: 28; ry: 28;
 }
-.internet-label { fill: var(--internet); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.internet-gloss { pointer-events: none; }
+.internet-label { fill: #fff; font-size: 13px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; }
+.orbit { transform-box: fill-box; transform-origin: center; animation: spin 18s linear infinite; }
+.orbit-dot { animation: orbit-pulse 1.6s ease-in-out infinite; transform-box: fill-box; }
+@keyframes orbit-pulse {
+  0%, 100% { opacity: 0.4; r: 2.5; }
+  50%      { opacity: 1;   r: 4; }
+}
 
 /* Pulse ring on hover */
 .pulse {
@@ -369,6 +402,168 @@ pre {
 }
 .tooltip.show { opacity: 1; transform: translate3d(0, 0, 0); }
 .tooltip strong { color: var(--accent); display: block; margin-bottom: 2px; }
+
+/* Tour dimming — applied to leaf paint elements so highlighted children
+   inside a (non-highlighted) parent group are NOT compounded. */
+.tour-active .vpc-bg,
+.tour-active .vpc-label,
+.tour-active .subnet,
+.tour-active .subnet-label,
+.tour-active .subnet-cidr,
+.tour-active .subnet-gloss,
+.tour-active .node-group,
+.tour-active .flow-group,
+.tour-active .internet-group {
+  transition: opacity 0.4s ease;
+  opacity: 0.22;
+}
+
+/* Highlighted element fully visible */
+.tour-active .vpc-group.is-tour .vpc-bg,
+.tour-active .vpc-group.is-tour .vpc-label,
+.tour-active .subnet-group.is-tour .subnet,
+.tour-active .subnet-group.is-tour .subnet-label,
+.tour-active .subnet-group.is-tour .subnet-cidr,
+.tour-active .subnet-group.is-tour .subnet-gloss,
+.tour-active .node-group.is-tour,
+.tour-active .internet-group.is-tour,
+.tour-active .flow-group.is-tour-flow {
+  opacity: 1;
+}
+
+.tour-active .node-group.is-tour {
+  filter: drop-shadow(0 0 18px rgba(255, 200, 90, 0.5));
+}
+
+/* Ancestor (containing) subnet/VPC kept partially visible for context */
+.tour-active .vpc-group.is-tour-context .vpc-bg,
+.tour-active .vpc-group.is-tour-context .vpc-label,
+.tour-active .subnet-group.is-tour-context .subnet,
+.tour-active .subnet-group.is-tour-context .subnet-label,
+.tour-active .subnet-group.is-tour-context .subnet-cidr,
+.tour-active .subnet-group.is-tour-context .subnet-gloss {
+  opacity: 0.65;
+}
+
+/* Element being toured pulses subtly */
+.is-tour .pulse {
+  animation: pulse 1.2s ease-out infinite !important;
+  opacity: 1;
+}
+
+.spotlight {
+  fill: rgba(7, 12, 24, 0);
+  pointer-events: none;
+}
+
+/* Tour bar */
+.tour-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) translateY(120%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: min(720px, calc(100vw - 32px));
+  background: rgba(13, 22, 40, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  z-index: 25;
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
+}
+.tour-bar.open { transform: translateX(-50%) translateY(0); }
+
+.tour-progress {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  position: relative;
+}
+.tour-progress > span {
+  position: absolute;
+  inset: 0 100% 0 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: right 0.3s linear;
+}
+.tour-progress.advance > span {
+  transition: right linear;
+}
+
+.tour-body {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  align-items: center;
+}
+.tour-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tour-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tour-eyebrow .step-count { color: var(--muted); }
+.tour-title { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+.tour-narration {
+  font-size: 13px;
+  color: #d6e1f3;
+  line-height: 1.5;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tour-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.tour-btn {
+  width: 36px; height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+.tour-btn:hover { border-color: var(--accent-2); background: rgba(88, 166, 255, 0.12); }
+.tour-btn:active { transform: scale(0.94); }
+.tour-btn.primary {
+  background: linear-gradient(180deg, var(--accent), #d97f00);
+  border-color: transparent;
+  color: #1a1300;
+  width: 42px; height: 42px;
+}
+.tour-btn svg { width: 16px; height: 16px; fill: currentColor; }
+.tour-btn.primary svg { width: 18px; height: 18px; }
+.tour-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+.tour-extra {
+  padding: 0 16px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.tour-extra strong { color: #fff; font-weight: 600; }
 
 /* Drag overlay */
 .dropping::after {
