@@ -107,6 +107,111 @@ html, body {
 .btn:active { transform: translateY(1px); }
 .btn.ghost { background: transparent; }
 .btn.primary { background: linear-gradient(180deg, var(--accent), #d97f00); border-color: transparent; color: #1a1300; font-weight: 600; }
+.btn.icon-only { padding: 8px 10px; }
+.btn.icon-only svg { display: block; }
+
+/* ============ Day theme override ============
+   The default :root values above are the night theme. When body has
+   .theme-day we override the same custom properties so every element
+   styled against them flips to a light palette automatically.            */
+
+body.theme-day {
+  --bg: #e8eef7;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #f1f5fb;
+  --border: #c7d2e0;
+  --text: #15202e;
+  --muted: #5b6a82;
+  --accent: #ed7100;
+  --accent-2: #2563eb;
+  --shadow: 0 10px 30px rgba(20, 35, 70, 0.18);
+}
+
+body.theme-day {
+  background: radial-gradient(1200px 800px at 20% -10%, #d4e2f1 0%, var(--bg) 60%);
+}
+body.theme-day .topbar {
+  background: rgba(255, 255, 255, 0.85);
+}
+body.theme-day .stage {
+  background:
+    radial-gradient(800px 500px at 80% 100%, rgba(37, 99, 235, 0.06), transparent 60%),
+    radial-gradient(900px 600px at 0% 0%, rgba(237, 113, 0, 0.06), transparent 60%);
+}
+body.theme-day .btn {
+  background: linear-gradient(180deg, #ffffff, #eaf0f7);
+  color: var(--text);
+}
+body.theme-day .btn.ghost { background: transparent; }
+body.theme-day .seg {
+  background: linear-gradient(180deg, #ffffff, #eaf0f7);
+}
+body.theme-day .seg-btn { color: var(--muted); }
+body.theme-day .seg-btn.is-active { color: #1a1300; }
+body.theme-day .panel {
+  background: var(--bg-elev);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+}
+body.theme-day pre {
+  background: #f4f7fb;
+  color: #2d3a4f;
+}
+body.theme-day .legend,
+body.theme-day .hint,
+body.theme-day .hint-3d {
+  background: rgba(255, 255, 255, 0.85);
+  color: #2c3a55;
+}
+body.theme-day .explainer {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: rgba(37, 99, 235, 0.2);
+  color: #1a2b4a;
+}
+body.theme-day .tooltip {
+  background: rgba(255, 255, 255, 0.96);
+  color: #15202e;
+  border-color: var(--border);
+}
+
+/* SVG diagram: make subnets / labels readable on light background */
+body.theme-day .vpc-bg { fill: rgba(237, 113, 0, 0.07); stroke: rgba(237, 113, 0, 0.65); }
+body.theme-day .subnet.public  { fill: rgba(34, 197, 94, 0.08); }
+body.theme-day .subnet.private { fill: rgba(37, 99, 235, 0.08); }
+body.theme-day .subnet.data    { fill: rgba(168, 85, 247, 0.08); }
+body.theme-day .node-bg { fill: #fbfdff; stroke: var(--border); }
+body.theme-day .node-label { fill: #15202e; }
+body.theme-day .node-sub { fill: var(--muted); }
+body.theme-day .flow-label { fill: #5b6a82; stroke: var(--bg); }
+body.theme-day .flow-path { stroke: rgba(60, 90, 140, 0.3); }
+
+/* Tour bar / explore HUD: lighter glassy panel */
+body.theme-day .tour-bar,
+body.theme-day .prox-panel,
+body.theme-day .explore-help {
+  background: rgba(255, 255, 255, 0.92);
+  color: #15202e;
+}
+body.theme-day .tour-narration { color: #2c3a55; }
+body.theme-day .explore-help kbd {
+  background: #f4f7fb;
+  color: #15202e;
+  border-color: #c7d2e0;
+}
+body.theme-day .tour-btn {
+  background: rgba(0, 0, 0, 0.04);
+  color: #15202e;
+}
+body.theme-day .tour-btn:hover {
+  background: rgba(37, 99, 235, 0.1);
+}
+body.theme-day .voice-popover {
+  background: rgba(0, 0, 0, 0.03);
+}
+body.theme-day .voice-popover-row select,
+body.theme-day .voice-popover-row input[type="range"] {
+  background: #fbfdff;
+  color: #15202e;
+}
 
 .layout {
   display: grid;

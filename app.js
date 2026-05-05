@@ -9,6 +9,9 @@
     mode3d: document.getElementById("mode-3d"),
     exploreBtn: document.getElementById("explore-btn"),
     exploreHud: document.getElementById("explore-hud"),
+    themeToggle: document.getElementById("theme-toggle"),
+    themeIconNight: document.getElementById("theme-icon-night"),
+    themeIconDay: document.getElementById("theme-icon-day"),
     stage: document.getElementById("stage"),
     stage3d: document.getElementById("stage-3d"),
     diagram: document.getElementById("diagram"),
@@ -72,6 +75,7 @@
         if (window.AwsViz3D) {
           if (!window.AwsViz3D.isReady()) window.AwsViz3D.init(els.stage3d);
           if (currentData) window.AwsViz3D.render(currentData);
+          if (window.AwsViz3D.setTheme) window.AwsViz3D.setTheme(theme);
         } else if (attempts > 0) {
           setTimeout(() => tryInit(attempts - 1), 100);
         } else {
@@ -87,6 +91,29 @@
 
   els.mode2d.addEventListener("click", () => setMode("2d"));
   els.mode3d.addEventListener("click", () => setMode("3d"));
+
+  // ---- Day / night theme ----
+
+  let theme = localStorage.getItem("aws-viz.theme") === "day" ? "day" : "night";
+  applyTheme(theme);
+
+  function applyTheme(next) {
+    theme = next === "day" ? "day" : "night";
+    document.body.classList.toggle("theme-day", theme === "day");
+    els.themeIconNight.style.display = theme === "day" ? "none" : "";
+    els.themeIconDay.style.display   = theme === "day" ? "" : "none";
+    els.themeToggle.setAttribute("aria-label",
+      theme === "day" ? "Switch to night theme" : "Switch to day theme");
+    if (window.AwsViz3D && window.AwsViz3D.setTheme) {
+      window.AwsViz3D.setTheme(theme);
+    }
+  }
+
+  els.themeToggle.addEventListener("click", () => {
+    const next = theme === "day" ? "night" : "day";
+    applyTheme(next);
+    localStorage.setItem("aws-viz.theme", next);
+  });
 
   // Explore mode (first-person walk through the city). 3D only.
   els.exploreBtn.addEventListener("click", () => {

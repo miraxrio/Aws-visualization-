@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05e — city sky + server-floor ground + lower spawn");
+console.log("[viz3d] build 2026-05-05f — day/night theme + pedestrian spawn");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -17,6 +17,11 @@ let cameraTween = null;
 let raf = null;
 let lastT = 0;
 let focusEffect = null; // { group, targetMesh, baseEmissive }
+
+// Theme handles, populated by init()
+let sky, sunLight, rimLight, hemiLight, ambientLight, stars;
+let nightSkyTex, daySkyTex;
+let currentTheme = "night";
 
 // Explore (first-person walk) state
 let exploreActive = false;
@@ -50,21 +55,23 @@ function init(container) {
   container.appendChild(renderer.domElement);
 
   // Lights — bumped up so brand colours read saturated rather than muted.
-  scene.add(new THREE.HemisphereLight(0xb6c8ff, 0x0a1428, 1.05));
-  scene.add(new THREE.AmbientLight(0x6079a8, 0.55));
+  hemiLight = new THREE.HemisphereLight(0xb6c8ff, 0x0a1428, 1.05);
+  scene.add(hemiLight);
+  ambientLight = new THREE.AmbientLight(0x6079a8, 0.55);
+  scene.add(ambientLight);
 
-  const sun = new THREE.DirectionalLight(0xffe2b8, 1.7);
-  sun.position.set(-90, 200, 80);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  const sb = sun.shadow.camera;
+  sunLight = new THREE.DirectionalLight(0xffe2b8, 1.7);
+  sunLight.position.set(-90, 200, 80);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.set(2048, 2048);
+  const sb = sunLight.shadow.camera;
   sb.left = -250; sb.right = 250; sb.top = 250; sb.bottom = -250;
-  sun.shadow.bias = -0.0005;
-  scene.add(sun);
+  sunLight.shadow.bias = -0.0005;
+  scene.add(sunLight);
 
-  const rim = new THREE.DirectionalLight(0x88aaff, 0.7);
-  rim.position.set(60, 80, -120);
-  scene.add(rim);
+  rimLight = new THREE.DirectionalLight(0x88aaff, 0.7);
+  rimLight.position.set(60, 80, -120);
+  scene.add(rimLight);
 
   // Ground — looks like a data-centre floor: rows of server racks with
   // glowing LEDs, tiled across a large plane so every direction reads
@@ -87,11 +94,13 @@ function init(container) {
 
   // Sky — distant city skyline panorama on the inside of a big sphere so
   // wherever the camera looks it sees a wider city around the network.
-  const skyTex = makeSkyTexture();
-  const sky = new THREE.Mesh(
+  // Two textures (day + night) are pre-generated and swapped by setTheme().
+  nightSkyTex = makeSkyTexture();
+  daySkyTex = makeDaySkyTexture();
+  sky = new THREE.Mesh(
     new THREE.SphereGeometry(2200, 64, 32),
     new THREE.MeshBasicMaterial({
-      map: skyTex,
+      map: nightSkyTex,
       side: THREE.BackSide,
       depthWrite: false,
       fog: false,           // sphere is past the fog far distance
@@ -102,7 +111,8 @@ function init(container) {
   scene.add(sky);
 
   // A handful of foreground stars for sparkle on top of the sky panorama
-  scene.add(makeStars(900));
+  stars = makeStars(900);
+  scene.add(stars);
 
   cityGroup = new THREE.Group();
   scene.add(cityGroup);
@@ -699,6 +709,96 @@ function makeSkyTexture() {
   return tex;
 }
 
+// Daytime sibling of the night skybox — bright blue sky with sun, clouds,
+// and city silhouettes that read as distant haze rather than glittering
+// windows. Same UV layout as makeSkyTexture so the two are swappable.
+function makeDaySkyTexture() {
+  const W = 4096, H = 1024;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d");
+
+  // Sky gradient: zenith blue → pale-white at horizon
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0,    "#3f8ec7");
+  grad.addColorStop(0.35, "#7ab1d9");
+  grad.addColorStop(0.45, "#bcd6e8");
+  grad.addColorStop(0.5,  "#e2eaf2");  // horizon haze
+  grad.addColorStop(0.55, "#dbe3eb");
+  grad.addColorStop(1,    "#b6c4d1");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Sun
+  const sunX = W * 0.65, sunY = H * 0.20;
+  const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 260);
+  sunGrad.addColorStop(0,    "rgba(255, 255, 240, 1)");
+  sunGrad.addColorStop(0.08, "rgba(255, 248, 215, 0.95)");
+  sunGrad.addColorStop(0.25, "rgba(255, 235, 180, 0.55)");
+  sunGrad.addColorStop(0.55, "rgba(255, 220, 160, 0.18)");
+  sunGrad.addColorStop(1,    "rgba(255, 215, 150, 0)");
+  ctx.fillStyle = sunGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Clouds — a few soft elliptical blobs in the upper half
+  for (let i = 0; i < 18; i++) {
+    const cx = Math.random() * W;
+    const cy = (Math.random() * 0.42 + 0.05) * H;
+    const cw = 110 + Math.random() * 240;
+    const ch = 26 + Math.random() * 44;
+    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cw);
+    cg.addColorStop(0,   "rgba(255, 255, 255, 0.78)");
+    cg.addColorStop(0.5, "rgba(255, 255, 255, 0.32)");
+    cg.addColorStop(1,   "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, cw, ch, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // City silhouettes in muted blue-grey daylight tones
+  function drawSkyline(yBase, alpha, heightFactor) {
+    let x = 0;
+    while (x < W) {
+      const w = 28 + Math.random() * 80;
+      const h = (40 + Math.random() * 200) * heightFactor;
+      const top = yBase - h;
+      const tint = 95 + Math.random() * 30;
+      ctx.fillStyle = `rgba(${tint},${tint + 14},${tint + 36},${alpha})`;
+      ctx.fillRect(x, top, w, h);
+
+      if (Math.random() < 0.18) {
+        const aw = 2 + Math.random() * 4;
+        ctx.fillRect(x + w * 0.5 - aw / 2, top - 8 - Math.random() * 14, aw, 8 + Math.random() * 14);
+      } else if (Math.random() < 0.22) {
+        const bw = w * (0.25 + Math.random() * 0.3);
+        ctx.fillRect(x + (w - bw) / 2, top - 6, bw, 6);
+      }
+
+      // A few darker windows so they read as glass in daylight
+      const rows = Math.floor(h / 14);
+      const cols = Math.max(1, Math.floor(w / 11));
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          if (Math.random() < 0.18) {
+            ctx.fillStyle = "rgba(40, 55, 75, 0.55)";
+            ctx.fillRect(x + 3 + i * 11, top + 6 + j * 14, 5, 7);
+          }
+        }
+      }
+      x += w + Math.random() * 4;
+    }
+  }
+  drawSkyline(H * 0.50, 0.55, 0.55);
+  drawSkyline(H * 0.51, 0.72, 0.80);
+  drawSkyline(H * 0.52, 0.90, 1.00);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  return tex;
+}
+
 // Procedural tileable "data centre floor" texture: dark substrate with
 // server-rack rectangles, slot lines, and lit LED indicators. Wrapped
 // over the ground plane so the network city sits on top of physical
@@ -1128,6 +1228,49 @@ function clearFocus() {
   tweenCamera(camPos, target, 1100);
 }
 
+// ---------- day / night theme ----------
+
+function setTheme(theme) {
+  if (!initialized) return;
+  currentTheme = theme === "day" ? "day" : "night";
+  const isDay = currentTheme === "day";
+
+  if (sky && sky.material) {
+    sky.material.map = isDay ? daySkyTex : nightSkyTex;
+    sky.material.needsUpdate = true;
+  }
+  if (stars) stars.visible = !isDay;
+
+  if (scene && scene.fog) {
+    scene.fog.color.set(isDay ? 0xb6c4d1 : 0x07101e);
+  }
+  if (renderer) {
+    renderer.toneMappingExposure = isDay ? 1.05 : 1.05;
+  }
+
+  if (sunLight) {
+    sunLight.color.set(isDay ? 0xfff4d8 : 0xffe2b8);
+    sunLight.intensity = isDay ? 2.4 : 1.7;
+  }
+  if (rimLight) {
+    rimLight.color.set(isDay ? 0xcfe1ff : 0x88aaff);
+    rimLight.intensity = isDay ? 0.25 : 0.7;
+  }
+  if (hemiLight) {
+    hemiLight.color.set(isDay ? 0xe9f3ff : 0xb6c8ff);
+    hemiLight.groundColor.set(isDay ? 0x9aa6b3 : 0x0a1428);
+    hemiLight.intensity = isDay ? 1.4 : 1.05;
+  }
+  if (ambientLight) {
+    ambientLight.color.set(isDay ? 0xb8c4d4 : 0x6079a8);
+    ambientLight.intensity = isDay ? 0.7 : 0.55;
+  }
+}
+
+function getTheme() {
+  return currentTheme;
+}
+
 // ---------- explore (first-person walk) ----------
 
 function enterExplore() {
@@ -1136,14 +1279,13 @@ function enterExplore() {
   cameraTween = null;
   controls.enabled = false;
 
-  // Spawn just above the tallest buildings (the city skyline tops out
-  // around y=25 with the current size scale) so the city is in front of
-  // you instead of far below. Pull in toward the centre so the first
-  // WASD tap immediately moves you over an element.
-  const startY = 32;
-  const startZ = Math.max(18, CITY.d * 0.15);
+  // Spawn at pedestrian eye-level looking inward at the city. From here you
+  // look UP at the taller buildings (CloudFront/Aurora) and over the tops
+  // of shorter ones — the city wraps around you. Press Space to fly up.
+  const startY = 10;
+  const startZ = Math.max(18, CITY.d * 0.18);
   camera.position.set(0, startY, startZ);
-  camera.lookAt(0, 6, 0);
+  camera.lookAt(0, 8, 0);
 
   fpControls.lock();
   document.body.classList.add("exploring");
@@ -1558,5 +1700,7 @@ window.AwsViz3D = {
   enterExplore,
   exitExplore,
   isExploring,
+  setTheme,
+  getTheme,
   isReady: () => initialized,
 };
