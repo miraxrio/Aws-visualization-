@@ -25,7 +25,8 @@ function init(container) {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x070d1c);
-  scene.fog = new THREE.FogExp2(0x070d1c, 0.0035);
+  // Linear fog tuned per-render so it never swallows the focused element.
+  scene.fog = new THREE.Fog(0x070d1c, 200, 800);
 
   camera = new THREE.PerspectiveCamera(55, 1, 0.1, 5000);
   camera.position.set(120, 110, 160);
@@ -83,7 +84,10 @@ function init(container) {
   controls.maxDistance = 900;
 
   // User interaction cancels any active camera tween.
-  controls.addEventListener("start", () => { cameraTween = null; });
+  controls.addEventListener("start", () => {
+    cameraTween = null;
+    controls.enableDamping = true;
+  });
 
   resize(container);
   const ro = new ResizeObserver(() => resize(container));
@@ -162,6 +166,14 @@ function render(data) {
   camera.position.set(dist * 0.35, dist * 0.55, dist * 0.85);
   controls.target.set(0, 4, 0);
   controls.update();
+
+  // Adapt fog to city size so the whole layout is always visible from
+  // overview, but distant detail still fades for atmosphere.
+  const cd = Math.max(CITY.w, CITY.d, 80);
+  if (scene.fog && scene.fog.isFog) {
+    scene.fog.near = cd * 1.2;
+    scene.fog.far = cd * 4.0;
+  }
 }
 
 function pos3D(node) {
@@ -579,24 +591,51 @@ function focus(id, opts = {}) {
     return;
   }
   const target = r.position.clone();
-  // Aim at building "shoulder height" so it dominates the frame
-  const aimY = Math.max(target.y, r.height * 0.5 + 1);
+  const isContainer = r.type === "vpc" || r.type === "subnet";
+
+  // Aim point — for buildings, look at upper-mid of the shape; for
+  // containers, look at the floor center.
+  const aimY = isContainer
+    ? r.height * 0.5
+    : Math.max(target.y, r.height * 0.45 + 1);
   const aim = new THREE.Vector3(target.x, aimY, target.z);
 
-  // Camera offset depends on element size, plus a deterministic angle by id
-  const radius = Math.max(18, r.extent * 3.5);
+  // Frustum-fit distance: with a 55° FOV the half-angle is ~27.5° so the
+  // distance needed to fit a sphere of radius `extent` is extent / tan(27.5°)
+  // ≈ extent * 1.92. We add a small margin and cap so we never fly out
+  // beyond the fog.
+  const fitDistance = r.extent * 1.92;
+  const distance = isContainer
+    ? clamp(fitDistance + 18, 30, Math.max(CITY.w, CITY.d) * 1.1 + 80)
+    : clamp(Math.max(r.extent * 4, r.height * 1.6) + 6, 14, 80);
+
+  // Elevation: containers are viewed from above-ish (3/4 angle), buildings
+  // are viewed from street level for a "drive past" feel.
+  const elev = isContainer
+    ? distance * 0.55
+    : Math.max(6, r.height * 0.85);
+
+  // Approach angle is deterministic per id so revisits look the same.
   const seed = hashCode(id);
   const angle = (seed % 1000) / 1000 * Math.PI * 2;
-  const elev = r.type === "vpc" || r.type === "subnet"
-    ? Math.max(28, radius * 0.85)
-    : Math.max(10, r.height * 1.4);
+
   const camPos = new THREE.Vector3(
-    target.x + Math.cos(angle) * radius,
+    target.x + Math.cos(angle) * distance,
     aim.y + elev,
-    target.z + Math.sin(angle) * radius,
+    target.z + Math.sin(angle) * distance,
   );
 
-  tweenCamera(camPos, aim, opts.duration ?? 1500, opts.onComplete);
+  // Distance-scaled duration so cross-city jumps don't feel hurried while
+  // small steps don't linger.
+  const travel = camera.position.distanceTo(camPos);
+  const auto = clamp(900 + travel * 5, 1200, 2600);
+  const duration = opts.duration ?? auto;
+
+  tweenCamera(camPos, aim, duration, opts.onComplete);
+}
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
 }
 
 function clearFocus() {
@@ -611,20 +650,35 @@ function tweenCamera(toPos, toTarget, durationMs, onComplete) {
   const fromPos = camera.position.clone();
   const fromTarget = controls.target.clone();
   const start = performance.now();
+  // Disable damping during the tween so OrbitControls' inertia doesn't
+  // wrestle with our manual position assignments.
+  controls.enableDamping = false;
+
+  // Travel arc — gently lift the camera and target as they cross the city
+  // so the motion feels like a glide rather than a straight slide.
+  const travel = fromPos.distanceTo(toPos);
+  const arc = Math.min(60, travel * 0.18);
+
   cameraTween = (now) => {
     const t = Math.min(1, (now - start) / durationMs);
-    const e = easeInOutCubic(t);
+    const e = easeInOutQuint(t);
     camera.position.lerpVectors(fromPos, toPos, e);
     controls.target.lerpVectors(fromTarget, toTarget, e);
+    // Sin-shaped arc: zero at endpoints, peak at midpoint
+    const lift = arc * Math.sin(t * Math.PI);
+    camera.position.y += lift;
+    controls.target.y += lift * 0.25;
+
     if (t >= 1) {
       cameraTween = null;
+      controls.enableDamping = true;
       if (onComplete) onComplete();
     }
   };
 }
 
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function easeInOutQuint(t) {
+  return t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
 }
 
 function hashCode(s) {
