@@ -46,22 +46,6 @@
   let speakEnabled = localStorage.getItem("aws-viz.speak") !== "0" && speechSupported;
   let currentUtter = null;
   let utterQueue = []; // utterances we've queued for the current step
-  let keepAliveTimer = null;
-
-  // Some browsers (notably Chrome) silently stop speechSynthesis after ~15s.
-  // Toggling pause/resume periodically keeps the engine alive.
-  function startKeepAlive() {
-    stopKeepAlive();
-    keepAliveTimer = setInterval(() => {
-      if (synth.speaking && !synth.paused) {
-        try { synth.pause(); synth.resume(); } catch (_) {}
-      }
-    }, 8000);
-  }
-  function stopKeepAlive() {
-    if (keepAliveTimer) clearInterval(keepAliveTimer);
-    keepAliveTimer = null;
-  }
 
   // Preprocess text so the TTS reads things naturally.
   function prepareForSpeech(text) {
@@ -83,22 +67,52 @@
     return t;
   }
 
-  // Split text into ~180-char sentence chunks so each utterance stays short
-  // enough to dodge the Chrome cutoff bug.
-  function chunkForSpeech(text, maxLen = 180) {
-    const parts = text.split(/(?<=[.!?])\s+/);
+  // Split text into short chunks (each well under the ~15s Chrome cutoff).
+  // Splits on sentence boundaries first; if a sentence is still too long,
+  // splits on commas/semicolons, then on whitespace as a last resort.
+  function chunkForSpeech(text, maxLen = 140) {
+    const sentences = text.split(/(?<=[.!?])\s+/);
     const out = [];
+
+    const pushSplit = (s) => {
+      if (s.length <= maxLen) { out.push(s); return; }
+      // Split on , ; : — preserve the punctuation
+      const sub = s.split(/(?<=[,;:])\s+/);
+      let cur = "";
+      for (const p of sub) {
+        const cand = cur ? cur + " " + p : p;
+        if (cand.length > maxLen && cur) {
+          // Still too big? Hard-wrap on whitespace.
+          if (cur.length > maxLen) {
+            const words = cur.split(/\s+/);
+            let line = "";
+            for (const w of words) {
+              if ((line + " " + w).length > maxLen && line) { out.push(line); line = w; }
+              else line = line ? line + " " + w : w;
+            }
+            if (line) out.push(line);
+          } else {
+            out.push(cur);
+          }
+          cur = p;
+        } else {
+          cur = cand;
+        }
+      }
+      if (cur) out.push(cur);
+    };
+
     let cur = "";
-    for (const s of parts) {
-      const candidate = cur ? cur + " " + s : s;
-      if (candidate.length > maxLen && cur) {
-        out.push(cur);
+    for (const s of sentences) {
+      const cand = cur ? cur + " " + s : s;
+      if (cand.length > maxLen && cur) {
+        pushSplit(cur);
         cur = s;
       } else {
-        cur = candidate;
+        cur = cand;
       }
     }
-    if (cur) out.push(cur);
+    if (cur) pushSplit(cur);
     return out;
   }
 
@@ -174,7 +188,6 @@
     utterQueue = [];
     currentUtter = null;
     try { synth.cancel(); } catch (_) {}
-    stopKeepAlive();
     els.speak.classList.remove("speaking");
   }
 
@@ -202,7 +215,6 @@
       finalized = true;
       utterQueue = [];
       currentUtter = null;
-      stopKeepAlive();
       els.speak.classList.remove("speaking");
       if (onEnd) onEnd(reason);
     };
@@ -227,7 +239,6 @@
 
     currentUtter = utterQueue[utterQueue.length - 1];
     els.speak.classList.add("speaking");
-    startKeepAlive();
 
     // Defer slightly so Chrome's cancel() has time to settle before speak().
     setTimeout(() => {
