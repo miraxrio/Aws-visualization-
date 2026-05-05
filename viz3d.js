@@ -5,6 +5,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
+console.log("[viz3d] build 2026-05-05a — side decals, AWS icons, recentered labels");
+
 let initialized = false;
 let scene, camera, renderer, controls;
 let cityGroup;
@@ -321,8 +323,10 @@ function addBuilding(node) {
   // AWS service icon — placed on the sides of the 3D shape (or as a billboard
   // when the geometry has no flat vertical face). No more redundant rooftop
   // tile or floating round badge.
-  const decalSize = Math.max(3, Math.min(sz.w, sz.d) * 0.78);
-  const decalY = 1.95 + Math.min(sz.h * 0.55, sz.h - decalSize * 0.55);
+  // Sized to fit comfortably on the side, centered vertically so the decal
+  // is clearly *on* the building rather than near its top edge.
+  const decalSize = Math.max(3, Math.min(sz.w, sz.d, sz.h) * 0.7);
+  const decalY = 1.95 + sz.h * 0.5;
   if (hasFlatSides(node.type)) {
     const halfW = sz.w / 2;
     const halfD = sz.d / 2;
@@ -347,12 +351,13 @@ function addBuilding(node) {
     grp.add(billboard);
   }
 
-  // Single name label above the building
+  // Single name label well above the building so it never overlaps the
+  // side decal or the blinking light on top.
   const label = makeLabel(
     truncate(node.name || node.id, 16),
     "#" + new THREE.Color(colors.glow).getHexString(),
   );
-  label.position.set(p.x, sz.h + 4.5, p.z);
+  label.position.set(p.x, sz.h + 7.5, p.z);
   grp.add(label);
 
   cityGroup.add(grp);
@@ -639,13 +644,13 @@ function hasFlatSides(type) {
   ].includes(type);
 }
 
-// Draws an AWS service icon (or glyph fallback) onto a 256² canvas with a
-// soft circular halo behind it. Used for both side decals (PlaneGeometry)
-// and billboard sprites (Sprite).
+// Draws an AWS service icon (or glyph fallback) onto a 256² canvas. When a
+// real AWS icon is available we draw it directly on a fully-transparent
+// background — that way the decal looks like a sticker stuck to the side of
+// the building (square, sharp), not a round badge floating in front of it.
+// The glyph fallback gets a small dark plate so the letters are readable.
 function drawIconCanvas(type, color, withGlyphFallback = true) {
   const meta = (window.AWS_EXPLAIN && window.AWS_EXPLAIN[type]) || window.AWS_EXPLAIN.unknown;
-  const c = new THREE.Color(color);
-  const r = (c.r * 255) | 0, g = (c.g * 255) | 0, b = (c.b * 255) | 0;
   const SIZE = 256;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
@@ -653,20 +658,23 @@ function drawIconCanvas(type, color, withGlyphFallback = true) {
   function draw(iconImg) {
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, SIZE, SIZE);
-    // Soft halo so the icon reads against the building body
-    const grad = ctx.createRadialGradient(SIZE / 2, SIZE / 2, 0, SIZE / 2, SIZE / 2, SIZE / 2);
-    grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.55)`);
-    grad.addColorStop(0.55, `rgba(${r}, ${g}, ${b}, 0.18)`);
-    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, SIZE, SIZE);
 
     if (iconImg) {
-      const sz = SIZE * 0.78;
+      // Clean: just the AWS icon on transparent background.
+      const sz = SIZE * 0.92;
       ctx.drawImage(iconImg, (SIZE - sz) / 2, (SIZE - sz) / 2, sz, sz);
     } else if (withGlyphFallback) {
+      // Small rounded plate behind the glyph so it's readable.
+      const pad = 18;
+      ctx.fillStyle = "rgba(8, 14, 28, 0.78)";
+      roundRect(ctx, pad, pad, SIZE - pad * 2, SIZE - pad * 2, 26);
+      ctx.fill();
+      const c = new THREE.Color(color);
+      ctx.strokeStyle = `rgb(${(c.r * 255) | 0}, ${(c.g * 255) | 0}, ${(c.b * 255) | 0})`;
+      ctx.lineWidth = 4;
+      ctx.stroke();
       ctx.fillStyle = "#ffffff";
-      ctx.font = `900 ${SIZE * 0.34}px -apple-system, system-ui, Segoe UI, Roboto, sans-serif`;
+      ctx.font = `900 ${SIZE * 0.36}px -apple-system, system-ui, Segoe UI, Roboto, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(meta.glyph || (type || "?").toUpperCase().slice(0, 3), SIZE / 2, SIZE / 2 + 4);
