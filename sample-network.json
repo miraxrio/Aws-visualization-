@@ -1,0 +1,47 @@
+{
+  "name": "Three-Tier Web App",
+  "region": "us-east-1",
+  "vpcs": [
+    {
+      "id": "vpc-prod",
+      "name": "Production",
+      "cidr": "10.0.0.0/16",
+      "region": "us-east-1",
+      "subnets": [
+        { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+        { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+        { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" },
+        { "id": "pub-1b", "name": "Public 1b",  "cidr": "10.0.2.0/24",  "tier": "public",  "az": "us-east-1b" },
+        { "id": "prv-1b", "name": "App 1b",     "cidr": "10.0.12.0/24", "tier": "private", "az": "us-east-1b" },
+        { "id": "db-1b",  "name": "Data 1b",    "cidr": "10.0.22.0/24", "tier": "data",    "az": "us-east-1b" }
+      ],
+      "gateways": [
+        { "id": "igw-prod", "type": "igw", "name": "Internet GW" },
+        { "id": "nat-1a",   "type": "nat", "name": "NAT 1a", "subnet": "pub-1a" },
+        { "id": "nat-1b",   "type": "nat", "name": "NAT 1b", "subnet": "pub-1b" }
+      ],
+      "resources": [
+        { "id": "alb",   "type": "alb",    "name": "Web ALB",   "subnet": "pub-1a" },
+        { "id": "waf",   "type": "waf",    "name": "WAF",       "subnet": "pub-1b" },
+        { "id": "app-a", "type": "ecs",    "name": "API Tasks", "subnet": "prv-1a" },
+        { "id": "app-b", "type": "ecs",    "name": "API Tasks", "subnet": "prv-1b" },
+        { "id": "fn",    "type": "lambda", "name": "Webhook Fn","subnet": "prv-1b" },
+        { "id": "rds-w", "type": "aurora", "name": "Aurora W",  "subnet": "db-1a" },
+        { "id": "rds-r", "type": "aurora", "name": "Aurora R",  "subnet": "db-1b" }
+      ]
+    }
+  ],
+  "flows": [
+    { "from": "internet", "to": "alb",   "label": "HTTPS 443", "kind": "internet" },
+    { "from": "internet", "to": "waf",   "label": "inspect",   "kind": "internet" },
+    { "from": "alb",      "to": "app-a", "label": "HTTP" },
+    { "from": "alb",      "to": "app-b", "label": "HTTP" },
+    { "from": "app-a",    "to": "rds-w", "label": "5432 write" },
+    { "from": "app-b",    "to": "rds-r", "label": "5432 read"  },
+    { "from": "fn",       "to": "rds-r", "label": "5432 read"  },
+    { "from": "app-a",    "to": "nat-1a","label": "egress",    "kind": "egress" },
+    { "from": "app-b",    "to": "nat-1b","label": "egress",    "kind": "egress" },
+    { "from": "nat-1a",   "to": "igw-prod","label": "0.0.0.0/0","kind": "egress" },
+    { "from": "nat-1b",   "to": "igw-prod","label": "0.0.0.0/0","kind": "egress" }
+  ]
+}

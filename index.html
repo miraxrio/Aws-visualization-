@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AWS Network Visualizer</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://d3js.org/d3.v7.min.js" defer></script>
+  <script src="explanations.js" defer></script>
+  <script src="visualizer.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <h1>AWS Network Visualizer</h1>
+    </div>
+    <div class="controls">
+      <label class="btn" for="file-input">
+        <span>Import network</span>
+        <input id="file-input" type="file" accept="application/json,.json" hidden />
+      </label>
+      <button id="load-sample" class="btn ghost">Load sample</button>
+      <button id="toggle-flow" class="btn ghost">Pause traffic</button>
+      <button id="reset-zoom" class="btn ghost">Reset view</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stage" id="stage">
+      <svg id="diagram" role="img" aria-label="AWS network diagram"></svg>
+      <div class="legend">
+        <div><span class="dot internet"></span> Internet</div>
+        <div><span class="dot public"></span> Public subnet</div>
+        <div><span class="dot private"></span> Private subnet</div>
+        <div><span class="dot db"></span> Data subnet</div>
+        <div><span class="line"></span> Animated traffic flow</div>
+      </div>
+      <div class="hint" id="hint">
+        Drop a JSON topology onto the canvas, or click <strong>Import network</strong>. Hover any element to learn what it does.
+      </div>
+    </section>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="panel">
+        <div class="panel-eyebrow">Network</div>
+        <h2 id="net-name">No network loaded</h2>
+        <p id="net-meta" class="muted">Load a topology to begin.</p>
+      </div>
+
+      <div class="panel" id="detail-panel">
+        <div class="panel-eyebrow">Element details</div>
+        <h3 id="detail-title">Hover an element</h3>
+        <p id="detail-summary" class="muted">
+          Move the cursor over a VPC, subnet, gateway, or service to see how it works
+          and how traffic flows through it.
+        </p>
+        <dl id="detail-props"></dl>
+        <div id="detail-explainer" class="explainer"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-eyebrow">Schema</div>
+        <details>
+          <summary>JSON format</summary>
+          <pre id="schema-doc">{
+  "name": "My VPC",
+  "region": "us-east-1",
+  "vpcs": [{
+    "id": "vpc-1",
+    "name": "Production",
+    "cidr": "10.0.0.0/16",
+    "subnets": [
+      {"id": "pub-a", "name": "Public A", "cidr": "10.0.1.0/24", "tier": "public",  "az": "us-east-1a"},
+      {"id": "prv-a", "name": "App A",    "cidr": "10.0.2.0/24", "tier": "private", "az": "us-east-1a"},
+      {"id": "db-a",  "name": "Data A",   "cidr": "10.0.3.0/24", "tier": "data",    "az": "us-east-1a"}
+    ],
+    "gateways": [
+      {"id": "igw",  "type": "igw",  "name": "Internet GW"},
+      {"id": "natA", "type": "nat",  "name": "NAT GW A", "subnet": "pub-a"}
+    ],
+    "resources": [
+      {"id": "alb",  "type": "alb", "name": "App LB", "subnet": "pub-a"},
+      {"id": "ec2a", "type": "ec2", "name": "App",    "subnet": "prv-a"},
+      {"id": "rds",  "type": "rds", "name": "DB",     "subnet": "db-a"}
+    ]
+  }],
+  "flows": [
+    {"from": "internet", "to": "alb",  "label": "HTTPS"},
+    {"from": "alb",      "to": "ec2a", "label": "HTTP"},
+    {"from": "ec2a",     "to": "rds",  "label": "5432"},
+    {"from": "ec2a",     "to": "natA", "label": "egress"},
+    {"from": "natA",     "to": "igw",  "label": "egress"}
+  ]
+}</pre>
+        </details>
+      </div>
+    </aside>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+</body>
+</html>
