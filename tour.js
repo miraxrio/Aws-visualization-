@@ -520,12 +520,18 @@
     stopSpeaking();
     resetProgress();
 
+    const in3D = window.AwsMode && window.AwsMode.is3D() && window.AwsViz3D && window.AwsViz3D.isReady();
     if (step.id) {
+      // 2D side: keep the spotlight in sync even if hidden, in case user toggles mid-tour.
       AwsViz.highlight(step.id);
       AwsViz.focus(step.id, { duration: animate ? 700 : 400, pad: 120 });
+      if (in3D) {
+        window.AwsViz3D.focus(step.id, { duration: animate ? 1500 : 700 });
+      }
     } else {
       AwsViz.clearHighlight();
       AwsViz.resetZoom();
+      if (in3D) window.AwsViz3D.clearFocus();
     }
 
     const text = composeText(step);

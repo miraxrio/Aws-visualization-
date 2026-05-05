@@ -5,10 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AWS Network Visualizer</title>
   <link rel="stylesheet" href="styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
   <script src="https://d3js.org/d3.v7.min.js" defer></script>
   <script src="explanations.js" defer></script>
   <script src="visualizer.js" defer></script>
   <script src="app.js" defer></script>
+  <script type="module" src="viz3d.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -17,6 +26,10 @@
       <h1>AWS Network Visualizer</h1>
     </div>
     <div class="controls">
+      <div class="seg" role="group" aria-label="View mode">
+        <button id="mode-2d" class="seg-btn is-active" aria-pressed="true">2D</button>
+        <button id="mode-3d" class="seg-btn" aria-pressed="false">3D</button>
+      </div>
       <label class="btn" for="file-input">
         <span>Import network</span>
         <input id="file-input" type="file" accept="application/json,.json" hidden />
@@ -31,6 +44,7 @@
   <main class="layout">
     <section class="stage" id="stage">
       <svg id="diagram" role="img" aria-label="AWS network diagram"></svg>
+      <div class="stage-3d" id="stage-3d" hidden aria-label="AWS network city (3D)"></div>
       <div class="legend">
         <div><span class="dot internet"></span> Internet</div>
         <div><span class="dot public"></span> Public subnet</div>
@@ -40,6 +54,9 @@
       </div>
       <div class="hint" id="hint">
         Drop a JSON topology onto the canvas, or click <strong>Import network</strong>. Hover any element to learn what it does.
+      </div>
+      <div class="hint hint-3d" id="hint-3d" hidden>
+        <strong>Drag</strong> to orbit · <strong>scroll</strong> to zoom · <strong>right-drag</strong> to pan
       </div>
     </section>
 

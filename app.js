@@ -5,7 +5,12 @@
     loadSample: document.getElementById("load-sample"),
     toggleFlow: document.getElementById("toggle-flow"),
     resetZoom: document.getElementById("reset-zoom"),
+    mode2d: document.getElementById("mode-2d"),
+    mode3d: document.getElementById("mode-3d"),
     stage: document.getElementById("stage"),
+    stage3d: document.getElementById("stage-3d"),
+    diagram: document.getElementById("diagram"),
+    hint3d: document.getElementById("hint-3d"),
     netName: document.getElementById("net-name"),
     netMeta: document.getElementById("net-meta"),
     detailTitle: document.getElementById("detail-title"),
@@ -17,6 +22,13 @@
 
   let currentData = null;
   let paused = false;
+  let mode = "2d";
+
+  // Exposed so tour.js can route focus/highlight to the active mode.
+  window.AwsMode = {
+    is3D: () => mode === "3d",
+    current: () => mode,
+  };
 
   function loadData(data) {
     if (!data || !data.vpcs) {
@@ -25,9 +37,49 @@
     }
     currentData = data;
     AwsViz.render(data);
+    if (window.AwsViz3D && window.AwsViz3D.isReady()) {
+      window.AwsViz3D.render(data);
+    }
     updateSummary(data);
     fadeHint();
   }
+
+  // ---- Mode switching ----
+
+  function setMode(next) {
+    if (next === mode) return;
+    mode = next;
+    document.body.classList.toggle("mode-3d", mode === "3d");
+    els.mode2d.classList.toggle("is-active", mode === "2d");
+    els.mode3d.classList.toggle("is-active", mode === "3d");
+    els.mode2d.setAttribute("aria-pressed", mode === "2d" ? "true" : "false");
+    els.mode3d.setAttribute("aria-pressed", mode === "3d" ? "true" : "false");
+    els.diagram.style.display = mode === "2d" ? "" : "none";
+    els.stage3d.hidden = mode !== "3d";
+    els.hint3d.hidden = mode !== "3d";
+
+    if (mode === "3d") {
+      // Lazy-init the 3D scene. The module is loaded via <script type="module">
+      // and might not have attached AwsViz3D yet on a slow connection.
+      const tryInit = (attempts = 20) => {
+        if (window.AwsViz3D) {
+          if (!window.AwsViz3D.isReady()) window.AwsViz3D.init(els.stage3d);
+          if (currentData) window.AwsViz3D.render(currentData);
+        } else if (attempts > 0) {
+          setTimeout(() => tryInit(attempts - 1), 100);
+        } else {
+          alert(
+            "3D view couldn't load. Your browser may not support import maps (needs Chrome 89+, Safari 16.4+, or Firefox 108+) or you may be offline.",
+          );
+          setMode("2d");
+        }
+      };
+      tryInit();
+    }
+  }
+
+  els.mode2d.addEventListener("click", () => setMode("2d"));
+  els.mode3d.addEventListener("click", () => setMode("3d"));
 
   function updateSummary(data) {
     els.netName.textContent = data.name || "Unnamed network";
