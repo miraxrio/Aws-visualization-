@@ -193,6 +193,8 @@ function addVpc(vpc) {
   const p = pos3D(vpc);
   const { w, d } = dim3D(vpc);
 
+  const grp = new THREE.Group();
+
   const geo = new THREE.BoxGeometry(w, 0.8, d);
   const mat = new THREE.MeshStandardMaterial({
     color: 0x1a1308,
@@ -203,21 +205,21 @@ function addVpc(vpc) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(p.x, 0.4, p.z);
   mesh.receiveShadow = true;
-  cityGroup.add(mesh);
+  grp.add(mesh);
 
-  // Glowing border
   const edges = new THREE.EdgesGeometry(geo);
   const line = new THREE.LineSegments(
     edges,
     new THREE.LineBasicMaterial({ color: 0xff9900, transparent: true, opacity: 0.55 }),
   );
   line.position.copy(mesh.position);
-  cityGroup.add(line);
+  grp.add(line);
 
-  // Label
   const label = makeLabel(`VPC · ${vpc.name || vpc.id}${vpc.cidr ? "  " + vpc.cidr : ""}`, "#ff9900");
   label.position.set(p.x, 14, p.z - d / 2 - 3);
-  cityGroup.add(label);
+  grp.add(label);
+
+  cityGroup.add(grp);
 
   registry.set(vpc.id, {
     type: "vpc",
@@ -225,6 +227,7 @@ function addVpc(vpc) {
     height: 0.4,
     extent: Math.max(w, d) / 2,
     mesh,
+    group: grp,
   });
 }
 
@@ -238,6 +241,8 @@ function addSubnet(s) {
     data:    { base: 0x1d0e34, glow: 0xc084fc },
   }[tier] || { base: 0x09183a, glow: 0x60a5fa };
 
+  const grp = new THREE.Group();
+
   const geo = new THREE.BoxGeometry(w, 1.4, d);
   const mat = new THREE.MeshStandardMaterial({
     color: palette.base,
@@ -250,7 +255,7 @@ function addSubnet(s) {
   mesh.position.set(p.x, 1.1, p.z);
   mesh.receiveShadow = true;
   mesh.castShadow = true;
-  cityGroup.add(mesh);
+  grp.add(mesh);
 
   const edges = new THREE.EdgesGeometry(geo);
   const line = new THREE.LineSegments(
@@ -258,12 +263,13 @@ function addSubnet(s) {
     new THREE.LineBasicMaterial({ color: palette.glow, transparent: true, opacity: 0.7 }),
   );
   line.position.copy(mesh.position);
-  cityGroup.add(line);
+  grp.add(line);
 
-  // Floor label hovering above
   const label = makeLabel(`${tier.toUpperCase()} · ${s.name || s.id}`, "#" + new THREE.Color(palette.glow).getHexString());
   label.position.set(p.x, 4, p.z - d / 2 - 1);
-  cityGroup.add(label);
+  grp.add(label);
+
+  cityGroup.add(grp);
 
   registry.set(s.id, {
     type: "subnet",
@@ -272,6 +278,7 @@ function addSubnet(s) {
     height: 0.8,
     extent: Math.max(w, d) / 2,
     mesh,
+    group: grp,
   });
 }
 
@@ -311,15 +318,20 @@ function addBuilding(node) {
   blink.userData.phase = Math.random() * Math.PI * 2;
   grp.add(blink);
 
-  // Floating AWS-style icon badge above the building
+  // Rooftop sign — actual textured plane on the building, not a sprite
+  const roof = makeRoofTile(node.type, colors.glow, Math.max(4, sz.w * 0.92));
+  roof.position.set(p.x, 1.95 + sz.h + 0.05, p.z);
+  grp.add(roof);
+
+  // Floating AWS-style icon badge above the building (always faces camera)
   const badge = makeNodeBadge(node.type, colors.glow);
-  badge.position.set(p.x, sz.h + 8, p.z);
-  badge.scale.multiplyScalar(0.95);
+  badge.position.set(p.x, sz.h + 9, p.z);
+  badge.scale.set(11, 11, 1);
   grp.add(badge);
 
   // Name label below the badge
   const label = makeLabel(truncate(node.name || node.id, 16), "#" + new THREE.Color(colors.glow).getHexString());
-  label.position.set(p.x, sz.h + 4.4, p.z);
+  label.position.set(p.x, sz.h + 5, p.z);
   grp.add(label);
 
   cityGroup.add(grp);
@@ -552,17 +564,24 @@ function loadIconImage(type) {
     ICON_CACHE.set(type, p);
     return p;
   }
-  // Fetch the SVG as text and re-serialize as a data URL with explicit
-  // width/height. Loading SVG directly via <img src="https://..."> works
-  // in some browsers but trips canvas-tainting checks in others; data URLs
-  // sidestep the issue and let drawImage scale predictably.
-  const url = `https://cdn.simpleicons.org/${slug}/ffffff`;
+  // Pull the raw simple-icons SVG file from jsdelivr (the cdn.simpleicons.org
+  // proxy returns SVGs that often render with currentColor and silently come
+  // out black inside a canvas). Then force a white fill and explicit
+  // dimensions so drawImage scales reliably.
+  const url = `https://cdn.jsdelivr.net/npm/simple-icons@13/icons/${slug}.svg`;
   const p = fetch(url)
     .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
     .then((svg) => {
-      if (!/\swidth\s*=/.test(svg)) {
-        svg = svg.replace(/<svg\b([^>]*)>/, '<svg$1 width="256" height="256">');
-      }
+      // Strip any explicit fills so our injected one wins.
+      svg = svg.replace(/\sfill="[^"]*"/g, "");
+      svg = svg.replace(/currentColor/g, "#ffffff");
+      svg = svg.replace(/<svg\b([^>]*?)>/, (m, attrs) => {
+        let a = attrs;
+        if (!/\swidth\s*=/.test(a)) a += ' width="256"';
+        if (!/\sheight\s*=/.test(a)) a += ' height="256"';
+        a += ' fill="#ffffff"';
+        return `<svg${a}>`;
+      });
       const dataUrl =
         "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
       return new Promise((resolve) => {
@@ -635,11 +654,81 @@ function makeNodeBadge(type, color) {
   });
 
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }),
+    new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthTest: true, depthWrite: false,
+    }),
   );
   sprite.scale.set(8, 8, 1);
   sprite.renderOrder = 6;
+  sprite.userData.isLabel = true;
   return sprite;
+}
+
+// A flat, textured plane that sits on top of a building like a sign on the
+// roof — visible from above-3/4 angles. Shows the AWS service icon (or a
+// glyph fallback) on a dark tile bordered with the type's color.
+function makeRoofTile(type, color, size) {
+  const meta = (window.AWS_EXPLAIN && window.AWS_EXPLAIN[type]) || window.AWS_EXPLAIN.unknown;
+  const c = new THREE.Color(color);
+  const r = Math.round(c.r * 255), g = Math.round(c.g * 255), b = Math.round(c.b * 255);
+  const SIZE = 256;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = SIZE;
+
+  function draw(iconImg) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, SIZE, SIZE);
+
+    // Tile background with a soft gradient so it looks lit
+    const grad = ctx.createLinearGradient(0, 0, 0, SIZE);
+    grad.addColorStop(0, "rgba(20, 30, 56, 0.95)");
+    grad.addColorStop(1, "rgba(8, 14, 28, 0.95)");
+    ctx.fillStyle = grad;
+    roundRect(ctx, 4, 4, SIZE - 8, SIZE - 8, 22);
+    ctx.fill();
+
+    // Outer colored border
+    ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+    ctx.lineWidth = 6;
+    roundRect(ctx, 5, 5, SIZE - 10, SIZE - 10, 22);
+    ctx.stroke();
+
+    if (iconImg) {
+      const sz = SIZE * 0.62;
+      ctx.drawImage(iconImg, (SIZE - sz) / 2, (SIZE - sz) / 2, sz, sz);
+    } else {
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.font = `900 ${SIZE * 0.32}px -apple-system, system-ui, Segoe UI, Roboto, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(meta.glyph || (type || "?").toUpperCase().slice(0, 3), SIZE / 2, SIZE / 2 + 4);
+    }
+  }
+
+  draw(null);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 8;
+
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size),
+    new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+    }),
+  );
+  plane.rotation.x = -Math.PI / 2;     // lie flat
+  plane.renderOrder = 2;
+  plane.userData.isLabel = true;       // hide together with text labels when occluding
+
+  // Live-update the texture once the icon SVG resolves
+  loadIconImage(type).then((img) => {
+    if (!img) return;
+    draw(img);
+    tex.needsUpdate = true;
+  });
+
+  return plane;
 }
 
 function makeLabel(text, color) {
@@ -669,12 +758,18 @@ function makeLabel(text, color) {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.anisotropy = 8;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  // Depth-test ON so labels are properly occluded by buildings between
+  // them and the camera. depthWrite is OFF so transparent edges don't
+  // punch holes in things behind them.
+  const mat = new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: true, depthWrite: false,
+  });
   const sprite = new THREE.Sprite(mat);
   const aspect = tw / th;
   const scale = 5;
   sprite.scale.set(aspect * scale, scale, 1);
   sprite.renderOrder = 5;
+  sprite.userData.isLabel = true;
   return sprite;
 }
 
@@ -919,7 +1014,14 @@ function updateOcclusion(targetEntry) {
 function setEntryOpacity(entry, opacity) {
   if (entry._lastOpacity === opacity) return;
   entry._lastOpacity = opacity;
+  // When an entry is strongly occluded, hide its label/badge/roof entirely
+  // — half-transparent text floating in front of the focused element is
+  // worse than nothing.
+  const hideAux = opacity < 0.65;
   entry.group.traverse((c) => {
+    if (c.userData && c.userData.isLabel) {
+      c.visible = !hideAux;
+    }
     if (!c.material) return;
     const ms = Array.isArray(c.material) ? c.material : [c.material];
     ms.forEach((m) => {
