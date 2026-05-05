@@ -12,6 +12,14 @@
     next: document.getElementById("tour-next"),
     prev: document.getElementById("tour-prev"),
     close: document.getElementById("tour-close"),
+    speak: document.getElementById("tour-speak"),
+    speakOn: document.getElementById("tour-speak-on"),
+    speakOff: document.getElementById("tour-speak-off"),
+    voice: document.getElementById("tour-voice"),
+    voicePopover: document.getElementById("voice-popover"),
+    voiceSelect: document.getElementById("voice-select"),
+    voiceRate: document.getElementById("voice-rate"),
+    voiceRateVal: document.getElementById("voice-rate-val"),
     progress: document.getElementById("tour-progress"),
     stage: document.getElementById("tour-stage"),
     stepCount: document.getElementById("tour-step-count"),
@@ -27,6 +35,126 @@
   let index = 0;
   let playing = false;
   let timer = null;
+
+  // --- Speech synthesis ------------------------------------------------
+
+  const synth = window.speechSynthesis;
+  const speechSupported = !!synth;
+  let voices = [];
+  let selectedVoiceURI = localStorage.getItem("aws-viz.voice") || "";
+  let speechRate = parseFloat(localStorage.getItem("aws-viz.rate") || "1") || 1;
+  let speakEnabled = localStorage.getItem("aws-viz.speak") !== "0" && speechSupported;
+  let currentUtter = null;
+
+  function reflectSpeakState() {
+    if (!speechSupported) {
+      els.speak.disabled = true;
+      els.voice.disabled = true;
+      els.speak.title = "Speech not supported in this browser";
+      return;
+    }
+    els.speak.setAttribute("aria-pressed", speakEnabled ? "true" : "false");
+    els.speakOn.style.display = speakEnabled ? "" : "none";
+    els.speakOff.style.display = speakEnabled ? "none" : "";
+  }
+
+  function loadVoices() {
+    if (!speechSupported) return;
+    voices = synth.getVoices() || [];
+
+    // Prefer English neural-ish / "Google" / "Microsoft" voices.
+    const score = (v) => {
+      let s = 0;
+      if (/^en[-_]/.test(v.lang)) s += 5;
+      if (/google|natural|neural|enhanced|premium/i.test(v.name)) s += 3;
+      if (/female|samantha|victoria|aria|jenny|emma/i.test(v.name)) s += 1;
+      if (v.localService) s += 1;
+      return s;
+    };
+    voices = voices.slice().sort((a, b) => score(b) - score(a));
+
+    // Populate the picker
+    els.voiceSelect.innerHTML = "";
+    voices.forEach((v) => {
+      const opt = document.createElement("option");
+      opt.value = v.voiceURI;
+      opt.textContent = `${v.name} (${v.lang})${v.default ? " · default" : ""}`;
+      els.voiceSelect.appendChild(opt);
+    });
+
+    if (selectedVoiceURI && voices.some((v) => v.voiceURI === selectedVoiceURI)) {
+      els.voiceSelect.value = selectedVoiceURI;
+    } else if (voices[0]) {
+      selectedVoiceURI = voices[0].voiceURI;
+      els.voiceSelect.value = selectedVoiceURI;
+    }
+  }
+
+  if (speechSupported) {
+    loadVoices();
+    synth.addEventListener("voiceschanged", loadVoices);
+    els.voiceRate.value = String(speechRate);
+    els.voiceRateVal.textContent = `${speechRate.toFixed(2)}×`;
+  }
+  reflectSpeakState();
+
+  function pickVoice() {
+    if (!voices.length) return null;
+    return voices.find((v) => v.voiceURI === selectedVoiceURI) || voices[0];
+  }
+
+  // Estimate how long an utterance will take; used as a fallback timer in
+  // case `onend` never fires (some browsers misbehave).
+  function estimateMs(text, rate) {
+    const wordsPerMin = 165 * rate;
+    const words = (text || "").split(/\s+/).filter(Boolean).length;
+    return Math.max(2500, Math.round((words / wordsPerMin) * 60000) + 800);
+  }
+
+  function stopSpeaking() {
+    if (!speechSupported) return;
+    if (currentUtter) {
+      currentUtter.onend = null;
+      currentUtter.onerror = null;
+      currentUtter = null;
+    }
+    try { synth.cancel(); } catch (_) {}
+    els.speak.classList.remove("speaking");
+  }
+
+  function speak(text, onEnd) {
+    if (!speechSupported || !speakEnabled || !text) {
+      if (onEnd) onEnd("disabled");
+      return 0;
+    }
+    stopSpeaking();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = pickVoice();
+    if (v) u.voice = v;
+    u.lang = (v && v.lang) || "en-US";
+    u.rate = speechRate;
+    u.pitch = 1;
+    u.volume = 1;
+    u.onend = () => {
+      if (currentUtter !== u) return;
+      currentUtter = null;
+      els.speak.classList.remove("speaking");
+      if (onEnd) onEnd("end");
+    };
+    u.onerror = () => {
+      if (currentUtter !== u) return;
+      currentUtter = null;
+      els.speak.classList.remove("speaking");
+      if (onEnd) onEnd("error");
+    };
+    currentUtter = u;
+    els.speak.classList.add("speaking");
+    // Some browsers (Chrome) hang if speak is called too quickly; defer slightly.
+    setTimeout(() => {
+      try { synth.speak(u); } catch (e) { if (onEnd) onEnd("error"); }
+    }, 30);
+    return estimateMs(text, speechRate);
+  }
 
   // --- Step generation -------------------------------------------------
 
@@ -183,6 +311,15 @@
     if (!steps.length) return;
     index = 0;
     els.bar.classList.add("open");
+    // iOS Safari: speech synthesis needs to be unlocked from a user gesture.
+    // The Start-tour click counts; speak a silent blip so subsequent calls work.
+    if (speechSupported && speakEnabled) {
+      try {
+        const blip = new SpeechSynthesisUtterance(" ");
+        blip.volume = 0;
+        synth.speak(blip);
+      } catch (_) {}
+    }
     play();
   }
 
@@ -198,7 +335,6 @@
     playing = true;
     setPlayIcon();
     show(index, true);
-    scheduleAdvance();
   }
 
   function pause() {
@@ -206,15 +342,8 @@
     setPlayIcon();
     if (timer) clearTimeout(timer);
     timer = null;
-    // Freeze the progress bar at its current position
-    const span = els.progress.querySelector("span");
-    if (span) {
-      const rect = span.getBoundingClientRect();
-      const parent = els.progress.getBoundingClientRect();
-      els.progress.classList.remove("advance");
-      span.style.transitionDuration = "0s";
-      span.style.right = `${100 - (rect.width / parent.width) * 100}%`;
-    }
+    stopSpeaking();
+    freezeProgress();
   }
 
   function toggle() {
@@ -227,28 +356,45 @@
       return;
     }
     index++;
-    show(index, playing);
-    if (playing) scheduleAdvance();
+    show(index, true);
   }
 
   function prev() {
     if (index <= 0) return;
     index--;
-    show(index, playing);
-    if (playing) scheduleAdvance();
+    show(index, true);
   }
 
-  function scheduleAdvance() {
-    if (timer) clearTimeout(timer);
+  function advanceFromTimer() {
+    timer = null;
     if (!playing) return;
-    timer = setTimeout(() => {
-      if (index >= steps.length - 1) {
-        pause();
-      } else {
-        next();
-      }
-    }, STEP_MS);
-    animateProgress(STEP_MS);
+    if (index >= steps.length - 1) pause();
+    else next();
+  }
+
+  function composeText(step) {
+    if (!step) return "";
+    return [step.title, step.narration, step.extra].filter(Boolean).join(". ");
+  }
+
+  function freezeProgress() {
+    const span = els.progress.querySelector("span");
+    if (!span) return;
+    const rect = span.getBoundingClientRect();
+    const parent = els.progress.getBoundingClientRect();
+    els.progress.classList.remove("advance");
+    span.style.transitionDuration = "0s";
+    span.style.right = parent.width > 0
+      ? `${100 - (rect.width / parent.width) * 100}%`
+      : "100%";
+  }
+
+  function resetProgress() {
+    const span = els.progress.querySelector("span");
+    if (!span) return;
+    els.progress.classList.remove("advance");
+    span.style.transitionDuration = "0s";
+    span.style.right = "100%";
   }
 
   function animateProgress(ms) {
@@ -276,6 +422,10 @@
     els.prev.toggleAttribute("disabled", i === 0);
     els.next.toggleAttribute("disabled", i === steps.length - 1);
 
+    if (timer) { clearTimeout(timer); timer = null; }
+    stopSpeaking();
+    resetProgress();
+
     if (step.id) {
       AwsViz.highlight(step.id);
       AwsViz.focus(step.id, { duration: animate ? 700 : 400, pad: 120 });
@@ -284,13 +434,30 @@
       AwsViz.resetZoom();
     }
 
-    if (!animate) {
-      const span = els.progress.querySelector("span");
-      if (span) {
-        els.progress.classList.remove("advance");
-        span.style.transitionDuration = "0s";
-        span.style.right = "100%";
-      }
+    const text = composeText(step);
+    let estMs = STEP_MS;
+    let usingSpeech = false;
+
+    if (speakEnabled && speechSupported && text) {
+      usingSpeech = true;
+      estMs = speak(text, () => {
+        // Speech ended (or errored): if we're still playing on this step, advance.
+        if (!playing || index !== i) return;
+        if (timer) { clearTimeout(timer); timer = null; }
+        // Brief pause between steps so the spoken sentences don't run together.
+        setTimeout(() => {
+          if (playing && index === i) advanceFromTimer();
+        }, 450);
+      });
+    }
+
+    if (playing) {
+      // Schedule a fallback advance in case onend never fires (e.g. browser
+      // dropped the utterance). Use a generous buffer past the speech estimate.
+      const fallbackMs = usingSpeech ? estMs + 2500 : STEP_MS;
+      timer = setTimeout(advanceFromTimer, fallbackMs);
+      // The progress bar visually tracks the *speech* (or the fixed step time).
+      animateProgress(usingSpeech ? estMs : STEP_MS);
     }
   }
 
@@ -306,6 +473,48 @@
   els.prev.addEventListener("click", prev);
   els.close.addEventListener("click", close);
 
+  // Speech toggle
+  els.speak.addEventListener("click", () => {
+    if (!speechSupported) return;
+    speakEnabled = !speakEnabled;
+    localStorage.setItem("aws-viz.speak", speakEnabled ? "1" : "0");
+    reflectSpeakState();
+    // If turning off mid-step, stop talking immediately. If turning on while
+    // a step is showing, re-speak the current step.
+    if (!speakEnabled) {
+      stopSpeaking();
+    } else if (els.bar.classList.contains("open")) {
+      show(index, false);
+    }
+  });
+
+  // Voice picker popover toggle
+  els.voice.addEventListener("click", (e) => {
+    e.stopPropagation();
+    els.voicePopover.hidden = !els.voicePopover.hidden;
+  });
+  document.addEventListener("click", (e) => {
+    if (els.voicePopover.hidden) return;
+    if (els.voicePopover.contains(e.target) || els.voice.contains(e.target)) return;
+    els.voicePopover.hidden = true;
+  });
+
+  els.voiceSelect.addEventListener("change", () => {
+    selectedVoiceURI = els.voiceSelect.value;
+    localStorage.setItem("aws-viz.voice", selectedVoiceURI);
+    // Re-speak current step with the new voice for instant feedback
+    if (speakEnabled && els.bar.classList.contains("open")) show(index, false);
+  });
+
+  els.voiceRate.addEventListener("input", () => {
+    speechRate = parseFloat(els.voiceRate.value) || 1;
+    els.voiceRateVal.textContent = `${speechRate.toFixed(2)}×`;
+    localStorage.setItem("aws-viz.rate", String(speechRate));
+  });
+  els.voiceRate.addEventListener("change", () => {
+    if (speakEnabled && els.bar.classList.contains("open")) show(index, false);
+  });
+
   document.addEventListener("keydown", (e) => {
     if (!els.bar.classList.contains("open")) return;
     // Don't hijack typing in form fields
@@ -315,6 +524,13 @@
     else if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
     else if (e.key === " ") { e.preventDefault(); toggle(); }
     else if (e.key === "Escape") { e.preventDefault(); close(); }
+    else if (e.key === "m" || e.key === "M") { e.preventDefault(); els.speak.click(); }
+  });
+
+  // Cancel speech if the user navigates away or hides the tab for a while.
+  window.addEventListener("beforeunload", stopSpeaking);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && currentUtter) stopSpeaking();
   });
 
   // Expose for debugging
