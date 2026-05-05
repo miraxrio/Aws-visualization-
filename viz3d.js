@@ -13,6 +13,7 @@ let registry = new Map(); // id -> { type, position, height, extent, mesh, group
 let cameraTween = null;
 let raf = null;
 let lastT = 0;
+let focusEffect = null; // { group, targetMesh, baseEmissive }
 
 const SCALE_TARGET = 220; // city max dimension in 3D units
 let SCALE = 0.15;
@@ -112,6 +113,7 @@ function resize(container) {
 
 function clearCity() {
   if (!cityGroup) return;
+  focusEffect = null; // its meshes live inside cityGroup; we'll dispose below
   while (cityGroup.children.length) {
     const o = cityGroup.children[0];
     cityGroup.remove(o);
@@ -191,15 +193,15 @@ function addVpc(vpc) {
   const p = pos3D(vpc);
   const { w, d } = dim3D(vpc);
 
-  const geo = new THREE.BoxGeometry(w, 0.4, d);
+  const geo = new THREE.BoxGeometry(w, 0.8, d);
   const mat = new THREE.MeshStandardMaterial({
     color: 0x1a1308,
     emissive: 0xff9900,
-    emissiveIntensity: 0.06,
+    emissiveIntensity: 0.08,
     roughness: 0.9,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(p.x, 0.2, p.z);
+  mesh.position.set(p.x, 0.4, p.z);
   mesh.receiveShadow = true;
   cityGroup.add(mesh);
 
@@ -236,16 +238,16 @@ function addSubnet(s) {
     data:    { base: 0x1d0e34, glow: 0xc084fc },
   }[tier] || { base: 0x09183a, glow: 0x60a5fa };
 
-  const geo = new THREE.BoxGeometry(w, 0.8, d);
+  const geo = new THREE.BoxGeometry(w, 1.4, d);
   const mat = new THREE.MeshStandardMaterial({
     color: palette.base,
     emissive: palette.glow,
-    emissiveIntensity: 0.18,
+    emissiveIntensity: 0.22,
     roughness: 0.7,
     metalness: 0.2,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(p.x, 0.6, p.z);
+  mesh.position.set(p.x, 1.1, p.z);
   mesh.receiveShadow = true;
   mesh.castShadow = true;
   cityGroup.add(mesh);
@@ -296,49 +298,54 @@ function addBuilding(node) {
   grp.add(mesh);
 
   // Ground halo glow
-  const halo = makeGlowSprite(colors.glow, sz.w * 2.4);
-  halo.position.set(p.x, 1.1, p.z);
+  const halo = makeGlowSprite(colors.glow, sz.w * 3.0);
+  halo.position.set(p.x, 2, p.z);
   grp.add(halo);
 
   // Top blinking light
-  const blinkGeo = new THREE.SphereGeometry(0.3, 8, 6);
+  const blinkGeo = new THREE.SphereGeometry(0.4, 8, 6);
   const blinkMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const blink = new THREE.Mesh(blinkGeo, blinkMat);
-  blink.position.set(p.x, sz.h + 1.6, p.z);
+  blink.position.set(p.x, sz.h + 2.6, p.z);
   blink.userData.blink = true;
   blink.userData.phase = Math.random() * Math.PI * 2;
   grp.add(blink);
 
-  // Label
-  const meta = (window.AWS_EXPLAIN && window.AWS_EXPLAIN[node.type]) || window.AWS_EXPLAIN.unknown;
-  const labelText = `${(meta.glyph || node.type).toString().toUpperCase()} · ${truncate(node.name || node.id, 14)}`;
-  const label = makeLabel(labelText, "#" + new THREE.Color(colors.glow).getHexString());
-  label.position.set(p.x, sz.h + 3.2, p.z);
+  // Floating AWS-style icon badge above the building
+  const badge = makeNodeBadge(node.type, colors.glow);
+  badge.position.set(p.x, sz.h + 8, p.z);
+  badge.scale.multiplyScalar(0.95);
+  grp.add(badge);
+
+  // Name label below the badge
+  const label = makeLabel(truncate(node.name || node.id, 16), "#" + new THREE.Color(colors.glow).getHexString());
+  label.position.set(p.x, sz.h + 4.4, p.z);
   grp.add(label);
 
   cityGroup.add(grp);
 
   registry.set(node.id, {
     type: node.type,
-    position: new THREE.Vector3(p.x, sz.h / 2 + 1, p.z),
+    position: new THREE.Vector3(p.x, sz.h / 2 + 1.9, p.z),
     height: sz.h,
     extent: Math.max(sz.w, sz.d) / 2 + 2,
     mesh,
     group: grp,
     baseY: mesh.position.y,
+    baseEmissive: 0.32,
   });
 }
 
 function pickSize(type, w, d) {
-  const fw = Math.max(3, Math.min(w, d) * 0.55);
+  const fw = Math.max(5, Math.min(w, d) * 0.85);
   const heights = {
-    ec2: 9, asg: 7, ecs: 8, eks: 11, lambda: 6,
-    alb: 5, nlb: 5, waf: 8, igw: 6, nat: 4,
-    rds: 8, aurora: 10, dynamodb: 7,
-    s3: 6, cloudfront: 14, route53: 11, apigw: 7,
-    sg: 5, nacl: 5, vpn: 6, dx: 6, tgw: 9, endpoint: 6,
+    ec2: 14, asg: 11, ecs: 13, eks: 17, lambda: 10,
+    alb: 8, nlb: 8, waf: 12, igw: 9, nat: 7,
+    rds: 13, aurora: 16, dynamodb: 11,
+    s3: 10, cloudfront: 22, route53: 17, apigw: 11,
+    sg: 8, nacl: 8, vpn: 10, dx: 10, tgw: 14, endpoint: 10,
   };
-  const h = heights[type] || 7;
+  const h = heights[type] || 11;
   return { w: fw, d: fw, h };
 }
 
@@ -375,25 +382,22 @@ function pickGeometry(type, sz) {
 }
 
 function positionForGeometry(mesh, type, sz, p) {
-  // Some geometries (Torus, hemisphere, octa) have their origin in different
-  // places — adjust so they sit on the platform.
+  // Subnets sit at y=1.8 (top); buildings rest just above that.
+  const BASE = 1.9;
   switch (type) {
     case "igw":
-      mesh.position.set(p.x, 1, p.z);
+      mesh.position.set(p.x, BASE + 1, p.z);
       mesh.rotation.x = Math.PI; // open downward (arch)
       break;
     case "nat":
-      mesh.position.set(p.x, 1.1, p.z);
+      mesh.position.set(p.x, BASE, p.z);
       break;
     case "lambda":
-      mesh.position.set(p.x, sz.h * 0.45, p.z);
+      mesh.position.set(p.x, sz.h * 0.5 + BASE, p.z);
       mesh.rotation.y = Math.PI / 4;
       break;
-    case "cloudfront": case "route53":
-      mesh.position.set(p.x, sz.h / 2 + 1, p.z);
-      break;
     default:
-      mesh.position.set(p.x, sz.h / 2 + 1, p.z);
+      mesh.position.set(p.x, sz.h / 2 + BASE, p.z);
   }
 }
 
@@ -462,24 +466,33 @@ function addFlow(flow) {
   const colorMap = { internet: 0xff5f86, egress: 0xf5c451, internal: 0x60a5fa };
   const color = colorMap[kind] || 0x60a5fa;
 
-  // Faint tube as the "road"
+  // The "road" — a thick illuminated tube
   const tube = new THREE.Mesh(
-    new THREE.TubeGeometry(curve, 50, 0.14, 8, false),
+    new THREE.TubeGeometry(curve, 64, 0.55, 10, false),
     new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.18, depthWrite: false,
+      color, transparent: true, opacity: 0.32, depthWrite: false,
+      blending: THREE.AdditiveBlending,
     }),
   );
   cityGroup.add(tube);
 
-  // Several glowing particles flowing along the curve
-  const N = 4 + Math.min(4, Math.floor(dist / 30));
-  const sphereGeo = new THREE.SphereGeometry(0.45, 12, 8);
+  // Glowing data packets streaming along the curve
+  const N = 6 + Math.min(6, Math.floor(dist / 22));
+  const sphereGeo = new THREE.SphereGeometry(1.15, 14, 10);
   const sphereMat = new THREE.MeshBasicMaterial({ color });
+  // A second outer "halo" for the packet
+  const haloGeo = new THREE.SphereGeometry(1.9, 12, 8);
+  const haloMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.35,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
   const offsets = [];
   for (let i = 0; i < N; i++) {
     const m = new THREE.Mesh(sphereGeo, sphereMat);
+    const halo = new THREE.Mesh(haloGeo, haloMat);
     cityGroup.add(m);
-    offsets.push({ mesh: m, t: i / N, speed: 0.12 + Math.random() * 0.05 });
+    cityGroup.add(halo);
+    offsets.push({ mesh: m, halo, t: i / N, speed: 0.12 + Math.random() * 0.05 });
   }
   particleSystems.push({ curve, offsets, color, kind, fromId: flow.from, toId: flow.to });
 }
@@ -508,6 +521,108 @@ function makeStars(count) {
     size: 1.4, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.9,
   });
   return new THREE.Points(geo, mat);
+}
+
+// ---------- AWS icon badges ----------
+
+// Loads an AWS service icon from Simple Icons (white SVG, drawn into a canvas).
+// Falls back to null if the type has no slug or the request fails — the badge
+// then shows the explanations.js glyph instead.
+const ICON_SLUGS = {
+  ec2: "amazonec2",
+  asg: "amazonec2",
+  s3: "amazons3",
+  rds: "amazonrds",
+  aurora: "amazonrds",
+  dynamodb: "amazondynamodb",
+  lambda: "awslambda",
+  cloudfront: "amazoncloudfront",
+  route53: "amazonroute53",
+  apigw: "amazonapigateway",
+  ecs: "amazonecs",
+  eks: "amazoneks",
+};
+const ICON_CACHE = new Map(); // type -> Promise<HTMLImageElement | null>
+
+function loadIconImage(type) {
+  if (ICON_CACHE.has(type)) return ICON_CACHE.get(type);
+  const slug = ICON_SLUGS[type];
+  if (!slug) {
+    const p = Promise.resolve(null);
+    ICON_CACHE.set(type, p);
+    return p;
+  }
+  const p = new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = `https://cdn.simpleicons.org/${slug}/ffffff`;
+  });
+  ICON_CACHE.set(type, p);
+  return p;
+}
+
+// A circular sprite with a colored halo + AWS icon (or glyph fallback).
+// Updates asynchronously when the icon image finishes loading.
+function makeNodeBadge(type, color) {
+  const meta = (window.AWS_EXPLAIN && window.AWS_EXPLAIN[type]) || window.AWS_EXPLAIN.unknown;
+  const c = new THREE.Color(color);
+  const r = Math.round(c.r * 255), g = Math.round(c.g * 255), b = Math.round(c.b * 255);
+  const SIZE = 256;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = SIZE;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 8;
+
+  function draw(iconImg) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, SIZE, SIZE);
+
+    // Outer glow
+    const glow = ctx.createRadialGradient(SIZE / 2, SIZE / 2, 0, SIZE / 2, SIZE / 2, SIZE / 2);
+    glow.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.85)`);
+    glow.addColorStop(0.55, `rgba(${r}, ${g}, ${b}, 0.45)`);
+    glow.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Inner disc with thin colored ring
+    const cx = SIZE / 2, cy = SIZE / 2, rad = SIZE * 0.34;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(8, 14, 28, 0.92)";
+    ctx.fill();
+    ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
+    if (iconImg) {
+      const sz = SIZE * 0.42;
+      ctx.drawImage(iconImg, cx - sz / 2, cy - sz / 2, sz, sz);
+    } else {
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.font = `900 ${SIZE * 0.18}px -apple-system, system-ui, Segoe UI, Roboto, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(meta.glyph || (type || "?").toUpperCase().slice(0, 3), cx, cy + 2);
+    }
+  }
+
+  draw(null); // immediate render with glyph fallback
+  loadIconImage(type).then((img) => {
+    if (!img) return;
+    draw(img);
+    tex.needsUpdate = true;
+  });
+
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }),
+  );
+  sprite.scale.set(8, 8, 1);
+  sprite.renderOrder = 6;
+  return sprite;
 }
 
 function makeLabel(text, color) {
@@ -590,6 +705,7 @@ function focus(id, opts = {}) {
     if (opts.onComplete) opts.onComplete();
     return;
   }
+  setFocusEffect(id);
   const target = r.position.clone();
   const isContainer = r.type === "vpc" || r.type === "subnet";
 
@@ -640,10 +756,102 @@ function clamp(v, lo, hi) {
 
 function clearFocus() {
   if (!initialized) return;
+  setFocusEffect(null);
   const dist = Math.max(CITY.w, CITY.d) + 80;
   const camPos = new THREE.Vector3(dist * 0.35, dist * 0.55, dist * 0.85);
   const target = new THREE.Vector3(0, 4, 0);
-  tweenCamera(camPos, target, 800);
+  tweenCamera(camPos, target, 1100);
+}
+
+// ---------- tour spotlight effect ----------
+
+function setFocusEffect(id) {
+  // Tear down previous effect and restore the building's original emissive
+  if (focusEffect) {
+    if (focusEffect.targetMesh && focusEffect.targetMesh.material) {
+      focusEffect.targetMesh.material.emissiveIntensity = focusEffect.baseEmissive;
+    }
+    cityGroup.remove(focusEffect.group);
+    focusEffect.group.traverse((c) => {
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) {
+        const ms = Array.isArray(c.material) ? c.material : [c.material];
+        ms.forEach((m) => m.dispose());
+      }
+    });
+    focusEffect = null;
+  }
+  if (!id) return;
+  const r = registry.get(id);
+  if (!r) return;
+
+  const grp = new THREE.Group();
+  const center = r.position.clone();
+
+  // Vertical light beam — a thin downward cone of additive light
+  const beamH = Math.min(120, r.height * 4 + 50);
+  const beamR = Math.max(4, r.extent * 0.55 + 2);
+  const beam = new THREE.Mesh(
+    new THREE.ConeGeometry(beamR, beamH, 36, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd966,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  beam.rotation.x = Math.PI;
+  beam.position.set(center.x, beamH / 2 + 1, center.z);
+  beam.userData.beam = true;
+  grp.add(beam);
+
+  // Pulsing flat ring on the ground around the element
+  const ringR = Math.max(5, r.extent + 3);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(ringR - 0.9, ringR, 64),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd966,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(center.x, 1.05, center.z);
+  ring.userData.pulseRing = true;
+  ring.userData.baseScale = 1;
+  grp.add(ring);
+
+  // Spinning torus halo above the building
+  const haloR = Math.max(2.5, r.extent * 0.55 + 1);
+  const halo = new THREE.Mesh(
+    new THREE.TorusGeometry(haloR, 0.4, 10, 36),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd966,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  halo.position.set(center.x, r.height + 6, center.z);
+  halo.userData.spinHalo = true;
+  grp.add(halo);
+
+  cityGroup.add(grp);
+
+  // Boost the focused mesh's emissive so it visibly pops
+  let baseEmissive = 0.32;
+  if (r.mesh && r.mesh.material) {
+    baseEmissive = r.mesh.material.emissiveIntensity || baseEmissive;
+    r.mesh.material.emissiveIntensity = Math.min(1.4, baseEmissive * 2.4);
+  }
+
+  focusEffect = { group: grp, targetMesh: r.mesh, baseEmissive };
 }
 
 function tweenCamera(toPos, toTarget, durationMs, onComplete) {
@@ -702,13 +910,14 @@ function animate() {
   const dt = Math.min(0.05, (now - lastT) / 1000) || 0;
   lastT = now;
 
-  // Particles flowing along flows
+  // Packets streaming along flow tubes
   particleSystems.forEach(({ curve, offsets }) => {
     offsets.forEach((o) => {
       o.t += o.speed * dt;
       if (o.t > 1) o.t -= 1;
       const p = curve.getPointAt(o.t);
       o.mesh.position.copy(p);
+      if (o.halo) o.halo.position.copy(p);
     });
   });
 
@@ -721,6 +930,25 @@ function animate() {
       c.scale.setScalar(0.6 + v * 0.6);
     }
   });
+
+  // Tour spotlight animation
+  if (focusEffect) {
+    focusEffect.group.traverse((c) => {
+      if (c.userData.pulseRing) {
+        const v = (Math.sin(now / 350) + 1) / 2;
+        c.scale.setScalar(1 + v * 0.22);
+        c.material.opacity = 0.55 + v * 0.4;
+      } else if (c.userData.spinHalo) {
+        c.rotation.y += dt * 1.4;
+        c.rotation.x = Math.sin(now / 1100) * 0.3;
+        const v = (Math.sin(now / 420) + 1) / 2;
+        c.material.opacity = 0.55 + v * 0.35;
+      } else if (c.userData.beam) {
+        const v = (Math.sin(now / 700) + 1) / 2;
+        c.material.opacity = 0.14 + v * 0.12;
+      }
+    });
+  }
 
   if (cameraTween) cameraTween(now);
 
