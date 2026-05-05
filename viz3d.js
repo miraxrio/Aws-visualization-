@@ -318,20 +318,41 @@ function addBuilding(node) {
   blink.userData.phase = Math.random() * Math.PI * 2;
   grp.add(blink);
 
-  // Rooftop sign — actual textured plane on the building, not a sprite
-  const roof = makeRoofTile(node.type, colors.glow, Math.max(4, sz.w * 0.92));
-  roof.position.set(p.x, 1.95 + sz.h + 0.05, p.z);
-  grp.add(roof);
+  // AWS service icon — placed on the sides of the 3D shape (or as a billboard
+  // when the geometry has no flat vertical face). No more redundant rooftop
+  // tile or floating round badge.
+  const decalSize = Math.max(3, Math.min(sz.w, sz.d) * 0.78);
+  const decalY = 1.95 + Math.min(sz.h * 0.55, sz.h - decalSize * 0.55);
+  if (hasFlatSides(node.type)) {
+    const halfW = sz.w / 2;
+    const halfD = sz.d / 2;
+    // For a cylinder (sz.w = diameter) the plane's centre sits just outside
+    // the radius and pokes through the curved surface only at the corners,
+    // which is hidden by the icon's transparent halo edges.
+    const sides = [
+      { yaw: 0,             ox:  0,         oz:  halfD + 0.06 },
+      { yaw: Math.PI,       ox:  0,         oz: -halfD - 0.06 },
+      { yaw:  Math.PI / 2,  ox:  halfW + 0.06, oz: 0 },
+      { yaw: -Math.PI / 2,  ox: -halfW - 0.06, oz: 0 },
+    ];
+    sides.forEach(({ yaw, ox, oz }) => {
+      const decal = makeSideDecal(node.type, colors.glow, decalSize);
+      decal.position.set(p.x + ox, decalY, p.z + oz);
+      decal.rotation.y = yaw;
+      grp.add(decal);
+    });
+  } else {
+    const billboard = makeIconBillboard(node.type, colors.glow, decalSize);
+    billboard.position.set(p.x, decalY, p.z);
+    grp.add(billboard);
+  }
 
-  // Floating AWS-style icon badge above the building (always faces camera)
-  const badge = makeNodeBadge(node.type, colors.glow);
-  badge.position.set(p.x, sz.h + 9, p.z);
-  badge.scale.set(11, 11, 1);
-  grp.add(badge);
-
-  // Name label below the badge
-  const label = makeLabel(truncate(node.name || node.id, 16), "#" + new THREE.Color(colors.glow).getHexString());
-  label.position.set(p.x, sz.h + 5, p.z);
+  // Single name label above the building
+  const label = makeLabel(
+    truncate(node.name || node.id, 16),
+    "#" + new THREE.Color(colors.glow).getHexString(),
+  );
+  label.position.set(p.x, sz.h + 4.5, p.z);
   grp.add(label);
 
   cityGroup.add(grp);
@@ -537,51 +558,59 @@ function makeStars(count) {
   return new THREE.Points(geo, mat);
 }
 
-// ---------- AWS icon badges ----------
+// ---------- AWS service icons ----------
 
-// Loads an AWS service icon from Simple Icons (white SVG, drawn into a canvas).
-// Falls back to null if the type has no slug or the request fails — the badge
-// then shows the explanations.js glyph instead.
-const ICON_SLUGS = {
-  ec2: "amazonec2",
-  asg: "amazonec2",
-  s3: "amazons3",
-  rds: "amazonrds",
-  aurora: "amazonrds",
-  dynamodb: "amazondynamodb",
-  lambda: "awslambda",
-  cloudfront: "amazoncloudfront",
-  route53: "amazonroute53",
-  apigw: "amazonapigateway",
-  ecs: "amazonecs",
-  eks: "amazoneks",
+// Paths into the mhlabs/aws-icons-directory repo (full-color official AWS
+// architecture icons). Served via jsdelivr. Falls back to a glyph drawn from
+// explanations.js when a type has no mapping or the request fails.
+const ICON_BASE =
+  "https://cdn.jsdelivr.net/gh/mhlabs/aws-icons-directory@main/icons/Architecture-Service-Icons/";
+const ICON_PATHS = {
+  ec2:        "Arch_Compute/64/Arch_Amazon-EC2_64.svg",
+  asg:        "Arch_Compute/64/Arch_Amazon-EC2-Auto-Scaling_64.svg",
+  lambda:     "Arch_Compute/64/Arch_AWS-Lambda_64.svg",
+  ecs:        "Arch_Containers/64/Arch_Amazon-Elastic-Container-Service_64.svg",
+  eks:        "Arch_Containers/64/Arch_Amazon-Elastic-Kubernetes-Service_64.svg",
+  rds:        "Arch_Database/64/Arch_Amazon-RDS_64.svg",
+  aurora:     "Arch_Database/64/Arch_Amazon-Aurora_64.svg",
+  dynamodb:   "Arch_Database/64/Arch_Amazon-DynamoDB_64.svg",
+  s3:         "Arch_Storage/64/Arch_Amazon-Simple-Storage-Service_64.svg",
+  cloudfront: "Arch_Networking-Content/64/Arch_Amazon-CloudFront_64.svg",
+  route53:    "Arch_Networking-Content/64/Arch_Amazon-Route-53_64.svg",
+  vpc:        "Arch_Networking-Content/64/Arch_Amazon-Virtual-Private-Cloud_64.svg",
+  igw:        "Arch_Networking-Content/64/Arch_Amazon-Virtual-Private-Cloud_64.svg",
+  nat:        "Arch_Networking-Content/64/Arch_Amazon-Virtual-Private-Cloud_64.svg",
+  endpoint:   "Arch_Networking-Content/64/Arch_Amazon-Virtual-Private-Cloud_64.svg",
+  alb:        "Arch_Networking-Content/64/Arch_Elastic-Load-Balancing_64.svg",
+  nlb:        "Arch_Networking-Content/64/Arch_Elastic-Load-Balancing_64.svg",
+  tgw:        "Arch_Networking-Content/64/Arch_AWS-Transit-Gateway_64.svg",
+  vpn:        "Arch_Networking-Content/64/Arch_AWS-Site-to-Site-VPN_64.svg",
+  dx:         "Arch_Networking-Content/64/Arch_AWS-Direct-Connect_64.svg",
+  waf:        "Arch_Security-Identity-Compliance/64/Arch_AWS-WAF_64.svg",
+  apigw:      "Arch_App-Integration/64/Arch_Amazon-API-Gateway_64.svg",
 };
 const ICON_CACHE = new Map(); // type -> Promise<HTMLImageElement | null>
 
 function loadIconImage(type) {
   if (ICON_CACHE.has(type)) return ICON_CACHE.get(type);
-  const slug = ICON_SLUGS[type];
-  if (!slug) {
+  const path = ICON_PATHS[type];
+  if (!path) {
     const p = Promise.resolve(null);
     ICON_CACHE.set(type, p);
     return p;
   }
-  // Pull the raw simple-icons SVG file from jsdelivr (the cdn.simpleicons.org
-  // proxy returns SVGs that often render with currentColor and silently come
-  // out black inside a canvas). Then force a white fill and explicit
-  // dimensions so drawImage scales reliably.
-  const url = `https://cdn.jsdelivr.net/npm/simple-icons@13/icons/${slug}.svg`;
+  const url = ICON_BASE + path;
   const p = fetch(url)
     .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
     .then((svg) => {
-      // Strip any explicit fills so our injected one wins.
-      svg = svg.replace(/\sfill="[^"]*"/g, "");
-      svg = svg.replace(/currentColor/g, "#ffffff");
+      // Preserve the icon's original AWS colors. Only ensure the SVG has
+      // explicit dimensions so drawImage scales reliably, and replace any
+      // currentColor (rare in these assets) with a sensible default.
+      svg = svg.replace(/currentColor/g, "#232F3E");
       svg = svg.replace(/<svg\b([^>]*?)>/, (m, attrs) => {
         let a = attrs;
         if (!/\swidth\s*=/.test(a)) a += ' width="256"';
         if (!/\sheight\s*=/.test(a)) a += ' height="256"';
-        a += ' fill="#ffffff"';
         return `<svg${a}>`;
       });
       const dataUrl =
@@ -594,114 +623,50 @@ function loadIconImage(type) {
       });
     })
     .catch((err) => {
-      console.warn("[viz3d] icon load failed for", type, slug, err);
+      console.warn("[viz3d] icon load failed for", type, path, err);
       return null;
     });
   ICON_CACHE.set(type, p);
   return p;
 }
 
-// A circular sprite with a colored halo + AWS icon (or glyph fallback).
-// Updates asynchronously when the icon image finishes loading.
-function makeNodeBadge(type, color) {
-  const meta = (window.AWS_EXPLAIN && window.AWS_EXPLAIN[type]) || window.AWS_EXPLAIN.unknown;
-  const c = new THREE.Color(color);
-  const r = Math.round(c.r * 255), g = Math.round(c.g * 255), b = Math.round(c.b * 255);
-  const SIZE = 256;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = SIZE;
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.anisotropy = 8;
-
-  function draw(iconImg) {
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, SIZE, SIZE);
-
-    // Outer glow
-    const glow = ctx.createRadialGradient(SIZE / 2, SIZE / 2, 0, SIZE / 2, SIZE / 2, SIZE / 2);
-    glow.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.85)`);
-    glow.addColorStop(0.55, `rgba(${r}, ${g}, ${b}, 0.45)`);
-    glow.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-
-    // Inner disc with thin colored ring
-    const cx = SIZE / 2, cy = SIZE / 2, rad = SIZE * 0.34;
-    ctx.beginPath();
-    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(8, 14, 28, 0.92)";
-    ctx.fill();
-    ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
-    ctx.lineWidth = 5;
-    ctx.stroke();
-
-    if (iconImg) {
-      const sz = SIZE * 0.42;
-      ctx.drawImage(iconImg, cx - sz / 2, cy - sz / 2, sz, sz);
-    } else {
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-      ctx.font = `900 ${SIZE * 0.18}px -apple-system, system-ui, Segoe UI, Roboto, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(meta.glyph || (type || "?").toUpperCase().slice(0, 3), cx, cy + 2);
-    }
-  }
-
-  draw(null); // immediate render with glyph fallback
-  loadIconImage(type).then((img) => {
-    if (!img) return;
-    draw(img);
-    tex.needsUpdate = true;
-  });
-
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: tex, transparent: true, depthTest: true, depthWrite: false,
-    }),
-  );
-  sprite.scale.set(8, 8, 1);
-  sprite.renderOrder = 6;
-  sprite.userData.isLabel = true;
-  return sprite;
+// Returns true for shapes whose vertical sides are flat enough that a flat
+// PlaneGeometry decal looks like a sticker on the side. Other shapes get a
+// camera-facing billboard sprite instead.
+function hasFlatSides(type) {
+  return ![
+    "lambda", "cloudfront", "route53", "igw", "nat",
+  ].includes(type);
 }
 
-// A flat, textured plane that sits on top of a building like a sign on the
-// roof — visible from above-3/4 angles. Shows the AWS service icon (or a
-// glyph fallback) on a dark tile bordered with the type's color.
-function makeRoofTile(type, color, size) {
+// Draws an AWS service icon (or glyph fallback) onto a 256² canvas with a
+// soft circular halo behind it. Used for both side decals (PlaneGeometry)
+// and billboard sprites (Sprite).
+function drawIconCanvas(type, color, withGlyphFallback = true) {
   const meta = (window.AWS_EXPLAIN && window.AWS_EXPLAIN[type]) || window.AWS_EXPLAIN.unknown;
   const c = new THREE.Color(color);
-  const r = Math.round(c.r * 255), g = Math.round(c.g * 255), b = Math.round(c.b * 255);
+  const r = (c.r * 255) | 0, g = (c.g * 255) | 0, b = (c.b * 255) | 0;
   const SIZE = 256;
-
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
 
   function draw(iconImg) {
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, SIZE, SIZE);
-
-    // Tile background with a soft gradient so it looks lit
-    const grad = ctx.createLinearGradient(0, 0, 0, SIZE);
-    grad.addColorStop(0, "rgba(20, 30, 56, 0.95)");
-    grad.addColorStop(1, "rgba(8, 14, 28, 0.95)");
+    // Soft halo so the icon reads against the building body
+    const grad = ctx.createRadialGradient(SIZE / 2, SIZE / 2, 0, SIZE / 2, SIZE / 2, SIZE / 2);
+    grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.55)`);
+    grad.addColorStop(0.55, `rgba(${r}, ${g}, ${b}, 0.18)`);
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
     ctx.fillStyle = grad;
-    roundRect(ctx, 4, 4, SIZE - 8, SIZE - 8, 22);
-    ctx.fill();
-
-    // Outer colored border
-    ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
-    ctx.lineWidth = 6;
-    roundRect(ctx, 5, 5, SIZE - 10, SIZE - 10, 22);
-    ctx.stroke();
+    ctx.fillRect(0, 0, SIZE, SIZE);
 
     if (iconImg) {
-      const sz = SIZE * 0.62;
+      const sz = SIZE * 0.78;
       ctx.drawImage(iconImg, (SIZE - sz) / 2, (SIZE - sz) / 2, sz, sz);
-    } else {
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-      ctx.font = `900 ${SIZE * 0.32}px -apple-system, system-ui, Segoe UI, Roboto, sans-serif`;
+    } else if (withGlyphFallback) {
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `900 ${SIZE * 0.34}px -apple-system, system-ui, Segoe UI, Roboto, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(meta.glyph || (type || "?").toUpperCase().slice(0, 3), SIZE / 2, SIZE / 2 + 4);
@@ -713,24 +678,41 @@ function makeRoofTile(type, color, size) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.anisotropy = 8;
 
-  const plane = new THREE.Mesh(
-    new THREE.PlaneGeometry(size, size),
-    new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false,
-    }),
-  );
-  plane.rotation.x = -Math.PI / 2;     // lie flat
-  plane.renderOrder = 2;
-  plane.userData.isLabel = true;       // hide together with text labels when occluding
-
-  // Live-update the texture once the icon SVG resolves
   loadIconImage(type).then((img) => {
     if (!img) return;
     draw(img);
     tex.needsUpdate = true;
   });
 
+  return tex;
+}
+
+// A flat decal that sits on the side of a building.
+function makeSideDecal(type, color, size) {
+  const tex = drawIconCanvas(type, color);
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size),
+    new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+    }),
+  );
+  plane.userData.isLabel = true;
+  plane.renderOrder = 3;
   return plane;
+}
+
+// A camera-facing icon used for shapes whose sides are not flat (cones,
+// spheres, octahedra, the IGW arch).
+function makeIconBillboard(type, color, size) {
+  const tex = drawIconCanvas(type, color);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthTest: true, depthWrite: false,
+    }),
+  );
+  sprite.scale.set(size, size, 1);
+  sprite.userData.isLabel = true;
+  return sprite;
 }
 
 function makeLabel(text, color) {
