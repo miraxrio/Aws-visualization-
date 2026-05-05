@@ -4,11 +4,12 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05b — radial side-on camera, body=brand colour");
+console.log("[viz3d] build 2026-05-05c — explore mode + brighter shapes");
 
 let initialized = false;
-let scene, camera, renderer, controls;
+let scene, camera, renderer, controls, fpControls;
 let cityGroup;
 let particleSystems = [];
 let registry = new Map(); // id -> { type, position, height, extent, mesh, group, baseY }
@@ -16,6 +17,12 @@ let cameraTween = null;
 let raf = null;
 let lastT = 0;
 let focusEffect = null; // { group, targetMesh, baseEmissive }
+
+// Explore (first-person walk) state
+let exploreActive = false;
+const exploreKeys = { fwd: false, back: false, left: false, right: false, up: false, down: false };
+const _moveDir = new THREE.Vector3();
+let proxEntryId = null; // id of the element currently triggering the prox HUD
 
 const SCALE_TARGET = 220; // city max dimension in 3D units
 let SCALE = 0.15;
@@ -42,11 +49,11 @@ function init(container) {
   renderer.toneMappingExposure = 1.05;
   container.appendChild(renderer.domElement);
 
-  // Lights
-  scene.add(new THREE.HemisphereLight(0x9bb6ff, 0x05101e, 0.7));
-  scene.add(new THREE.AmbientLight(0x404060, 0.35));
+  // Lights — bumped up so brand colours read saturated rather than muted.
+  scene.add(new THREE.HemisphereLight(0xb6c8ff, 0x0a1428, 1.05));
+  scene.add(new THREE.AmbientLight(0x6079a8, 0.55));
 
-  const sun = new THREE.DirectionalLight(0xffd9a8, 1.4);
+  const sun = new THREE.DirectionalLight(0xffe2b8, 1.7);
   sun.position.set(-90, 200, 80);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -55,7 +62,7 @@ function init(container) {
   sun.shadow.bias = -0.0005;
   scene.add(sun);
 
-  const rim = new THREE.DirectionalLight(0x88aaff, 0.55);
+  const rim = new THREE.DirectionalLight(0x88aaff, 0.7);
   rim.position.set(60, 80, -120);
   scene.add(rim);
 
@@ -91,6 +98,14 @@ function init(container) {
     cameraTween = null;
     controls.enableDamping = true;
   });
+
+  // First-person walk controls (Explore mode). Initially disconnected.
+  fpControls = new PointerLockControls(camera, renderer.domElement);
+  fpControls.addEventListener("unlock", () => {
+    if (exploreActive) exitExplore();
+  });
+  window.addEventListener("keydown", onExploreKeyDown);
+  window.addEventListener("keyup", onExploreKeyUp);
 
   resize(container);
   const ro = new ResizeObserver(() => resize(container));
@@ -294,15 +309,14 @@ function addBuilding(node) {
 
   const geo = pickGeometry(node.type, sz);
   // Use the brand glow as the body colour so the box and the AWS icon on
-  // its sides read as the same hue. Keep the glow subtle so the surface
-  // shows shadow gradients instead of bleaching out to yellow under the
-  // emissive boost.
+  // its sides read as the same hue. Emissive boost keeps the colour
+  // saturated under the city lighting without bleaching to yellow.
   const mat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(colors.glow),
     emissive: new THREE.Color(colors.glow),
-    emissiveIntensity: 0.12,
-    roughness: 0.55,
-    metalness: 0.35,
+    emissiveIntensity: 0.28,
+    roughness: 0.45,
+    metalness: 0.3,
   });
   const mesh = new THREE.Mesh(geo, mat);
   positionForGeometry(mesh, node.type, sz, p);
@@ -374,7 +388,7 @@ function addBuilding(node) {
     mesh,
     group: grp,
     baseY: mesh.position.y,
-    baseEmissive: 0.12,
+    baseEmissive: 0.28,
   });
 }
 
@@ -879,6 +893,119 @@ function clearFocus() {
   tweenCamera(camPos, target, 1100);
 }
 
+// ---------- explore (first-person walk) ----------
+
+function enterExplore() {
+  if (!initialized || exploreActive) return;
+  exploreActive = true;
+  cameraTween = null;
+  controls.enabled = false;
+
+  // Drop the camera at the south edge of the city, eye-level, looking inward.
+  const startZ = Math.max(CITY.d * 0.55 + 40, 60);
+  camera.position.set(0, 6, startZ);
+  camera.lookAt(0, 6, 0);
+
+  fpControls.lock();
+  document.body.classList.add("exploring");
+}
+
+function exitExplore() {
+  if (!exploreActive) return;
+  exploreActive = false;
+  if (fpControls.isLocked) fpControls.unlock();
+  controls.enabled = true;
+  document.body.classList.remove("exploring");
+  hideProxPanel();
+  proxEntryId = null;
+  Object.keys(exploreKeys).forEach((k) => (exploreKeys[k] = false));
+}
+
+function isExploring() {
+  return exploreActive;
+}
+
+function onExploreKeyDown(e) {
+  if (!exploreActive) return;
+  switch (e.code) {
+    case "KeyW": case "ArrowUp":    exploreKeys.fwd  = true; break;
+    case "KeyS": case "ArrowDown":  exploreKeys.back = true; break;
+    case "KeyA": case "ArrowLeft":  exploreKeys.left = true; break;
+    case "KeyD": case "ArrowRight": exploreKeys.right = true; break;
+    case "Space":                   exploreKeys.up   = true; e.preventDefault(); break;
+    case "ShiftLeft": case "ShiftRight": exploreKeys.down = true; break;
+    case "Escape":                  exitExplore(); break;
+  }
+}
+function onExploreKeyUp(e) {
+  switch (e.code) {
+    case "KeyW": case "ArrowUp":    exploreKeys.fwd  = false; break;
+    case "KeyS": case "ArrowDown":  exploreKeys.back = false; break;
+    case "KeyA": case "ArrowLeft":  exploreKeys.left = false; break;
+    case "KeyD": case "ArrowRight": exploreKeys.right = false; break;
+    case "Space":                   exploreKeys.up   = false; break;
+    case "ShiftLeft": case "ShiftRight": exploreKeys.down = false; break;
+  }
+}
+
+function updateExplore(dt) {
+  if (!exploreActive || !fpControls.isLocked) return;
+  const speed = 38 * dt; // units/second
+  _moveDir.set(
+    (exploreKeys.right ? 1 : 0) - (exploreKeys.left ? 1 : 0),
+    0,
+    0,
+  );
+  const fwd = (exploreKeys.fwd ? 1 : 0) - (exploreKeys.back ? 1 : 0);
+  if (_moveDir.x !== 0 && fwd !== 0) _moveDir.multiplyScalar(0.7071);
+  if (_moveDir.x !== 0) fpControls.moveRight(_moveDir.x * speed);
+  if (fwd !== 0) fpControls.moveForward((fwd) * (Math.abs(_moveDir.x) ? 0.7071 : 1) * speed);
+  if (exploreKeys.up)   camera.position.y += speed;
+  if (exploreKeys.down) camera.position.y -= speed;
+  // Keep above-ground; allow flying high
+  if (camera.position.y < 1.5) camera.position.y = 1.5;
+
+  updateProximity();
+}
+
+// ---------- proximity HUD ----------
+
+function updateProximity() {
+  let bestId = null;
+  let bestDist = Infinity;
+  registry.forEach((entry, id) => {
+    if (entry.type === "vpc" || entry.type === "subnet") return;
+    const d = camera.position.distanceTo(entry.position);
+    const trigger = (entry.extent || 5) + 22; // bigger range for big elements
+    if (d < trigger && d < bestDist) {
+      bestId = id;
+      bestDist = d;
+    }
+  });
+
+  if (bestId === proxEntryId) return;
+  proxEntryId = bestId;
+  if (bestId == null) hideProxPanel();
+  else showProxPanel(registry.get(bestId), bestId);
+}
+
+function showProxPanel(entry, id) {
+  const panel = document.getElementById("prox-panel");
+  if (!panel) return;
+  const meta = (window.AWS_EXPLAIN && window.AWS_EXPLAIN[entry.type]) || window.AWS_EXPLAIN.unknown;
+  const title = entry.name || id;
+  panel.querySelector(".prox-eyebrow").textContent =
+    `${meta.glyph || (entry.type || "").toUpperCase()} · ${meta.title}`;
+  panel.querySelector(".prox-title").textContent = title;
+  panel.querySelector(".prox-summary").textContent = meta.summary || "";
+  panel.classList.add("show");
+}
+
+function hideProxPanel() {
+  const panel = document.getElementById("prox-panel");
+  if (panel) panel.classList.remove("show");
+}
+
 // ---------- tour spotlight effect ----------
 
 function setFocusEffect(id) {
@@ -969,10 +1096,10 @@ function setFocusEffect(id) {
 
   // Boost the focused mesh's emissive enough that it visibly pops without
   // bleaching the surface to yellow.
-  let baseEmissive = 0.12;
+  let baseEmissive = 0.28;
   if (r.mesh && r.mesh.material) {
     baseEmissive = r.mesh.material.emissiveIntensity || baseEmissive;
-    r.mesh.material.emissiveIntensity = Math.min(0.55, baseEmissive * 2.0 + 0.15);
+    r.mesh.material.emissiveIntensity = Math.min(0.7, baseEmissive * 1.8 + 0.1);
   }
 
   focusEffect = { group: grp, targetMesh: r.mesh, baseEmissive, targetEntry: r };
@@ -1177,7 +1304,9 @@ function animate() {
 
   if (cameraTween) cameraTween(now);
 
-  controls.update();
+  if (exploreActive) updateExplore(dt);
+  else controls.update();
+
   renderer.render(scene, camera);
 }
 
@@ -1187,5 +1316,8 @@ window.AwsViz3D = {
   render,
   focus,
   clearFocus,
+  enterExplore,
+  exitExplore,
+  isExploring,
   isReady: () => initialized,
 };

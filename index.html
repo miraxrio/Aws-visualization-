@@ -36,6 +36,7 @@
       </label>
       <button id="load-sample" class="btn ghost">Load sample</button>
       <button id="start-tour" class="btn primary">Start tour</button>
+      <button id="explore-btn" class="btn ghost mode-3d-only" hidden>Explore</button>
       <button id="toggle-flow" class="btn ghost">Pause traffic</button>
       <button id="reset-zoom" class="btn ghost">Reset view</button>
     </div>
@@ -57,6 +58,20 @@
       </div>
       <div class="hint hint-3d" id="hint-3d" hidden>
         <strong>Drag</strong> to orbit · <strong>scroll</strong> to zoom · <strong>right-drag</strong> to pan
+      </div>
+      <div class="explore-hud" id="explore-hud" hidden>
+        <div class="explore-help">
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move ·
+          <kbd>Space</kbd>/<kbd>⇧</kbd> up/down ·
+          mouse look ·
+          <kbd>Esc</kbd> exit
+        </div>
+        <div class="prox-panel" id="prox-panel">
+          <div class="prox-eyebrow"></div>
+          <h3 class="prox-title"></h3>
+          <p class="prox-summary"></p>
+        </div>
+        <div class="explore-crosshair">+</div>
       </div>
     </section>
 

@@ -7,6 +7,8 @@
     resetZoom: document.getElementById("reset-zoom"),
     mode2d: document.getElementById("mode-2d"),
     mode3d: document.getElementById("mode-3d"),
+    exploreBtn: document.getElementById("explore-btn"),
+    exploreHud: document.getElementById("explore-hud"),
     stage: document.getElementById("stage"),
     stage3d: document.getElementById("stage-3d"),
     diagram: document.getElementById("diagram"),
@@ -57,6 +59,11 @@
     els.diagram.style.display = mode === "2d" ? "" : "none";
     els.stage3d.hidden = mode !== "3d";
     els.hint3d.hidden = mode !== "3d";
+    els.exploreBtn.hidden = mode !== "3d";
+    if (mode !== "3d" && window.AwsViz3D && window.AwsViz3D.isExploring()) {
+      window.AwsViz3D.exitExplore();
+      els.exploreHud.hidden = true;
+    }
 
     if (mode === "3d") {
       // Lazy-init the 3D scene. The module is loaded via <script type="module">
@@ -80,6 +87,36 @@
 
   els.mode2d.addEventListener("click", () => setMode("2d"));
   els.mode3d.addEventListener("click", () => setMode("3d"));
+
+  // Explore mode (first-person walk through the city). 3D only.
+  els.exploreBtn.addEventListener("click", () => {
+    if (!window.AwsViz3D || !window.AwsViz3D.isReady()) return;
+    if (window.AwsViz3D.isExploring()) {
+      window.AwsViz3D.exitExplore();
+    } else {
+      // Close the tour first if it's open — pointer-lock would fight the
+      // tour bar's keyboard shortcuts.
+      const tourBar = document.getElementById("tour-bar");
+      if (tourBar && tourBar.classList.contains("open") && window.AwsTour) {
+        window.AwsTour.close();
+      }
+      els.exploreHud.hidden = false;
+      window.AwsViz3D.enterExplore();
+    }
+  });
+
+  // Hide HUD when explore exits (poll because PointerLockControls fires
+  // 'unlock' inside viz3d.js, not here)
+  document.addEventListener("pointerlockchange", () => {
+    if (!document.pointerLockElement && els.exploreHud) {
+      // Small delay so the prox-panel slide-out animation can play.
+      setTimeout(() => {
+        if (window.AwsViz3D && !window.AwsViz3D.isExploring()) {
+          els.exploreHud.hidden = true;
+        }
+      }, 250);
+    }
+  });
 
   function updateSummary(data) {
     els.netName.textContent = data.name || "Unnamed network";
