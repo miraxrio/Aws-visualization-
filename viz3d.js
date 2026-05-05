@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-console.log("[viz3d] build 2026-05-05a — side decals, AWS icons, recentered labels");
+console.log("[viz3d] build 2026-05-05b — radial side-on camera, body=brand colour");
 
 let initialized = false;
 let scene, camera, renderer, controls;
@@ -293,12 +293,16 @@ function addBuilding(node) {
   const grp = new THREE.Group();
 
   const geo = pickGeometry(node.type, sz);
+  // Use the brand glow as the body colour so the box and the AWS icon on
+  // its sides read as the same hue. Keep the glow subtle so the surface
+  // shows shadow gradients instead of bleaching out to yellow under the
+  // emissive boost.
   const mat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(colors.b),
+    color: new THREE.Color(colors.glow),
     emissive: new THREE.Color(colors.glow),
-    emissiveIntensity: 0.32,
-    roughness: 0.4,
-    metalness: 0.55,
+    emissiveIntensity: 0.12,
+    roughness: 0.55,
+    metalness: 0.35,
   });
   const mesh = new THREE.Mesh(geo, mat);
   positionForGeometry(mesh, node.type, sz, p);
@@ -370,7 +374,7 @@ function addBuilding(node) {
     mesh,
     group: grp,
     baseY: mesh.position.y,
-    baseEmissive: 0.32,
+    baseEmissive: 0.12,
   });
 }
 
@@ -813,40 +817,48 @@ function focus(id, opts = {}) {
   const target = r.position.clone();
   const isContainer = r.type === "vpc" || r.type === "subnet";
 
-  // Aim point — for buildings, look at upper-mid of the shape; for
-  // containers, look at the floor center.
-  const aimY = isContainer
-    ? r.height * 0.5
-    : Math.max(target.y, r.height * 0.45 + 1);
-  const aim = new THREE.Vector3(target.x, aimY, target.z);
-
-  // Frustum-fit distance: with a 55° FOV the half-angle is ~27.5° so the
-  // distance needed to fit a sphere of radius `extent` is extent / tan(27.5°)
-  // ≈ extent * 1.92. We add a small margin and cap so we never fly out
-  // beyond the fog.
+  // Frustum-fit distance.
   const fitDistance = r.extent * 1.92;
   const distance = isContainer
     ? clamp(fitDistance + 18, 30, Math.max(CITY.w, CITY.d) * 1.1 + 80)
-    : clamp(Math.max(r.extent * 4, r.height * 1.6) + 6, 14, 80);
+    : clamp(Math.max(r.extent * 5, r.height * 1.6) + 6, 18, 80);
 
-  // Elevation: containers are viewed from above-ish (3/4 angle), buildings
-  // are viewed from street level for a "drive past" feel.
-  const elev = isContainer
-    ? distance * 0.55
-    : Math.max(6, r.height * 0.85);
-
-  // Approach angle is deterministic per id so revisits look the same.
+  // Side-on viewing: pick a horizontal direction radiating outward from the
+  // city centre, with a small per-id perturbation so adjacent elements don't
+  // line up identically. This keeps the focused element between the camera
+  // and the rest of the city, so other buildings never end up between camera
+  // and target.
   const seed = hashCode(id);
-  const angle = (seed % 1000) / 1000 * Math.PI * 2;
+  const horizDir = new THREE.Vector3(target.x, 0, target.z);
+  if (horizDir.lengthSq() < 25) {
+    // Element near origin — pick a deterministic outward direction.
+    const a = (seed % 1000) / 1000 * Math.PI * 2;
+    horizDir.set(Math.cos(a), 0, Math.sin(a));
+  } else {
+    horizDir.normalize();
+  }
+  const sideAngle = (((seed * 31) % 100) - 50) / 100 * 0.45; // ±0.45 rad ≈ ±26°
+  const ca = Math.cos(sideAngle), sa = Math.sin(sideAngle);
+  const dirX = horizDir.x * ca - horizDir.z * sa;
+  const dirZ = horizDir.x * sa + horizDir.z * ca;
 
-  const camPos = new THREE.Vector3(
-    target.x + Math.cos(angle) * distance,
-    aim.y + elev,
-    target.z + Math.sin(angle) * distance,
+  // Elevation: side-on for buildings (slight overhead), 3/4 for containers.
+  const elev = isContainer
+    ? distance * 0.5
+    : r.height * 0.55 + 4;
+
+  const aim = new THREE.Vector3(
+    target.x,
+    isContainer ? r.height * 0.5 : r.height * 0.45 + 1,
+    target.z,
   );
 
-  // Distance-scaled duration so cross-city jumps don't feel hurried while
-  // small steps don't linger.
+  const camPos = new THREE.Vector3(
+    target.x + dirX * distance,
+    aim.y + elev,
+    target.z + dirZ * distance,
+  );
+
   const travel = camera.position.distanceTo(camPos);
   const auto = clamp(900 + travel * 5, 1200, 2600);
   const duration = opts.duration ?? auto;
@@ -955,11 +967,12 @@ function setFocusEffect(id) {
 
   cityGroup.add(grp);
 
-  // Boost the focused mesh's emissive so it visibly pops
-  let baseEmissive = 0.32;
+  // Boost the focused mesh's emissive enough that it visibly pops without
+  // bleaching the surface to yellow.
+  let baseEmissive = 0.12;
   if (r.mesh && r.mesh.material) {
     baseEmissive = r.mesh.material.emissiveIntensity || baseEmissive;
-    r.mesh.material.emissiveIntensity = Math.min(1.4, baseEmissive * 2.4);
+    r.mesh.material.emissiveIntensity = Math.min(0.55, baseEmissive * 2.0 + 0.15);
   }
 
   focusEffect = { group: grp, targetMesh: r.mesh, baseEmissive, targetEntry: r };
