@@ -3,48 +3,49 @@
 // traffic moves through it.
 
 // Per-type color palette aligned with AWS's official Architecture-icon
-// palette (compute = orange, database = blue, storage = green, networking
-// = purple, security = red, app-integration = magenta) so each building
-// matches the colour of its AWS icon.
+// palette. `glow` is the brand colour and is used as the building's body
+// colour in 3D so the box and the AWS icon on its sides read as the same
+// hue. Values lean to the brighter end of each gradient so the bodies
+// match the saturation of the icon backgrounds.
 window.AWS_COLORS = {
   internet:   { a: "#ff8aa8", b: "#d63b6e", glow: "#ff5f86" },
   subnet:     { a: "#9fb6e6", b: "#3b5fa3", glow: "#7a9bd6" },
-  vpc:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  vpc:        { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
 
-  // Networking & content delivery — purple
-  igw:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  nat:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  tgw:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  vpn:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  dx:         { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  endpoint:   { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  alb:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  nlb:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  cloudfront: { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
-  route53:    { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  // Networking & content delivery — vivid purple
+  igw:        { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  nat:        { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  tgw:        { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  vpn:        { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  dx:         { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  endpoint:   { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  alb:        { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  nlb:        { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  cloudfront: { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
+  route53:    { a: "#c79cff", b: "#4D27A8", glow: "#A45BFF" },
 
-  // Compute / containers — orange
-  ec2:        { a: "#FF9900", b: "#C8511B", glow: "#ED7100" },
-  asg:        { a: "#FF9900", b: "#C8511B", glow: "#ED7100" },
-  ecs:        { a: "#FF9900", b: "#C8511B", glow: "#ED7100" },
-  eks:        { a: "#FF9900", b: "#C8511B", glow: "#ED7100" },
-  lambda:     { a: "#FF9900", b: "#C8511B", glow: "#ED7100" },
+  // Compute / containers — saturated AWS amber-orange
+  ec2:        { a: "#FFB766", b: "#C8511B", glow: "#FF9900" },
+  asg:        { a: "#FFB766", b: "#C8511B", glow: "#FF9900" },
+  ecs:        { a: "#FFB766", b: "#C8511B", glow: "#FF9900" },
+  eks:        { a: "#FFB766", b: "#C8511B", glow: "#FF9900" },
+  lambda:     { a: "#FFB766", b: "#C8511B", glow: "#FF9900" },
 
-  // Database — blue
-  rds:        { a: "#527FFF", b: "#2E27AD", glow: "#3F8FFF" },
-  aurora:     { a: "#527FFF", b: "#2E27AD", glow: "#3F8FFF" },
-  dynamodb:   { a: "#527FFF", b: "#2E27AD", glow: "#3F8FFF" },
+  // Database — bright Aurora-blue
+  rds:        { a: "#9CB7FF", b: "#2E27AD", glow: "#5294FF" },
+  aurora:     { a: "#9CB7FF", b: "#2E27AD", glow: "#5294FF" },
+  dynamodb:   { a: "#9CB7FF", b: "#2E27AD", glow: "#5294FF" },
 
-  // Storage — green
-  s3:         { a: "#6CAE3E", b: "#1B660F", glow: "#7AA116" },
+  // Storage — vivid green
+  s3:         { a: "#A7E16C", b: "#1B660F", glow: "#7CC242" },
 
-  // Security, identity & compliance — red
-  waf:        { a: "#FF5252", b: "#BD0816", glow: "#DD344C" },
-  sg:         { a: "#FF5252", b: "#BD0816", glow: "#DD344C" },
-  nacl:       { a: "#FF5252", b: "#BD0816", glow: "#DD344C" },
+  // Security, identity & compliance — saturated red
+  waf:        { a: "#FF8499", b: "#BD0816", glow: "#E84855" },
+  sg:         { a: "#FF8499", b: "#BD0816", glow: "#E84855" },
+  nacl:       { a: "#FF8499", b: "#BD0816", glow: "#E84855" },
 
-  // App integration — pink/magenta
-  apigw:      { a: "#F54749", b: "#B0084D", glow: "#E7157B" },
+  // App integration — vivid magenta
+  apigw:      { a: "#FF7AA8", b: "#B0084D", glow: "#F0457A" },
 
   unknown:    { a: "#cbd5e1", b: "#475569", glow: "#94a3b8" },
 };

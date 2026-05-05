@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05c — explore mode + brighter shapes");
+console.log("[viz3d] build 2026-05-05d — vivid brand colours + central spawn");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -310,13 +310,13 @@ function addBuilding(node) {
   const geo = pickGeometry(node.type, sz);
   // Use the brand glow as the body colour so the box and the AWS icon on
   // its sides read as the same hue. Emissive boost keeps the colour
-  // saturated under the city lighting without bleaching to yellow.
+  // saturated under the city lighting at full brand brightness.
   const mat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(colors.glow),
     emissive: new THREE.Color(colors.glow),
-    emissiveIntensity: 0.28,
-    roughness: 0.45,
-    metalness: 0.3,
+    emissiveIntensity: 0.45,
+    roughness: 0.42,
+    metalness: 0.25,
   });
   const mesh = new THREE.Mesh(geo, mat);
   positionForGeometry(mesh, node.type, sz, p);
@@ -388,7 +388,7 @@ function addBuilding(node) {
     mesh,
     group: grp,
     baseY: mesh.position.y,
-    baseEmissive: 0.28,
+    baseEmissive: 0.45,
   });
 }
 
@@ -901,10 +901,14 @@ function enterExplore() {
   cameraTween = null;
   controls.enabled = false;
 
-  // Drop the camera at the south edge of the city, eye-level, looking inward.
-  const startZ = Math.max(CITY.d * 0.55 + 40, 60);
-  camera.position.set(0, 6, startZ);
-  camera.lookAt(0, 6, 0);
+  // Spawn high above the centre of the city, looking down/inward, so the
+  // whole layout is visible from the get-go and you can fly down toward
+  // any element. Closer to centre makes the first WASD tap immediately
+  // useful instead of starting with a long walk in.
+  const startY = Math.max(38, Math.max(CITY.w, CITY.d) * 0.22);
+  const startZ = Math.max(20, CITY.d * 0.18);
+  camera.position.set(0, startY, startZ);
+  camera.lookAt(0, 8, 0);
 
   fpControls.lock();
   document.body.classList.add("exploring");
@@ -1096,10 +1100,10 @@ function setFocusEffect(id) {
 
   // Boost the focused mesh's emissive enough that it visibly pops without
   // bleaching the surface to yellow.
-  let baseEmissive = 0.28;
+  let baseEmissive = 0.45;
   if (r.mesh && r.mesh.material) {
     baseEmissive = r.mesh.material.emissiveIntensity || baseEmissive;
-    r.mesh.material.emissiveIntensity = Math.min(0.7, baseEmissive * 1.8 + 0.1);
+    r.mesh.material.emissiveIntensity = Math.min(0.85, baseEmissive * 1.55 + 0.08);
   }
 
   focusEffect = { group: grp, targetMesh: r.mesh, baseEmissive, targetEntry: r };
