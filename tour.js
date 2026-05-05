@@ -63,6 +63,15 @@
     // Bare CIDR like "/24" — read the slash
     t = t.replace(/(^|\s)\/(\d{1,2})\b/g, "$1slash $2");
 
+    // Replace direction arrows with words so the TTS doesn't say
+    // "pointing arrow" or skip them confusingly.
+    t = t.replace(/→/g, " to ");
+    t = t.replace(/←/g, " from ");
+    // Strip any other arrow-like glyphs the speech engine might mispronounce.
+    t = t.replace(/[↑↓⇒⇐⇆➜▶◀»«]/g, " ");
+    // Collapse repeated whitespace introduced above
+    t = t.replace(/\s{2,}/g, " ");
+
     // Dotted segment lists like "us-east-1a" read fine; leave alone.
     return t;
   }
@@ -366,7 +375,7 @@
       title: "End of the tour",
       narration:
         "That's the whole path: internet → IGW → public subnet → load balancer → app subnet → app servers → data subnet → database. Outbound responses follow the reverse path; outbound-initiated traffic exits through NAT. Hover any element to revisit it.",
-      extra: "Press ← to step back, or close to keep exploring on your own.",
+      extra: "Press the left arrow key to step back, or close to keep exploring on your own.",
     });
 
     return out;
@@ -380,7 +389,8 @@
       ? "Traffic involving this element: " +
         flows
           .map((f) => {
-            const dir = f.from === r.id ? "→" : "←";
+            // Use words instead of arrow glyphs so the TTS reads them naturally.
+            const dir = f.from === r.id ? "to" : "from";
             const other = f.from === r.id ? f.to : f.from;
             return `${dir} ${other}${f.label ? " (" + f.label + ")" : ""}`;
           })

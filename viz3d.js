@@ -552,13 +552,30 @@ function loadIconImage(type) {
     ICON_CACHE.set(type, p);
     return p;
   }
-  const p = new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = `https://cdn.simpleicons.org/${slug}/ffffff`;
-  });
+  // Fetch the SVG as text and re-serialize as a data URL with explicit
+  // width/height. Loading SVG directly via <img src="https://..."> works
+  // in some browsers but trips canvas-tainting checks in others; data URLs
+  // sidestep the issue and let drawImage scale predictably.
+  const url = `https://cdn.simpleicons.org/${slug}/ffffff`;
+  const p = fetch(url)
+    .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
+    .then((svg) => {
+      if (!/\swidth\s*=/.test(svg)) {
+        svg = svg.replace(/<svg\b([^>]*)>/, '<svg$1 width="256" height="256">');
+      }
+      const dataUrl =
+        "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = dataUrl;
+      });
+    })
+    .catch((err) => {
+      console.warn("[viz3d] icon load failed for", type, slug, err);
+      return null;
+    });
   ICON_CACHE.set(type, p);
   return p;
 }
@@ -851,7 +868,88 @@ function setFocusEffect(id) {
     r.mesh.material.emissiveIntensity = Math.min(1.4, baseEmissive * 2.4);
   }
 
-  focusEffect = { group: grp, targetMesh: r.mesh, baseEmissive };
+  focusEffect = { group: grp, targetMesh: r.mesh, baseEmissive, targetEntry: r };
+}
+
+// ---------- camera-occlusion fading ----------
+
+const _camDir = new THREE.Vector3();
+const _toMesh = new THREE.Vector3();
+const _projection = new THREE.Vector3();
+
+function updateOcclusion(targetEntry) {
+  const camPos = camera.position;
+  _camDir.subVectors(targetEntry.position, camPos);
+  const targetDist = _camDir.length();
+  if (targetDist < 0.001) return;
+  _camDir.divideScalar(targetDist); // normalize
+
+  registry.forEach((entry) => {
+    if (!entry.group) return;             // VPCs / subnets / internet rings have no .group
+    if (entry === targetEntry) {
+      setEntryOpacity(entry, 1);
+      return;
+    }
+
+    _toMesh.subVectors(entry.position, camPos);
+    const proj = _toMesh.dot(_camDir);
+
+    // Behind camera, or beyond / very near the target — keep fully visible.
+    if (proj <= 0 || proj >= targetDist - 1.5) {
+      setEntryOpacity(entry, 1);
+      return;
+    }
+
+    // Perpendicular distance from this entry to the camera→target ray
+    _projection.copy(_camDir).multiplyScalar(proj);
+    const perp = _toMesh.distanceTo(_projection.add(camPos));
+    const r = (entry.extent || 4) + 3;
+
+    if (perp < r) {
+      // Inside the line-of-sight cone — fade more the closer to the ray.
+      const t = perp / r;                       // 0 = on ray, 1 = at edge
+      const opacity = 0.12 + t * 0.5;           // 0.12 .. 0.62
+      setEntryOpacity(entry, opacity);
+    } else {
+      setEntryOpacity(entry, 1);
+    }
+  });
+}
+
+function setEntryOpacity(entry, opacity) {
+  if (entry._lastOpacity === opacity) return;
+  entry._lastOpacity = opacity;
+  entry.group.traverse((c) => {
+    if (!c.material) return;
+    const ms = Array.isArray(c.material) ? c.material : [c.material];
+    ms.forEach((m) => {
+      if (m._origOpacity === undefined) {
+        m._origOpacity = (m.opacity != null) ? m.opacity : 1;
+        m._origTransparent = !!m.transparent;
+      }
+      if (opacity >= 1) {
+        m.opacity = m._origOpacity;
+        m.transparent = m._origTransparent;
+      } else {
+        m.transparent = true;
+        m.opacity = opacity * m._origOpacity;
+      }
+    });
+  });
+}
+
+function restoreAllOpacities() {
+  registry.forEach((entry) => {
+    if (entry._lastOpacity === 1 || entry._lastOpacity === undefined) return;
+    setEntryOpacity(entry, 1);
+  });
+}
+
+function haveAnyFaded() {
+  for (const entry of registry.values()) {
+    if (entry._lastOpacity !== undefined && entry._lastOpacity < 1) return true;
+  }
+  return false;
 }
 
 function tweenCamera(toPos, toTarget, durationMs, onComplete) {
@@ -948,6 +1046,9 @@ function animate() {
         c.material.opacity = 0.14 + v * 0.12;
       }
     });
+    if (focusEffect.targetEntry) updateOcclusion(focusEffect.targetEntry);
+  } else if (registry.size && haveAnyFaded()) {
+    restoreAllOpacities();
   }
 
   if (cameraTween) cameraTween(now);
