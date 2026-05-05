@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05d — vivid brand colours + central spawn");
+console.log("[viz3d] build 2026-05-05e — city sky + server-floor ground + lower spawn");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -34,9 +34,9 @@ function init(container) {
   if (initialized) return;
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x070d1c);
+  // No solid background — the sky sphere added below provides the backdrop.
   // Linear fog tuned per-render so it never swallows the focused element.
-  scene.fog = new THREE.Fog(0x070d1c, 200, 800);
+  scene.fog = new THREE.Fog(0x07101e, 220, 900);
 
   camera = new THREE.PerspectiveCamera(55, 1, 0.1, 5000);
   camera.position.set(120, 110, 160);
@@ -66,22 +66,43 @@ function init(container) {
   rim.position.set(60, 80, -120);
   scene.add(rim);
 
-  // Ground + grid
+  // Ground — looks like a data-centre floor: rows of server racks with
+  // glowing LEDs, tiled across a large plane so every direction reads
+  // "this network city is sitting on top of physical infrastructure".
+  const groundTex = makeServerFloorTexture();
+  groundTex.repeat.set(20, 20);
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(3000, 3000),
-    new THREE.MeshStandardMaterial({ color: 0x0c172b, roughness: 0.95, metalness: 0 }),
+    new THREE.MeshStandardMaterial({
+      map: groundTex,
+      roughness: 0.85,
+      metalness: 0.25,
+      emissive: 0x0a1426,
+      emissiveIntensity: 0.35,
+    }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const grid = new THREE.GridHelper(3000, 150, 0x1c2c48, 0x121e36);
-  grid.material.transparent = true;
-  grid.material.opacity = 0.55;
-  grid.position.y = 0.01;
-  scene.add(grid);
+  // Sky — distant city skyline panorama on the inside of a big sphere so
+  // wherever the camera looks it sees a wider city around the network.
+  const skyTex = makeSkyTexture();
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(2200, 64, 32),
+    new THREE.MeshBasicMaterial({
+      map: skyTex,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,           // sphere is past the fog far distance
+      toneMapped: false,    // keep panorama colours faithful to the canvas
+    }),
+  );
+  sky.renderOrder = -10;
+  scene.add(sky);
 
-  scene.add(makeStars(2200));
+  // A handful of foreground stars for sparkle on top of the sky panorama
+  scene.add(makeStars(900));
 
   cityGroup = new THREE.Group();
   scene.add(cityGroup);
@@ -555,8 +576,6 @@ function addFlow(flow) {
   particleSystems.push({ curve, offsets, color, kind, fromId: flow.from, toId: flow.to });
 }
 
-// ---------- helpers ----------
-
 function makeStars(count) {
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(count * 3);
@@ -579,6 +598,222 @@ function makeStars(count) {
     size: 1.4, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.9,
   });
   return new THREE.Points(geo, mat);
+}
+
+// ---------- skybox + ground textures ----------
+
+// Procedural city-skyline panorama painted onto a 4096×1024 canvas.
+// Wrapped around the camera as the inside of a sphere so distant city
+// silhouettes surround the network "city" no matter which way you look.
+function makeSkyTexture() {
+  const W = 4096, H = 1024;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d");
+
+  // Vertical orientation when wrapped on a sphere (BackSide):
+  //   canvas y = 0   → north pole (looking straight up) — deepest sky
+  //   canvas y = H/2 → equator (the horizon line)
+  //   canvas y = H   → south pole (looking straight down) — hidden by ground
+  // So buildings live at canvas y ≈ H/2 with their tops going *up* the
+  // canvas (smaller y) so they appear above the horizon when viewed from
+  // inside the sphere.
+
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0,    "#020512");  // overhead
+  grad.addColorStop(0.3,  "#0a1432");
+  grad.addColorStop(0.45, "#1a2a55");  // just above horizon
+  grad.addColorStop(0.5,  "#2a2244");  // horizon glow
+  grad.addColorStop(0.55, "#1f1832");
+  grad.addColorStop(1,    "#050410");  // beneath horizon (mostly hidden)
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars in the upper part of the canvas (overhead sky)
+  for (let i = 0; i < 700; i++) {
+    const x = Math.random() * W;
+    const y = Math.random() * H * 0.4;
+    const r = Math.random() * 1.4 + 0.4;
+    ctx.fillStyle = `rgba(255,255,255,${0.25 + Math.random() * 0.65})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Horizon glow band — centred on canvas y = H/2
+  const horizon = ctx.createLinearGradient(0, H * 0.4, 0, H * 0.56);
+  horizon.addColorStop(0,   "rgba(160, 100, 50, 0)");
+  horizon.addColorStop(0.5, "rgba(200, 110, 60, 0.18)");
+  horizon.addColorStop(1,   "rgba(100, 60, 130, 0.18)");
+  ctx.fillStyle = horizon;
+  ctx.fillRect(0, H * 0.4, W, H * 0.16);
+
+  // Skyline silhouettes — bases sit at the horizon and tops climb UP into
+  // the sky (smaller canvas y). Three layers give a sense of depth.
+  function drawSkyline(yBase, alpha, heightFactor, windowChance) {
+    let x = 0;
+    while (x < W) {
+      const w = 28 + Math.random() * 80;
+      const h = (60 + Math.random() * 240) * heightFactor;
+      const top = yBase - h;
+      ctx.fillStyle = `rgba(${8 + Math.random() * 10},${12 + Math.random() * 12},${24 + Math.random() * 18},${alpha})`;
+      ctx.fillRect(x, top, w, h);
+
+      // Antenna or rooftop unit
+      if (Math.random() < 0.18) {
+        const aw = 2 + Math.random() * 4;
+        ctx.fillRect(x + w * 0.5 - aw / 2, top - 8 - Math.random() * 14, aw, 8 + Math.random() * 14);
+      } else if (Math.random() < 0.25) {
+        const bw = w * (0.25 + Math.random() * 0.3);
+        ctx.fillRect(x + (w - bw) / 2, top - 6, bw, 6);
+      }
+
+      // Lit windows
+      const rows = Math.floor(h / 14);
+      const cols = Math.max(1, Math.floor(w / 11));
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          if (Math.random() < windowChance) {
+            const wx = x + 3 + i * 11;
+            const wy = top + 6 + j * 14;
+            const warm = Math.random() < 0.7;
+            ctx.fillStyle = warm
+              ? `rgba(${230 + Math.random() * 25},${200 + Math.random() * 40},120,${0.55 + Math.random() * 0.4})`
+              : `rgba(120,200,${230 + Math.random() * 25},${0.5 + Math.random() * 0.4})`;
+            ctx.fillRect(wx, wy, 5, 7);
+          }
+        }
+      }
+      x += w + Math.random() * 4;
+    }
+  }
+
+  drawSkyline(H * 0.50, 0.80, 0.55, 0.28); // far layer
+  drawSkyline(H * 0.51, 0.92, 0.80, 0.45); // mid
+  drawSkyline(H * 0.52, 1.00, 1.00, 0.55); // near
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  return tex;
+}
+
+// Procedural tileable "data centre floor" texture: dark substrate with
+// server-rack rectangles, slot lines, and lit LED indicators. Wrapped
+// over the ground plane so the network city sits on top of physical
+// infrastructure.
+function makeServerFloorTexture() {
+  const S = 512;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const ctx = c.getContext("2d");
+
+  // Base
+  ctx.fillStyle = "#0a1326";
+  ctx.fillRect(0, 0, S, S);
+
+  // Subtle grid lines (panel seams)
+  ctx.strokeStyle = "rgba(40, 60, 100, 0.35)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= S; i += 32) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(S, i); ctx.stroke();
+  }
+
+  // Diagonal ambient hatching for depth
+  ctx.strokeStyle = "rgba(80, 110, 180, 0.05)";
+  ctx.lineWidth = 1;
+  for (let i = -S; i < S * 2; i += 6) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + S, S); ctx.stroke();
+  }
+
+  const racks = [
+    { x: 24,  y: 28,  w: 200, h: 78 },
+    { x: 248, y: 38,  w: 224, h: 100 },
+    { x: 32,  y: 134, w: 256, h: 78 },
+    { x: 312, y: 158, w: 168, h: 64 },
+    { x: 28,  y: 240, w: 192, h: 96 },
+    { x: 244, y: 250, w: 232, h: 70 },
+    { x: 56,  y: 360, w: 224, h: 84 },
+    { x: 308, y: 350, w: 174, h: 96 },
+  ];
+
+  racks.forEach((r) => {
+    // Soft drop shadow
+    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.fillRect(r.x + 2, r.y + 3, r.w, r.h);
+
+    // Rack body — vertical gradient so it looks lit from above
+    const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y + r.h);
+    g.addColorStop(0, "#1a2a48");
+    g.addColorStop(1, "#0e1830");
+    ctx.fillStyle = g;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+
+    // Rack outline
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+
+    // Slot lines (horizontal divisions)
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+    for (let y = r.y + 8; y < r.y + r.h - 1; y += 8) {
+      ctx.beginPath();
+      ctx.moveTo(r.x + 3, y);
+      ctx.lineTo(r.x + r.w - 3, y);
+      ctx.stroke();
+    }
+    // Subtle highlight line at top of each slot
+    ctx.strokeStyle = "rgba(120, 150, 220, 0.08)";
+    for (let y = r.y + 8; y < r.y + r.h - 1; y += 8) {
+      ctx.beginPath();
+      ctx.moveTo(r.x + 3, y - 0.5);
+      ctx.lineTo(r.x + r.w - 3, y - 0.5);
+      ctx.stroke();
+    }
+
+    // LED column on the right edge
+    const ledY0 = r.y + 6;
+    for (let i = 0; ledY0 + i * 8 < r.y + r.h - 4; i++) {
+      const cx = r.x + r.w - 6;
+      const cy = ledY0 + i * 8;
+      if (Math.random() < 0.72) {
+        const isGreen = Math.random() < 0.62;
+        const isAmber = !isGreen && Math.random() < 0.4;
+        const color = isGreen
+          ? "rgba(80, 220, 120,"
+          : isAmber
+          ? "rgba(255, 180, 80,"
+          : "rgba(80, 160, 255,";
+        ctx.fillStyle = color + "0.95)";
+        ctx.beginPath(); ctx.arc(cx, cy, 1.4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color + "0.22)";
+        ctx.beginPath(); ctx.arc(cx, cy, 3.8, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // Brand label panel
+    ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+    ctx.fillRect(r.x + 6, r.y + r.h - 6, 24, 3);
+  });
+
+  // A few faint cable-like traces between racks
+  ctx.strokeStyle = "rgba(80, 140, 220, 0.18)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 220);   ctx.lineTo(S, 220);
+  ctx.moveTo(0, 340);   ctx.lineTo(S, 340);
+  ctx.moveTo(228, 0);   ctx.lineTo(228, S);
+  ctx.moveTo(298, 0);   ctx.lineTo(298, S);
+  ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
 }
 
 // ---------- AWS service icons ----------
@@ -901,14 +1136,14 @@ function enterExplore() {
   cameraTween = null;
   controls.enabled = false;
 
-  // Spawn high above the centre of the city, looking down/inward, so the
-  // whole layout is visible from the get-go and you can fly down toward
-  // any element. Closer to centre makes the first WASD tap immediately
-  // useful instead of starting with a long walk in.
-  const startY = Math.max(38, Math.max(CITY.w, CITY.d) * 0.22);
-  const startZ = Math.max(20, CITY.d * 0.18);
+  // Spawn just above the tallest buildings (the city skyline tops out
+  // around y=25 with the current size scale) so the city is in front of
+  // you instead of far below. Pull in toward the centre so the first
+  // WASD tap immediately moves you over an element.
+  const startY = 32;
+  const startZ = Math.max(18, CITY.d * 0.15);
   camera.position.set(0, startY, startZ);
-  camera.lookAt(0, 8, 0);
+  camera.lookAt(0, 6, 0);
 
   fpControls.lock();
   document.body.classList.add("exploring");
