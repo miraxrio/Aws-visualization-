@@ -116,35 +116,35 @@ html, body {
    styled against them flips to a light palette automatically.            */
 
 body.theme-day {
-  --bg: #b6cde2;
-  --bg-elev: #d2dfec;
-  --bg-elev-2: #c4d4e4;
-  --border: #93acc9;
-  --text: #14233c;
-  --muted: #4a607f;
+  --bg: #9bcaee;
+  --bg-elev: #c5dbf0;
+  --bg-elev-2: #b1d2ec;
+  --border: #6ea0cc;
+  --text: #0d2540;
+  --muted: #3e5d83;
   --accent: #ed7100;
-  --accent-2: #2563eb;
-  --shadow: 0 10px 30px rgba(20, 40, 80, 0.18);
+  --accent-2: #1b6ad6;
+  --shadow: 0 10px 30px rgba(20, 50, 100, 0.18);
 }
 
 body.theme-day {
-  background: radial-gradient(1200px 800px at 20% -10%, #9bbad6 0%, var(--bg) 60%);
+  background: radial-gradient(1200px 800px at 20% -10%, #82bce0 0%, var(--bg) 60%);
 }
 body.theme-day .topbar {
-  background: rgba(196, 212, 228, 0.85);
+  background: rgba(155, 202, 238, 0.85);
 }
 body.theme-day .stage {
   background:
-    radial-gradient(800px 500px at 80% 100%, rgba(37, 99, 235, 0.10), transparent 60%),
+    radial-gradient(800px 500px at 80% 100%, rgba(27, 106, 214, 0.12), transparent 60%),
     radial-gradient(900px 600px at 0% 0%, rgba(237, 113, 0, 0.08), transparent 60%);
 }
 body.theme-day .btn {
-  background: linear-gradient(180deg, #d8e5f1, #b6cde2);
+  background: linear-gradient(180deg, #d0e4f5, #a7cbeb);
   color: var(--text);
 }
 body.theme-day .btn.ghost { background: transparent; }
 body.theme-day .seg {
-  background: linear-gradient(180deg, #d8e5f1, #b6cde2);
+  background: linear-gradient(180deg, #d0e4f5, #a7cbeb);
 }
 body.theme-day .seg-btn { color: var(--muted); }
 body.theme-day .seg-btn.is-active { color: #1a1300; }
@@ -153,62 +153,62 @@ body.theme-day .panel {
   box-shadow: 0 1px 0 rgba(0,0,0,0.04);
 }
 body.theme-day pre {
-  background: #cad9e8;
-  color: #1f3050;
+  background: #b3d2ec;
+  color: #0d2540;
 }
 body.theme-day .legend,
 body.theme-day .hint,
 body.theme-day .hint-3d {
-  background: rgba(214, 226, 240, 0.92);
-  color: #1c2e4d;
+  background: rgba(197, 219, 240, 0.92);
+  color: #0d2540;
 }
 body.theme-day .explainer {
-  background: rgba(37, 99, 235, 0.10);
-  border-color: rgba(37, 99, 235, 0.25);
-  color: #15263e;
+  background: rgba(27, 106, 214, 0.12);
+  border-color: rgba(27, 106, 214, 0.28);
+  color: #0d2540;
 }
 body.theme-day .tooltip {
-  background: rgba(214, 226, 240, 0.96);
-  color: #14233c;
+  background: rgba(197, 219, 240, 0.96);
+  color: #0d2540;
   border-color: var(--border);
 }
 
 body.theme-day .vpc-bg { fill: rgba(237, 113, 0, 0.10); stroke: rgba(237, 113, 0, 0.7); }
 body.theme-day .subnet.public  { fill: rgba(34, 197, 94, 0.12); }
-body.theme-day .subnet.private { fill: rgba(37, 99, 235, 0.12); }
-body.theme-day .subnet.data    { fill: rgba(168, 85, 247, 0.12); }
-body.theme-day .node-bg { fill: #e0eaf6; stroke: var(--border); }
-body.theme-day .node-label { fill: #14233c; }
+body.theme-day .subnet.private { fill: rgba(27, 106, 214, 0.14); }
+body.theme-day .subnet.data    { fill: rgba(168, 85, 247, 0.14); }
+body.theme-day .node-bg { fill: #d6e7f6; stroke: var(--border); }
+body.theme-day .node-label { fill: #0d2540; }
 body.theme-day .node-sub { fill: var(--muted); }
-body.theme-day .flow-label { fill: #4a607f; stroke: var(--bg); }
-body.theme-day .flow-path { stroke: rgba(35, 60, 110, 0.32); }
+body.theme-day .flow-label { fill: #3e5d83; stroke: var(--bg); }
+body.theme-day .flow-path { stroke: rgba(20, 60, 120, 0.32); }
 
 body.theme-day .tour-bar,
 body.theme-day .prox-panel,
 body.theme-day .explore-help {
-  background: rgba(214, 226, 240, 0.94);
-  color: #14233c;
+  background: rgba(197, 219, 240, 0.94);
+  color: #0d2540;
 }
-body.theme-day .tour-narration { color: #233856; }
+body.theme-day .tour-narration { color: #1c3656; }
 body.theme-day .explore-help kbd {
-  background: #d8e5f1;
-  color: #14233c;
-  border-color: #93acc9;
+  background: #c5dbf0;
+  color: #0d2540;
+  border-color: #6ea0cc;
 }
 body.theme-day .tour-btn {
-  background: rgba(20, 35, 70, 0.05);
-  color: #14233c;
+  background: rgba(13, 37, 64, 0.05);
+  color: #0d2540;
 }
 body.theme-day .tour-btn:hover {
-  background: rgba(37, 99, 235, 0.15);
+  background: rgba(27, 106, 214, 0.18);
 }
 body.theme-day .voice-popover {
-  background: rgba(20, 35, 70, 0.05);
+  background: rgba(13, 37, 64, 0.05);
 }
 body.theme-day .voice-popover-row select,
 body.theme-day .voice-popover-row input[type="range"] {
-  background: #e0eaf6;
-  color: #14233c;
+  background: #d6e7f6;
+  color: #0d2540;
 }
 
 .layout {

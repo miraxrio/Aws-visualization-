@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05g — street ground + sparser skyline + brighter yards");
+console.log("[viz3d] build 2026-05-05h — neon outer floor + streets inside VPCs + sky-blue UI");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -20,7 +20,9 @@ let focusEffect = null; // { group, targetMesh, baseEmissive }
 
 // Theme handles, populated by init()
 let sky, sunLight, rimLight, hemiLight, ambientLight, stars, ground;
-let nightSkyTex, daySkyTex, nightGroundTex, dayGroundTex;
+let nightSkyTex, daySkyTex;
+let nightGroundTex, dayGroundTex;     // outer ground (server floor)
+let nightStreetTex, dayStreetTex;     // VPC top face (city streets)
 let currentTheme = "night";
 
 // Explore (first-person walk) state
@@ -73,22 +75,26 @@ function init(container) {
   rimLight.position.set(60, 80, -120);
   scene.add(rimLight);
 
-  // Ground — city street pattern: paving tiles framed by sidewalks with
-  // dashed centre-lines, crosswalks at intersections, and the occasional
-  // manhole cover. The colourful subnet platforms drop on top like yards.
-  // Two textures are pre-baked (day + night) and swapped by setTheme().
-  nightGroundTex = makeStreetTexture("night");
-  nightGroundTex.repeat.set(8, 8);
-  dayGroundTex = makeStreetTexture("day");
-  dayGroundTex.repeat.set(8, 8);
+  // Outer ground around the whole network city — looks like a brightly-
+  // lit data-centre floor: server racks with neon LED indicators, glowing
+  // cable traces. The network city literally sits on top of the hardware.
+  nightGroundTex  = makeServerFloorTexture("night");
+  dayGroundTex    = makeServerFloorTexture("day");
+  nightGroundTex.repeat.set(14, 14);
+  dayGroundTex.repeat.set(14, 14);
+
+  // Street texture used inside each VPC (top face of the VPC ground patch).
+  nightStreetTex = makeStreetTexture("night");
+  dayStreetTex   = makeStreetTexture("day");
+
   ground = new THREE.Mesh(
     new THREE.PlaneGeometry(3000, 3000),
     new THREE.MeshStandardMaterial({
       map: nightGroundTex,
-      roughness: 0.78,
-      metalness: 0.18,
-      emissive: 0x1a2440,
-      emissiveIntensity: 0.18,
+      roughness: 0.6,
+      metalness: 0.35,
+      emissive: 0x1c2f5a,
+      emissiveIntensity: 0.32,
     }),
   );
   ground.rotation.x = -Math.PI / 2;
@@ -246,16 +252,37 @@ function addVpc(vpc) {
 
   const grp = new THREE.Group();
 
-  const geo = new THREE.BoxGeometry(w, 0.8, d);
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x1a1308,
+  // Street texture on the TOP face of the VPC ground (the area between
+  // subnet platforms reads as actual streets/intersections), with solid
+  // dark sides so the box reads as a raised plot edged in orange.
+  // BoxGeometry material order: [+X, -X, +Y, -Y, +Z, -Z] — index 2 is top.
+  const streetTex = currentTheme === "day" ? dayStreetTex : nightStreetTex;
+  // Tile so the city blocks read at building scale (~32 world units / tile).
+  const repeat = Math.max(2, Math.round(Math.min(w, d) / 32));
+  // Per-VPC clone so each VPC can have its own .repeat without colliding
+  const tex = streetTex.clone();
+  tex.needsUpdate = true;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, Math.max(2, Math.round((d / w) * repeat)));
+  const topMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    roughness: 0.78,
+    metalness: 0.2,
+    emissive: 0xff9900,
+    emissiveIntensity: 0.04,
+  });
+  const sideMat = new THREE.MeshStandardMaterial({
+    color: 0x281b08,
     emissive: 0xff9900,
     emissiveIntensity: 0.08,
     roughness: 0.9,
   });
-  const mesh = new THREE.Mesh(geo, mat);
+  const geo = new THREE.BoxGeometry(w, 0.8, d);
+  const mesh = new THREE.Mesh(geo, [sideMat, sideMat, topMat, sideMat, sideMat, sideMat]);
   mesh.position.set(p.x, 0.4, p.z);
   mesh.receiveShadow = true;
+  // Tag so setTheme can swap the texture later
+  mesh.userData.vpcTopMat = topMat;
   grp.add(mesh);
 
   const edges = new THREE.EdgesGeometry(geo);
@@ -805,11 +832,119 @@ function makeDaySkyTexture() {
   return tex;
 }
 
-// Procedural tileable city-block ground texture: a 4×4 grid of paving
-// tiles separated by darker road seams, with sidewalks framing each tile,
-// dashed road centre lines, and a few crosswalks/manhole covers — so the
-// open space between subnet platforms reads as actual streets, and the
-// colourful subnet platforms sit on top like yards.
+// Procedural tileable "data-centre floor" texture used for the OUTER
+// ground around the whole network city. Brighter / more neon than the
+// previous version so the city sits on top of a glowing data hall
+// rather than a dim cellar.
+function makeServerFloorTexture(theme) {
+  const isDay = theme === "day";
+  const S = 512;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const ctx = c.getContext("2d");
+
+  // Substrate — much brighter than the original #0a1326. Night reads as a
+  // lit-up electric-blue floor, day as brushed metal.
+  ctx.fillStyle = isDay ? "#5a6e8a" : "#1c2f5a";
+  ctx.fillRect(0, 0, S, S);
+
+  // Subtle panel-seam grid
+  ctx.strokeStyle = isDay ? "rgba(20, 35, 70, 0.25)" : "rgba(140, 180, 255, 0.10)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= S; i += 32) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(S, i); ctx.stroke();
+  }
+  // Diagonal hatching for depth
+  ctx.strokeStyle = isDay ? "rgba(20, 30, 60, 0.05)" : "rgba(140, 180, 255, 0.06)";
+  ctx.lineWidth = 1;
+  for (let i = -S; i < S * 2; i += 6) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + S, S); ctx.stroke();
+  }
+
+  const racks = [
+    { x: 24,  y: 28,  w: 200, h: 78 },
+    { x: 248, y: 38,  w: 224, h: 100 },
+    { x: 32,  y: 134, w: 256, h: 78 },
+    { x: 312, y: 158, w: 168, h: 64 },
+    { x: 28,  y: 240, w: 192, h: 96 },
+    { x: 244, y: 250, w: 232, h: 70 },
+    { x: 56,  y: 360, w: 224, h: 84 },
+    { x: 308, y: 350, w: 174, h: 96 },
+  ];
+  racks.forEach((r) => {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+    ctx.fillRect(r.x + 2, r.y + 3, r.w, r.h);
+
+    const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y + r.h);
+    if (isDay) { g.addColorStop(0, "#94a8c0"); g.addColorStop(1, "#536a86"); }
+    else       { g.addColorStop(0, "#243a66"); g.addColorStop(1, "#0e1d40"); }
+    ctx.fillStyle = g;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+    for (let y = r.y + 8; y < r.y + r.h - 1; y += 8) {
+      ctx.beginPath(); ctx.moveTo(r.x + 3, y); ctx.lineTo(r.x + r.w - 3, y); ctx.stroke();
+    }
+    ctx.strokeStyle = isDay ? "rgba(255, 255, 255, 0.20)" : "rgba(160, 200, 255, 0.10)";
+    for (let y = r.y + 8; y < r.y + r.h - 1; y += 8) {
+      ctx.beginPath(); ctx.moveTo(r.x + 3, y - 0.5); ctx.lineTo(r.x + r.w - 3, y - 0.5); ctx.stroke();
+    }
+
+    // Neon LED column on the right — bigger / brighter halos
+    const ledY0 = r.y + 6;
+    for (let i = 0; ledY0 + i * 8 < r.y + r.h - 4; i++) {
+      const cx = r.x + r.w - 6;
+      const cy = ledY0 + i * 8;
+      if (Math.random() < 0.78) {
+        const roll = Math.random();
+        const color = roll < 0.45 ? "rgba(80, 250, 140,"
+                    : roll < 0.7  ? "rgba(120, 220, 255,"
+                    : roll < 0.88 ? "rgba(255, 200, 90,"
+                                  : "rgba(255, 90, 220,";
+        ctx.fillStyle = color + "1)";
+        ctx.beginPath(); ctx.arc(cx, cy, 1.6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color + "0.45)";
+        ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color + "0.18)";
+        ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    ctx.fillStyle = isDay ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.08)";
+    ctx.fillRect(r.x + 6, r.y + r.h - 6, 24, 3);
+  });
+
+  // Glowing neon traces between racks
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = isDay ? "rgba(20, 100, 200, 0.4)" : "rgba(120, 200, 255, 0.45)";
+  ctx.shadowColor  = isDay ? "rgba(20, 100, 200, 0.4)" : "rgba(120, 200, 255, 0.6)";
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.moveTo(0, 220);   ctx.lineTo(S, 220);
+  ctx.moveTo(0, 340);   ctx.lineTo(S, 340);
+  ctx.moveTo(228, 0);   ctx.lineTo(228, S);
+  ctx.moveTo(298, 0);   ctx.lineTo(298, S);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// Procedural tileable city-block STREET texture used inside each VPC
+// (the patch between subnet platforms). 4×4 grid of paving tiles framed
+// by sidewalks with dashed centre-lines, crosswalks, and a couple of
+// manhole covers — so the area inside a VPC reads as streets, with the
+// colourful subnet platforms as yards on top.
 function makeStreetTexture(theme) {
   const isDay = theme === "day";
   const S = 512;
@@ -1260,9 +1395,26 @@ function setTheme(theme) {
   }
   if (ground && ground.material) {
     ground.material.map = isDay ? dayGroundTex : nightGroundTex;
-    ground.material.emissive.setHex(isDay ? 0x202938 : 0x1a2440);
-    ground.material.emissiveIntensity = isDay ? 0.05 : 0.18;
+    ground.material.emissive.setHex(isDay ? 0x4a5b78 : 0x1c2f5a);
+    ground.material.emissiveIntensity = isDay ? 0.10 : 0.32;
     ground.material.needsUpdate = true;
+  }
+  // Per-VPC top-face street texture
+  if (cityGroup) {
+    cityGroup.traverse((c) => {
+      if (c.userData && c.userData.vpcTopMat) {
+        const oldTex = c.userData.vpcTopMat.map;
+        const repX = oldTex ? oldTex.repeat.x : 4;
+        const repY = oldTex ? oldTex.repeat.y : 4;
+        const tex = (isDay ? dayStreetTex : nightStreetTex).clone();
+        tex.needsUpdate = true;
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(repX, repY);
+        c.userData.vpcTopMat.map = tex;
+        c.userData.vpcTopMat.needsUpdate = true;
+        if (oldTex) oldTex.dispose();
+      }
+    });
   }
   if (stars) stars.visible = !isDay;
 
