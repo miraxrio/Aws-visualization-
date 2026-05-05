@@ -415,7 +415,8 @@ function positionForGeometry(mesh, type, sz, p) {
 
 function addInternetPortal(node) {
   const p = pos3D(node);
-  // Place a glowing torus floating above the layout's "internet" position
+  const grp = new THREE.Group();
+
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(7, 0.7, 10, 36),
     new THREE.MeshStandardMaterial({
@@ -428,25 +429,25 @@ function addInternetPortal(node) {
   );
   ring.position.set(p.x, 16, p.z);
   ring.userData.spin = true;
-  cityGroup.add(ring);
+  grp.add(ring);
 
-  // Inner energy disk
   const disk = new THREE.Mesh(
     new THREE.CircleGeometry(6.2, 36),
     new THREE.MeshBasicMaterial({ color: 0xff5f86, transparent: true, opacity: 0.18, side: THREE.DoubleSide }),
   );
   disk.position.copy(ring.position);
   disk.rotation.x = Math.PI / 2;
-  cityGroup.add(disk);
+  grp.add(disk);
 
-  // Halo
   const halo = makeGlowSprite(0xff5f86, 28);
   halo.position.copy(ring.position);
-  cityGroup.add(halo);
+  grp.add(halo);
 
   const label = makeLabel("INTERNET", "#ff5f86");
   label.position.set(p.x, 26, p.z);
-  cityGroup.add(label);
+  grp.add(label);
+
+  cityGroup.add(grp);
 
   registry.set("internet", {
     type: "internet",
@@ -454,6 +455,7 @@ function addInternetPortal(node) {
     height: 14,
     extent: 10,
     mesh: ring,
+    group: grp,
   });
 }
 
@@ -893,6 +895,13 @@ function setFocusEffect(id) {
     });
     focusEffect = null;
   }
+
+  // Show or hide labels across the whole city based on whether something is
+  // focused. Floating labels are 3D billboards — even with depthTest:true,
+  // a label hovering in mid-air with nothing between it and the camera still
+  // renders, so we just turn off every other entry's labels during focus.
+  setLabelsVisibilityForFocus(id);
+
   if (!id) return;
   const r = registry.get(id);
   if (!r) return;
@@ -966,6 +975,20 @@ function setFocusEffect(id) {
   focusEffect = { group: grp, targetMesh: r.mesh, baseEmissive, targetEntry: r };
 }
 
+// Toggle visibility of every label/badge/roof tile in the scene based on
+// whether a tour focus is active. When `focusedId` is set, only that entry's
+// labels stay on; all others are hidden so they can't float in front of the
+// focused element. When null, everything is shown again.
+function setLabelsVisibilityForFocus(focusedId) {
+  registry.forEach((entry, id) => {
+    if (!entry.group) return;
+    const visible = !focusedId || id === focusedId;
+    entry.group.traverse((c) => {
+      if (c.userData && c.userData.isLabel) c.visible = visible;
+    });
+  });
+}
+
 // ---------- camera-occlusion fading ----------
 
 const _camDir = new THREE.Vector3();
@@ -1014,14 +1037,10 @@ function updateOcclusion(targetEntry) {
 function setEntryOpacity(entry, opacity) {
   if (entry._lastOpacity === opacity) return;
   entry._lastOpacity = opacity;
-  // When an entry is strongly occluded, hide its label/badge/roof entirely
-  // — half-transparent text floating in front of the focused element is
-  // worse than nothing.
-  const hideAux = opacity < 0.65;
   entry.group.traverse((c) => {
-    if (c.userData && c.userData.isLabel) {
-      c.visible = !hideAux;
-    }
+    // Labels are governed by setLabelsVisibilityForFocus, not the occlusion
+    // fader — leave their material/visibility alone here.
+    if (c.userData && c.userData.isLabel) return;
     if (!c.material) return;
     const ms = Array.isArray(c.material) ? c.material : [c.material];
     ms.forEach((m) => {
