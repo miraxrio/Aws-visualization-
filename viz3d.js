@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05j — back to monochrome simple-icons");
+console.log("[viz3d] build 2026-05-05k — tight icon decals + spinning Aurora/Lambda");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -370,6 +370,18 @@ function addBuilding(node) {
 
   const grp = new THREE.Group();
 
+  // Spinner host — every building goes here. For aurora and lambda this
+  // group rotates slowly around its Y axis so the building (and the icon
+  // decals around it) appear to spin. For everything else it's a static
+  // anchor at (p.x, 0, p.z) so children can use local positions.
+  const spinner = new THREE.Group();
+  spinner.position.set(p.x, 0, p.z);
+  if (node.type === "aurora" || node.type === "lambda") {
+    spinner.userData.spinY = true;
+    spinner.userData.spinSpeed = node.type === "aurora" ? 0.25 : 0.55; // rad/s
+  }
+  grp.add(spinner);
+
   const geo = pickGeometry(node.type, sz);
   // Use the brand glow as the body colour so the box and the AWS icon on
   // its sides read as the same hue. Emissive boost keeps the colour
@@ -382,58 +394,53 @@ function addBuilding(node) {
     metalness: 0.25,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  positionForGeometry(mesh, node.type, sz, p);
+  positionForGeometryLocal(mesh, node.type, sz);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  grp.add(mesh);
+  spinner.add(mesh);
 
-  // Ground halo glow
+  // Ground halo glow — does NOT rotate (sits on the floor like a footprint)
   const halo = makeGlowSprite(colors.glow, sz.w * 3.0);
   halo.position.set(p.x, 2, p.z);
   grp.add(halo);
 
-  // Top blinking light
+  // Top blinking light — local to spinner so it follows rotating buildings
   const blinkGeo = new THREE.SphereGeometry(0.4, 8, 6);
   const blinkMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const blink = new THREE.Mesh(blinkGeo, blinkMat);
-  blink.position.set(p.x, sz.h + 2.6, p.z);
+  blink.position.set(0, sz.h + 2.6, 0);
   blink.userData.blink = true;
   blink.userData.phase = Math.random() * Math.PI * 2;
-  grp.add(blink);
+  spinner.add(blink);
 
-  // AWS service icon — placed on the sides of the 3D shape (or as a billboard
-  // when the geometry has no flat vertical face). No more redundant rooftop
-  // tile or floating round badge.
-  // Sized to fit comfortably on the side, centered vertically so the decal
-  // is clearly *on* the building rather than near its top edge.
+  // AWS service icon — placed tight against each face of the 3D shape (or
+  // as a single camera-facing billboard for shapes whose sides aren't flat).
+  // Decals are inside the spinner so they orbit with rotating buildings.
   const decalSize = Math.max(3, Math.min(sz.w, sz.d, sz.h) * 0.7);
   const decalY = 1.95 + sz.h * 0.5;
   if (hasFlatSides(node.type)) {
-    const halfW = sz.w / 2;
-    const halfD = sz.d / 2;
-    // For a cylinder (sz.w = diameter) the plane's centre sits just outside
-    // the radius and pokes through the curved surface only at the corners,
-    // which is hidden by the icon's transparent halo edges.
+    const off = decalOffset(node.type, sz);
     const sides = [
-      { yaw: 0,             ox:  0,         oz:  halfD + 0.06 },
-      { yaw: Math.PI,       ox:  0,         oz: -halfD - 0.06 },
-      { yaw:  Math.PI / 2,  ox:  halfW + 0.06, oz: 0 },
-      { yaw: -Math.PI / 2,  ox: -halfW - 0.06, oz: 0 },
+      { yaw: 0,             ox:  0,             oz:  off.z + 0.04 },
+      { yaw: Math.PI,       ox:  0,             oz: -(off.z + 0.04) },
+      { yaw:  Math.PI / 2,  ox:  off.x + 0.04,  oz:  0 },
+      { yaw: -Math.PI / 2,  ox: -(off.x + 0.04), oz: 0 },
     ];
     sides.forEach(({ yaw, ox, oz }) => {
       const decal = makeSideDecal(node.type, colors.glow, decalSize);
-      decal.position.set(p.x + ox, decalY, p.z + oz);
+      decal.position.set(ox, decalY, oz);
       decal.rotation.y = yaw;
-      grp.add(decal);
+      spinner.add(decal);
     });
   } else {
     const billboard = makeIconBillboard(node.type, colors.glow, decalSize);
-    billboard.position.set(p.x, decalY, p.z);
-    grp.add(billboard);
+    billboard.position.set(0, decalY, 0);
+    spinner.add(billboard);
   }
 
-  // Single name label well above the building so it never overlaps the
-  // side decal or the blinking light on top.
+  // Single name label well above the building. It stays on the OUTER group
+  // (in world coords) so it never rotates with the spinner — sprites
+  // already face the camera regardless of parent rotation.
   const label = makeLabel(
     truncate(node.name || node.id, 16),
     "#" + new THREE.Color(colors.glow).getHexString(),
@@ -468,6 +475,37 @@ function pickSize(type, w, d) {
   return { w: fw, d: fw, h };
 }
 
+// For each building type, the actual half-extent in X/Z direction (where
+// the visible side face is, given pickGeometry's per-type scaling). Used
+// to place side decals tight against the surface — important for shapes
+// whose geometry doesn't fill the slot, like Aurora (cylinder, r = w*0.45)
+// or non-square boxes like WAF / ALB.
+function decalOffset(type, sz) {
+  switch (type) {
+    case "alb": case "nlb":
+      // BoxGeometry(w * 1.4, h, d * 0.6)
+      return { x: sz.w * 0.7,   z: sz.d * 0.3 };
+    case "waf":
+      // BoxGeometry(w * 0.85, h, d * 0.6)
+      return { x: sz.w * 0.425, z: sz.d * 0.3 };
+    case "rds": case "aurora":
+      // CylinderGeometry(w*0.45, w*0.45)
+      return { x: sz.w * 0.45,  z: sz.w * 0.45 };
+    case "s3":
+      // CylinderGeometry(w*0.55, w*0.55, h, 6) — hex prism
+      return { x: sz.w * 0.55,  z: sz.w * 0.55 };
+    case "dynamodb":
+      return { x: sz.w * 0.5,   z: sz.w * 0.5 };
+    case "tgw":
+      return { x: sz.w * 0.55,  z: sz.w * 0.55 };
+    case "ecs": case "eks":
+      // BoxGeometry(w, h, d * 0.95)
+      return { x: sz.w * 0.5,   z: sz.d * 0.475 };
+    default:
+      return { x: sz.w * 0.5,   z: sz.d * 0.475 };
+  }
+}
+
 function pickGeometry(type, sz) {
   const { w, d, h } = sz;
   switch (type) {
@@ -500,23 +538,25 @@ function pickGeometry(type, sz) {
   }
 }
 
-function positionForGeometry(mesh, type, sz, p) {
+// Position a building's mesh in LOCAL coordinates (relative to the
+// per-building spinner sub-group at p.x, 0, p.z). XZ is always 0.
+function positionForGeometryLocal(mesh, type, sz) {
   // Subnets sit at y=1.8 (top); buildings rest just above that.
   const BASE = 1.9;
   switch (type) {
     case "igw":
-      mesh.position.set(p.x, BASE + 1, p.z);
+      mesh.position.set(0, BASE + 1, 0);
       mesh.rotation.x = Math.PI; // open downward (arch)
       break;
     case "nat":
-      mesh.position.set(p.x, BASE, p.z);
+      mesh.position.set(0, BASE, 0);
       break;
     case "lambda":
-      mesh.position.set(p.x, sz.h * 0.5 + BASE, p.z);
+      mesh.position.set(0, sz.h * 0.5 + BASE, 0);
       mesh.rotation.y = Math.PI / 4;
       break;
     default:
-      mesh.position.set(p.x, sz.h / 2 + BASE, p.z);
+      mesh.position.set(0, sz.h / 2 + BASE, 0);
   }
 }
 
@@ -1830,9 +1870,10 @@ function animate() {
     });
   });
 
-  // Internet ring spin + blinking lights
+  // Internet ring spin + blinking lights + per-building Y rotation
   cityGroup.traverse((c) => {
     if (c.userData.spin) c.rotation.z += dt * 0.6;
+    if (c.userData.spinY) c.rotation.y += dt * (c.userData.spinSpeed || 0.3);
     if (c.userData.blink) {
       const v = (Math.sin(now / 250 + c.userData.phase) + 1) / 2;
       c.material.color.setRGB(1, 0.9, 0.5 + 0.5 * v);
