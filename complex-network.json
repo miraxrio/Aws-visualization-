@@ -1,0 +1,540 @@
+{
+  "name": "Acme Cloud — SaaS Backend",
+  "region": "us-east-1",
+  "versions": [
+    {
+      "id": "v1",
+      "name": "MVP launch — single AZ",
+      "author": "alice@acme.com",
+      "timestamp": "2024-08-12T09:30:00Z",
+      "status": "ok",
+      "note": "Day-one MVP: ALB → web tier on EC2 → Postgres. Single AZ to keep ops simple while we validate the product.",
+      "data": {
+        "name": "Acme Cloud · v1 (MVP)",
+        "region": "us-east-1",
+        "vpcs": [
+          {
+            "id": "vpc-prod",
+            "name": "Production",
+            "cidr": "10.0.0.0/16",
+            "region": "us-east-1",
+            "subnets": [
+              { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+              { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+              { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" }
+            ],
+            "gateways": [
+              { "id": "igw",    "type": "igw", "name": "Internet GW" },
+              { "id": "nat-1a", "type": "nat", "name": "NAT 1a", "subnet": "pub-1a" }
+            ],
+            "resources": [
+              { "id": "alb",    "type": "alb", "name": "Web ALB",   "subnet": "pub-1a" },
+              { "id": "web-1a", "type": "ec2", "name": "Web Server","subnet": "prv-1a" },
+              { "id": "rds-pg", "type": "rds", "name": "Postgres",  "subnet": "db-1a"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "alb",    "label": "HTTPS 443", "kind": "internet" },
+          { "from": "alb",      "to": "web-1a", "label": "HTTP" },
+          { "from": "web-1a",   "to": "rds-pg", "label": "5432" },
+          { "from": "web-1a",   "to": "nat-1a", "label": "egress", "kind": "egress" },
+          { "from": "nat-1a",   "to": "igw",    "label": "0.0.0.0/0", "kind": "egress" }
+        ]
+      }
+    },
+    {
+      "id": "v2",
+      "name": "Multi-AZ HA — Aurora cluster",
+      "author": "alice@acme.com",
+      "timestamp": "2024-09-04T16:10:00Z",
+      "status": "ok",
+      "note": "Brought up us-east-1b. Postgres replaced by Aurora cluster (writer 1a, reader 1b). NAT in each AZ so an AZ outage no longer kills egress.",
+      "data": {
+        "name": "Acme Cloud · v2 (multi-AZ)",
+        "region": "us-east-1",
+        "vpcs": [
+          {
+            "id": "vpc-prod",
+            "name": "Production",
+            "cidr": "10.0.0.0/16",
+            "region": "us-east-1",
+            "subnets": [
+              { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+              { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+              { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" },
+              { "id": "pub-1b", "name": "Public 1b",  "cidr": "10.0.2.0/24",  "tier": "public",  "az": "us-east-1b" },
+              { "id": "prv-1b", "name": "App 1b",     "cidr": "10.0.12.0/24", "tier": "private", "az": "us-east-1b" },
+              { "id": "db-1b",  "name": "Data 1b",    "cidr": "10.0.22.0/24", "tier": "data",    "az": "us-east-1b" }
+            ],
+            "gateways": [
+              { "id": "igw",    "type": "igw", "name": "Internet GW" },
+              { "id": "nat-1a", "type": "nat", "name": "NAT 1a", "subnet": "pub-1a" },
+              { "id": "nat-1b", "type": "nat", "name": "NAT 1b", "subnet": "pub-1b" }
+            ],
+            "resources": [
+              { "id": "alb",      "type": "alb",    "name": "Web ALB",        "subnet": "pub-1a" },
+              { "id": "web-1a",   "type": "ec2",    "name": "Web 1a",         "subnet": "prv-1a" },
+              { "id": "web-1b",   "type": "ec2",    "name": "Web 1b",         "subnet": "prv-1b" },
+              { "id": "aurora-w", "type": "aurora", "name": "Aurora Writer",  "subnet": "db-1a"  },
+              { "id": "aurora-r", "type": "aurora", "name": "Aurora Reader",  "subnet": "db-1b"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "alb",      "label": "HTTPS 443", "kind": "internet" },
+          { "from": "alb",      "to": "web-1a",   "label": "HTTP" },
+          { "from": "alb",      "to": "web-1b",   "label": "HTTP" },
+          { "from": "web-1a",   "to": "aurora-w", "label": "5432 write" },
+          { "from": "web-1b",   "to": "aurora-r", "label": "5432 read"  },
+          { "from": "aurora-w", "to": "aurora-r", "label": "replicate"  },
+          { "from": "web-1a",   "to": "nat-1a",   "label": "egress", "kind": "egress" },
+          { "from": "web-1b",   "to": "nat-1b",   "label": "egress", "kind": "egress" },
+          { "from": "nat-1a",   "to": "igw",      "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "nat-1b",   "to": "igw",      "label": "0.0.0.0/0", "kind": "egress" }
+        ]
+      }
+    },
+    {
+      "id": "v3",
+      "name": "Migrate web tier to ECS Fargate",
+      "author": "carol@acme.com",
+      "timestamp": "2024-10-21T11:45:00Z",
+      "status": "broken",
+      "note": "ALL CONTAINER TASKS ARE THROWING `connection refused` ON 5432. The Aurora cluster's security group still only allows the legacy EC2 security group (sg-ec2-web); the new ECS task SG (sg-ecs-app) was created but never added to Aurora's inbound rules. ALB → ECS health checks pass, but every request that hits the database errors out. Need to add sg-ecs-app to the data-tier SG before this is releasable.",
+      "data": {
+        "name": "Acme Cloud · v3 (broken — SG)",
+        "region": "us-east-1",
+        "vpcs": [
+          {
+            "id": "vpc-prod",
+            "name": "Production",
+            "cidr": "10.0.0.0/16",
+            "region": "us-east-1",
+            "subnets": [
+              { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+              { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+              { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" },
+              { "id": "pub-1b", "name": "Public 1b",  "cidr": "10.0.2.0/24",  "tier": "public",  "az": "us-east-1b" },
+              { "id": "prv-1b", "name": "App 1b",     "cidr": "10.0.12.0/24", "tier": "private", "az": "us-east-1b" },
+              { "id": "db-1b",  "name": "Data 1b",    "cidr": "10.0.22.0/24", "tier": "data",    "az": "us-east-1b" }
+            ],
+            "gateways": [
+              { "id": "igw",    "type": "igw", "name": "Internet GW" },
+              { "id": "nat-1a", "type": "nat", "name": "NAT 1a", "subnet": "pub-1a" },
+              { "id": "nat-1b", "type": "nat", "name": "NAT 1b", "subnet": "pub-1b" }
+            ],
+            "resources": [
+              { "id": "alb",       "type": "alb",    "name": "Web ALB",       "subnet": "pub-1a" },
+              { "id": "app-a",     "type": "ecs",    "name": "API Tasks 1a", "subnet": "prv-1a" },
+              { "id": "app-b",     "type": "ecs",    "name": "API Tasks 1b", "subnet": "prv-1b" },
+              { "id": "webhook",   "type": "lambda", "name": "Webhook Fn",   "subnet": "prv-1b" },
+              { "id": "aurora-w",  "type": "aurora", "name": "Aurora Writer","subnet": "db-1a"  },
+              { "id": "aurora-r",  "type": "aurora", "name": "Aurora Reader","subnet": "db-1b"  },
+              { "id": "sg-ecs",    "type": "sg",     "name": "sg-ecs-app",   "subnet": "prv-1a" },
+              { "id": "sg-aurora", "type": "sg",     "name": "sg-aurora",    "subnet": "db-1a"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "alb",      "label": "HTTPS 443", "kind": "internet" },
+          { "from": "alb",      "to": "app-a",    "label": "HTTP" },
+          { "from": "alb",      "to": "app-b",    "label": "HTTP" },
+          { "from": "app-a",    "to": "aurora-w", "label": "5432 BLOCKED" },
+          { "from": "app-b",    "to": "aurora-r", "label": "5432 BLOCKED" },
+          { "from": "webhook",  "to": "aurora-r", "label": "5432 BLOCKED" },
+          { "from": "aurora-w", "to": "aurora-r", "label": "replicate" },
+          { "from": "app-a",    "to": "nat-1a",   "label": "egress", "kind": "egress" },
+          { "from": "app-b",    "to": "nat-1b",   "label": "egress", "kind": "egress" },
+          { "from": "nat-1a",   "to": "igw",      "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "nat-1b",   "to": "igw",      "label": "0.0.0.0/0", "kind": "egress" }
+        ]
+      }
+    },
+    {
+      "id": "v4",
+      "name": "Fix DB security group + add S3 / DynamoDB",
+      "author": "carol@acme.com",
+      "timestamp": "2024-10-22T08:20:00Z",
+      "status": "fixed",
+      "note": "Replaced the legacy EC2-only inbound rule on sg-aurora with sg-ecs-app on port 5432. ECS tasks reach Aurora again. Also wired ECS to S3 (file uploads) via a gateway VPC endpoint and to DynamoDB (session store) so neither path leaves the AWS network — drops NAT egress fees.",
+      "data": {
+        "name": "Acme Cloud · v4 (containers, fixed)",
+        "region": "us-east-1",
+        "vpcs": [
+          {
+            "id": "vpc-prod",
+            "name": "Production",
+            "cidr": "10.0.0.0/16",
+            "region": "us-east-1",
+            "subnets": [
+              { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+              { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+              { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" },
+              { "id": "pub-1b", "name": "Public 1b",  "cidr": "10.0.2.0/24",  "tier": "public",  "az": "us-east-1b" },
+              { "id": "prv-1b", "name": "App 1b",     "cidr": "10.0.12.0/24", "tier": "private", "az": "us-east-1b" },
+              { "id": "db-1b",  "name": "Data 1b",    "cidr": "10.0.22.0/24", "tier": "data",    "az": "us-east-1b" }
+            ],
+            "gateways": [
+              { "id": "igw",    "type": "igw", "name": "Internet GW" },
+              { "id": "nat-1a", "type": "nat", "name": "NAT 1a", "subnet": "pub-1a" },
+              { "id": "nat-1b", "type": "nat", "name": "NAT 1b", "subnet": "pub-1b" },
+              { "id": "vpe-s3", "type": "endpoint", "name": "S3 Gateway VPCE", "subnet": "prv-1a" },
+              { "id": "vpe-ddb","type": "endpoint", "name": "DDB Gateway VPCE","subnet": "prv-1b" }
+            ],
+            "resources": [
+              { "id": "alb",       "type": "alb",      "name": "Web ALB",       "subnet": "pub-1a" },
+              { "id": "app-a",     "type": "ecs",      "name": "API Tasks 1a", "subnet": "prv-1a" },
+              { "id": "app-b",     "type": "ecs",      "name": "API Tasks 1b", "subnet": "prv-1b" },
+              { "id": "webhook",   "type": "lambda",   "name": "Webhook Fn",   "subnet": "prv-1b" },
+              { "id": "aurora-w",  "type": "aurora",   "name": "Aurora Writer","subnet": "db-1a"  },
+              { "id": "aurora-r",  "type": "aurora",   "name": "Aurora Reader","subnet": "db-1b"  },
+              { "id": "files",     "type": "s3",       "name": "Files Bucket", "subnet": "db-1a"  },
+              { "id": "sessions",  "type": "dynamodb", "name": "Sessions",     "subnet": "db-1b"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "alb",      "label": "HTTPS 443", "kind": "internet" },
+          { "from": "alb",      "to": "app-a",    "label": "HTTP" },
+          { "from": "alb",      "to": "app-b",    "label": "HTTP" },
+          { "from": "app-a",    "to": "aurora-w", "label": "5432 write" },
+          { "from": "app-b",    "to": "aurora-r", "label": "5432 read"  },
+          { "from": "webhook",  "to": "aurora-r", "label": "5432 read"  },
+          { "from": "aurora-w", "to": "aurora-r", "label": "replicate"  },
+          { "from": "app-a",    "to": "files",    "label": "PUT objects" },
+          { "from": "app-b",    "to": "files",    "label": "GET objects" },
+          { "from": "app-a",    "to": "sessions", "label": "session r/w" },
+          { "from": "app-b",    "to": "sessions", "label": "session r/w" },
+          { "from": "app-a",    "to": "nat-1a",   "label": "egress", "kind": "egress" },
+          { "from": "app-b",    "to": "nat-1b",   "label": "egress", "kind": "egress" },
+          { "from": "nat-1a",   "to": "igw",      "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "nat-1b",   "to": "igw",      "label": "0.0.0.0/0", "kind": "egress" }
+        ]
+      }
+    },
+    {
+      "id": "v5",
+      "name": "Edge layer — CloudFront + WAF + Route 53",
+      "author": "bob@acme.com",
+      "timestamp": "2024-12-09T14:15:00Z",
+      "status": "ok",
+      "note": "Pulled the front door out to the edge. Route 53 in front, CloudFront caches static assets and TLS-terminates, WAF inspects every request before it hits the ALB. P95 latency for assets dropped from 240ms → 45ms.",
+      "data": {
+        "name": "Acme Cloud · v5 (edge)",
+        "region": "us-east-1",
+        "vpcs": [
+          {
+            "id": "vpc-prod",
+            "name": "Production",
+            "cidr": "10.0.0.0/16",
+            "region": "us-east-1",
+            "subnets": [
+              { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+              { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+              { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" },
+              { "id": "pub-1b", "name": "Public 1b",  "cidr": "10.0.2.0/24",  "tier": "public",  "az": "us-east-1b" },
+              { "id": "prv-1b", "name": "App 1b",     "cidr": "10.0.12.0/24", "tier": "private", "az": "us-east-1b" },
+              { "id": "db-1b",  "name": "Data 1b",    "cidr": "10.0.22.0/24", "tier": "data",    "az": "us-east-1b" }
+            ],
+            "gateways": [
+              { "id": "igw",    "type": "igw", "name": "Internet GW" },
+              { "id": "nat-1a", "type": "nat", "name": "NAT 1a", "subnet": "pub-1a" },
+              { "id": "nat-1b", "type": "nat", "name": "NAT 1b", "subnet": "pub-1b" },
+              { "id": "vpe-s3", "type": "endpoint", "name": "S3 VPCE",  "subnet": "prv-1a" },
+              { "id": "vpe-ddb","type": "endpoint", "name": "DDB VPCE", "subnet": "prv-1b" }
+            ],
+            "resources": [
+              { "id": "dns",       "type": "route53",   "name": "acme.cloud DNS", "subnet": "pub-1a" },
+              { "id": "cdn",       "type": "cloudfront","name": "Edge CDN",       "subnet": "pub-1a" },
+              { "id": "waf",       "type": "waf",       "name": "WAF",            "subnet": "pub-1b" },
+              { "id": "alb",       "type": "alb",       "name": "Web ALB",        "subnet": "pub-1a" },
+              { "id": "app-a",     "type": "ecs",       "name": "API Tasks 1a",   "subnet": "prv-1a" },
+              { "id": "app-b",     "type": "ecs",       "name": "API Tasks 1b",   "subnet": "prv-1b" },
+              { "id": "webhook",   "type": "lambda",    "name": "Webhook Fn",     "subnet": "prv-1b" },
+              { "id": "aurora-w",  "type": "aurora",    "name": "Aurora Writer",  "subnet": "db-1a"  },
+              { "id": "aurora-r",  "type": "aurora",    "name": "Aurora Reader",  "subnet": "db-1b"  },
+              { "id": "files",     "type": "s3",        "name": "Files Bucket",   "subnet": "db-1a"  },
+              { "id": "sessions",  "type": "dynamodb",  "name": "Sessions",       "subnet": "db-1b"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "dns",      "label": "DNS",       "kind": "internet" },
+          { "from": "internet", "to": "cdn",      "label": "HTTPS 443", "kind": "internet" },
+          { "from": "cdn",      "to": "waf",      "label": "filter" },
+          { "from": "waf",      "to": "alb",      "label": "HTTP" },
+          { "from": "alb",      "to": "app-a",    "label": "HTTP" },
+          { "from": "alb",      "to": "app-b",    "label": "HTTP" },
+          { "from": "app-a",    "to": "aurora-w", "label": "5432 write" },
+          { "from": "app-b",    "to": "aurora-r", "label": "5432 read"  },
+          { "from": "webhook",  "to": "aurora-r", "label": "5432 read"  },
+          { "from": "aurora-w", "to": "aurora-r", "label": "replicate"  },
+          { "from": "app-a",    "to": "files",    "label": "PUT objects" },
+          { "from": "app-b",    "to": "files",    "label": "GET objects" },
+          { "from": "app-a",    "to": "sessions", "label": "session r/w" },
+          { "from": "app-b",    "to": "sessions", "label": "session r/w" },
+          { "from": "app-a",    "to": "nat-1a",   "label": "egress", "kind": "egress" },
+          { "from": "app-b",    "to": "nat-1b",   "label": "egress", "kind": "egress" },
+          { "from": "nat-1a",   "to": "igw",      "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "nat-1b",   "to": "igw",      "label": "0.0.0.0/0", "kind": "egress" }
+        ]
+      }
+    },
+    {
+      "id": "v6",
+      "name": "Add 1c AZ + analytics ETL",
+      "author": "alice@acme.com",
+      "timestamp": "2025-02-18T10:50:00Z",
+      "status": "ok",
+      "note": "us-east-1c online for capacity headroom. Each new AZ has its own NAT and Aurora reader. Lambda ETL runs hourly to ship Aurora → Files bucket for analytics in db-1c.",
+      "data": {
+        "name": "Acme Cloud · v6 (3 AZs + ETL)",
+        "region": "us-east-1",
+        "vpcs": [
+          {
+            "id": "vpc-prod",
+            "name": "Production",
+            "cidr": "10.0.0.0/16",
+            "region": "us-east-1",
+            "subnets": [
+              { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+              { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+              { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" },
+              { "id": "pub-1b", "name": "Public 1b",  "cidr": "10.0.2.0/24",  "tier": "public",  "az": "us-east-1b" },
+              { "id": "prv-1b", "name": "App 1b",     "cidr": "10.0.12.0/24", "tier": "private", "az": "us-east-1b" },
+              { "id": "db-1b",  "name": "Data 1b",    "cidr": "10.0.22.0/24", "tier": "data",    "az": "us-east-1b" },
+              { "id": "pub-1c", "name": "Public 1c",  "cidr": "10.0.3.0/24",  "tier": "public",  "az": "us-east-1c" },
+              { "id": "prv-1c", "name": "App 1c",     "cidr": "10.0.13.0/24", "tier": "private", "az": "us-east-1c" },
+              { "id": "db-1c",  "name": "Data 1c",    "cidr": "10.0.23.0/24", "tier": "data",    "az": "us-east-1c" }
+            ],
+            "gateways": [
+              { "id": "igw",    "type": "igw", "name": "Internet GW" },
+              { "id": "nat-1a", "type": "nat", "name": "NAT 1a", "subnet": "pub-1a" },
+              { "id": "nat-1b", "type": "nat", "name": "NAT 1b", "subnet": "pub-1b" },
+              { "id": "nat-1c", "type": "nat", "name": "NAT 1c", "subnet": "pub-1c" },
+              { "id": "vpe-s3", "type": "endpoint", "name": "S3 VPCE",  "subnet": "prv-1a" },
+              { "id": "vpe-ddb","type": "endpoint", "name": "DDB VPCE", "subnet": "prv-1b" }
+            ],
+            "resources": [
+              { "id": "dns",       "type": "route53",   "name": "acme.cloud DNS", "subnet": "pub-1a" },
+              { "id": "cdn",       "type": "cloudfront","name": "Edge CDN",       "subnet": "pub-1a" },
+              { "id": "waf",       "type": "waf",       "name": "WAF",            "subnet": "pub-1b" },
+              { "id": "alb",       "type": "alb",       "name": "Web ALB",        "subnet": "pub-1a" },
+              { "id": "app-a",     "type": "ecs",       "name": "API Tasks 1a",   "subnet": "prv-1a" },
+              { "id": "app-b",     "type": "ecs",       "name": "API Tasks 1b",   "subnet": "prv-1b" },
+              { "id": "app-c",     "type": "ecs",       "name": "API Tasks 1c",   "subnet": "prv-1c" },
+              { "id": "webhook",   "type": "lambda",    "name": "Webhook Fn",     "subnet": "prv-1b" },
+              { "id": "etl",       "type": "lambda",    "name": "Hourly ETL",     "subnet": "prv-1c" },
+              { "id": "aurora-w",  "type": "aurora",    "name": "Aurora Writer",  "subnet": "db-1a"  },
+              { "id": "aurora-r",  "type": "aurora",    "name": "Aurora Reader",  "subnet": "db-1b"  },
+              { "id": "aurora-x",  "type": "aurora",    "name": "Aurora Reader 1c","subnet": "db-1c" },
+              { "id": "files",     "type": "s3",        "name": "Files Bucket",   "subnet": "db-1a"  },
+              { "id": "analytics", "type": "s3",        "name": "Analytics Lake", "subnet": "db-1c"  },
+              { "id": "sessions",  "type": "dynamodb",  "name": "Sessions",       "subnet": "db-1b"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "dns",       "label": "DNS",       "kind": "internet" },
+          { "from": "internet", "to": "cdn",       "label": "HTTPS 443", "kind": "internet" },
+          { "from": "cdn",      "to": "waf",       "label": "filter" },
+          { "from": "waf",      "to": "alb",       "label": "HTTP" },
+          { "from": "alb",      "to": "app-a",     "label": "HTTP" },
+          { "from": "alb",      "to": "app-b",     "label": "HTTP" },
+          { "from": "alb",      "to": "app-c",     "label": "HTTP" },
+          { "from": "app-a",    "to": "aurora-w",  "label": "5432 write" },
+          { "from": "app-b",    "to": "aurora-r",  "label": "5432 read"  },
+          { "from": "app-c",    "to": "aurora-x",  "label": "5432 read"  },
+          { "from": "webhook",  "to": "aurora-r",  "label": "5432 read"  },
+          { "from": "aurora-w", "to": "aurora-r",  "label": "replicate"  },
+          { "from": "aurora-w", "to": "aurora-x",  "label": "replicate"  },
+          { "from": "etl",      "to": "aurora-x",  "label": "scan reads" },
+          { "from": "etl",      "to": "analytics", "label": "PUT parquet" },
+          { "from": "app-a",    "to": "files",     "label": "PUT objects" },
+          { "from": "app-b",    "to": "files",     "label": "GET objects" },
+          { "from": "app-c",    "to": "files",     "label": "GET objects" },
+          { "from": "app-a",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-b",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-c",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-a",    "to": "nat-1a",    "label": "egress", "kind": "egress" },
+          { "from": "app-b",    "to": "nat-1b",    "label": "egress", "kind": "egress" },
+          { "from": "app-c",    "to": "nat-1c",    "label": "egress", "kind": "egress" },
+          { "from": "nat-1a",   "to": "igw",       "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "nat-1b",   "to": "igw",       "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "nat-1c",   "to": "igw",       "label": "0.0.0.0/0", "kind": "egress" }
+        ]
+      }
+    },
+    {
+      "id": "v7",
+      "name": "Cost optimisation — collapse to a single NAT",
+      "author": "eve@acme.com",
+      "timestamp": "2025-03-11T17:05:00Z",
+      "status": "broken",
+      "note": "PRODUCTION INCIDENT — DO NOT KEEP. Tried to save $90/month by removing nat-1b and nat-1c and pointing prv-1b and prv-1c at nat-1a. When 1a had a partial network event last Saturday the entire fleet (1a, 1b, 1c) lost outbound internet at the same time — webhooks, OAuth callbacks, third-party APIs all failed for 41 minutes. Cross-AZ NAT also doubles round-trip latency on egress and adds $0.01/GB inter-AZ data-transfer per request. Rolling back in v8.",
+      "data": {
+        "name": "Acme Cloud · v7 (broken — single NAT)",
+        "region": "us-east-1",
+        "vpcs": [
+          {
+            "id": "vpc-prod",
+            "name": "Production",
+            "cidr": "10.0.0.0/16",
+            "region": "us-east-1",
+            "subnets": [
+              { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+              { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+              { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" },
+              { "id": "pub-1b", "name": "Public 1b",  "cidr": "10.0.2.0/24",  "tier": "public",  "az": "us-east-1b" },
+              { "id": "prv-1b", "name": "App 1b",     "cidr": "10.0.12.0/24", "tier": "private", "az": "us-east-1b" },
+              { "id": "db-1b",  "name": "Data 1b",    "cidr": "10.0.22.0/24", "tier": "data",    "az": "us-east-1b" },
+              { "id": "pub-1c", "name": "Public 1c",  "cidr": "10.0.3.0/24",  "tier": "public",  "az": "us-east-1c" },
+              { "id": "prv-1c", "name": "App 1c",     "cidr": "10.0.13.0/24", "tier": "private", "az": "us-east-1c" },
+              { "id": "db-1c",  "name": "Data 1c",    "cidr": "10.0.23.0/24", "tier": "data",    "az": "us-east-1c" }
+            ],
+            "gateways": [
+              { "id": "igw",    "type": "igw", "name": "Internet GW" },
+              { "id": "nat-1a", "type": "nat", "name": "NAT 1a (only)", "subnet": "pub-1a" },
+              { "id": "vpe-s3", "type": "endpoint", "name": "S3 VPCE",  "subnet": "prv-1a" },
+              { "id": "vpe-ddb","type": "endpoint", "name": "DDB VPCE", "subnet": "prv-1b" }
+            ],
+            "resources": [
+              { "id": "dns",       "type": "route53",   "name": "acme.cloud DNS", "subnet": "pub-1a" },
+              { "id": "cdn",       "type": "cloudfront","name": "Edge CDN",       "subnet": "pub-1a" },
+              { "id": "waf",       "type": "waf",       "name": "WAF",            "subnet": "pub-1b" },
+              { "id": "alb",       "type": "alb",       "name": "Web ALB",        "subnet": "pub-1a" },
+              { "id": "app-a",     "type": "ecs",       "name": "API Tasks 1a",   "subnet": "prv-1a" },
+              { "id": "app-b",     "type": "ecs",       "name": "API Tasks 1b",   "subnet": "prv-1b" },
+              { "id": "app-c",     "type": "ecs",       "name": "API Tasks 1c",   "subnet": "prv-1c" },
+              { "id": "webhook",   "type": "lambda",    "name": "Webhook Fn",     "subnet": "prv-1b" },
+              { "id": "etl",       "type": "lambda",    "name": "Hourly ETL",     "subnet": "prv-1c" },
+              { "id": "aurora-w",  "type": "aurora",    "name": "Aurora Writer",  "subnet": "db-1a"  },
+              { "id": "aurora-r",  "type": "aurora",    "name": "Aurora Reader",  "subnet": "db-1b"  },
+              { "id": "aurora-x",  "type": "aurora",    "name": "Aurora Reader 1c","subnet": "db-1c" },
+              { "id": "files",     "type": "s3",        "name": "Files Bucket",   "subnet": "db-1a"  },
+              { "id": "analytics", "type": "s3",        "name": "Analytics Lake", "subnet": "db-1c"  },
+              { "id": "sessions",  "type": "dynamodb",  "name": "Sessions",       "subnet": "db-1b"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "dns",       "label": "DNS",       "kind": "internet" },
+          { "from": "internet", "to": "cdn",       "label": "HTTPS 443", "kind": "internet" },
+          { "from": "cdn",      "to": "waf",       "label": "filter" },
+          { "from": "waf",      "to": "alb",       "label": "HTTP" },
+          { "from": "alb",      "to": "app-a",     "label": "HTTP" },
+          { "from": "alb",      "to": "app-b",     "label": "HTTP" },
+          { "from": "alb",      "to": "app-c",     "label": "HTTP" },
+          { "from": "app-a",    "to": "aurora-w",  "label": "5432 write" },
+          { "from": "app-b",    "to": "aurora-r",  "label": "5432 read"  },
+          { "from": "app-c",    "to": "aurora-x",  "label": "5432 read"  },
+          { "from": "webhook",  "to": "aurora-r",  "label": "5432 read"  },
+          { "from": "aurora-w", "to": "aurora-r",  "label": "replicate"  },
+          { "from": "aurora-w", "to": "aurora-x",  "label": "replicate"  },
+          { "from": "etl",      "to": "aurora-x",  "label": "scan reads" },
+          { "from": "etl",      "to": "analytics", "label": "PUT parquet" },
+          { "from": "app-a",    "to": "files",     "label": "PUT objects" },
+          { "from": "app-b",    "to": "files",     "label": "GET objects" },
+          { "from": "app-c",    "to": "files",     "label": "GET objects" },
+          { "from": "app-a",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-b",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-c",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-a",    "to": "nat-1a",    "label": "egress",                "kind": "egress" },
+          { "from": "app-b",    "to": "nat-1a",    "label": "egress (cross-AZ!)",    "kind": "egress" },
+          { "from": "app-c",    "to": "nat-1a",    "label": "egress (cross-AZ!)",    "kind": "egress" },
+          { "from": "nat-1a",   "to": "igw",       "label": "0.0.0.0/0",             "kind": "egress" }
+        ]
+      }
+    },
+    {
+      "id": "v8",
+      "name": "Restore per-AZ NATs + auto-scaling",
+      "author": "alice@acme.com",
+      "timestamp": "2025-03-12T08:30:00Z",
+      "status": "fixed",
+      "note": "Reprovisioned NAT gateways in pub-1b and pub-1c with their own Elastic IPs and rewired prv-1b and prv-1c to send 0.0.0.0/0 to the local NAT. Each AZ is independent again. Also added an Auto Scaling Group on Fargate spot capacity providers so we can claw back the cost without sacrificing resilience.",
+      "data": {
+        "name": "Acme Cloud · v8 (restored)",
+        "region": "us-east-1",
+        "vpcs": [
+          {
+            "id": "vpc-prod",
+            "name": "Production",
+            "cidr": "10.0.0.0/16",
+            "region": "us-east-1",
+            "subnets": [
+              { "id": "pub-1a", "name": "Public 1a",  "cidr": "10.0.1.0/24",  "tier": "public",  "az": "us-east-1a" },
+              { "id": "prv-1a", "name": "App 1a",     "cidr": "10.0.11.0/24", "tier": "private", "az": "us-east-1a" },
+              { "id": "db-1a",  "name": "Data 1a",    "cidr": "10.0.21.0/24", "tier": "data",    "az": "us-east-1a" },
+              { "id": "pub-1b", "name": "Public 1b",  "cidr": "10.0.2.0/24",  "tier": "public",  "az": "us-east-1b" },
+              { "id": "prv-1b", "name": "App 1b",     "cidr": "10.0.12.0/24", "tier": "private", "az": "us-east-1b" },
+              { "id": "db-1b",  "name": "Data 1b",    "cidr": "10.0.22.0/24", "tier": "data",    "az": "us-east-1b" },
+              { "id": "pub-1c", "name": "Public 1c",  "cidr": "10.0.3.0/24",  "tier": "public",  "az": "us-east-1c" },
+              { "id": "prv-1c", "name": "App 1c",     "cidr": "10.0.13.0/24", "tier": "private", "az": "us-east-1c" },
+              { "id": "db-1c",  "name": "Data 1c",    "cidr": "10.0.23.0/24", "tier": "data",    "az": "us-east-1c" }
+            ],
+            "gateways": [
+              { "id": "igw",    "type": "igw", "name": "Internet GW" },
+              { "id": "nat-1a", "type": "nat", "name": "NAT 1a", "subnet": "pub-1a" },
+              { "id": "nat-1b", "type": "nat", "name": "NAT 1b", "subnet": "pub-1b" },
+              { "id": "nat-1c", "type": "nat", "name": "NAT 1c", "subnet": "pub-1c" },
+              { "id": "vpe-s3", "type": "endpoint", "name": "S3 VPCE",  "subnet": "prv-1a" },
+              { "id": "vpe-ddb","type": "endpoint", "name": "DDB VPCE", "subnet": "prv-1b" }
+            ],
+            "resources": [
+              { "id": "dns",       "type": "route53",   "name": "acme.cloud DNS", "subnet": "pub-1a" },
+              { "id": "cdn",       "type": "cloudfront","name": "Edge CDN",       "subnet": "pub-1a" },
+              { "id": "waf",       "type": "waf",       "name": "WAF",            "subnet": "pub-1b" },
+              { "id": "alb",       "type": "alb",       "name": "Web ALB",        "subnet": "pub-1a" },
+              { "id": "app-a",     "type": "ecs",       "name": "API Tasks 1a",   "subnet": "prv-1a" },
+              { "id": "app-b",     "type": "ecs",       "name": "API Tasks 1b",   "subnet": "prv-1b" },
+              { "id": "app-c",     "type": "ecs",       "name": "API Tasks 1c",   "subnet": "prv-1c" },
+              { "id": "asg-app",   "type": "asg",       "name": "Fargate ASG",    "subnet": "prv-1a" },
+              { "id": "webhook",   "type": "lambda",    "name": "Webhook Fn",     "subnet": "prv-1b" },
+              { "id": "etl",       "type": "lambda",    "name": "Hourly ETL",     "subnet": "prv-1c" },
+              { "id": "aurora-w",  "type": "aurora",    "name": "Aurora Writer",  "subnet": "db-1a"  },
+              { "id": "aurora-r",  "type": "aurora",    "name": "Aurora Reader",  "subnet": "db-1b"  },
+              { "id": "aurora-x",  "type": "aurora",    "name": "Aurora Reader 1c","subnet": "db-1c" },
+              { "id": "files",     "type": "s3",        "name": "Files Bucket",   "subnet": "db-1a"  },
+              { "id": "analytics", "type": "s3",        "name": "Analytics Lake", "subnet": "db-1c"  },
+              { "id": "sessions",  "type": "dynamodb",  "name": "Sessions",       "subnet": "db-1b"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "dns",       "label": "DNS",       "kind": "internet" },
+          { "from": "internet", "to": "cdn",       "label": "HTTPS 443", "kind": "internet" },
+          { "from": "cdn",      "to": "waf",       "label": "filter" },
+          { "from": "waf",      "to": "alb",       "label": "HTTP" },
+          { "from": "alb",      "to": "app-a",     "label": "HTTP" },
+          { "from": "alb",      "to": "app-b",     "label": "HTTP" },
+          { "from": "alb",      "to": "app-c",     "label": "HTTP" },
+          { "from": "asg-app",  "to": "app-a",     "label": "scale tasks" },
+          { "from": "asg-app",  "to": "app-b",     "label": "scale tasks" },
+          { "from": "asg-app",  "to": "app-c",     "label": "scale tasks" },
+          { "from": "app-a",    "to": "aurora-w",  "label": "5432 write" },
+          { "from": "app-b",    "to": "aurora-r",  "label": "5432 read"  },
+          { "from": "app-c",    "to": "aurora-x",  "label": "5432 read"  },
+          { "from": "webhook",  "to": "aurora-r",  "label": "5432 read"  },
+          { "from": "aurora-w", "to": "aurora-r",  "label": "replicate"  },
+          { "from": "aurora-w", "to": "aurora-x",  "label": "replicate"  },
+          { "from": "etl",      "to": "aurora-x",  "label": "scan reads" },
+          { "from": "etl",      "to": "analytics", "label": "PUT parquet" },
+          { "from": "app-a",    "to": "files",     "label": "PUT objects" },
+          { "from": "app-b",    "to": "files",     "label": "GET objects" },
+          { "from": "app-c",    "to": "files",     "label": "GET objects" },
+          { "from": "app-a",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-b",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-c",    "to": "sessions",  "label": "session r/w" },
+          { "from": "app-a",    "to": "nat-1a",    "label": "egress", "kind": "egress" },
+          { "from": "app-b",    "to": "nat-1b",    "label": "egress", "kind": "egress" },
+          { "from": "app-c",    "to": "nat-1c",    "label": "egress", "kind": "egress" },
+          { "from": "nat-1a",   "to": "igw",       "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "nat-1b",   "to": "igw",       "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "nat-1c",   "to": "igw",       "label": "0.0.0.0/0", "kind": "egress" }
+        ]
+      }
+    }
+  ]
+}
