@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05i — eagle-eye view for VPC/subnet tour steps");
+console.log("[viz3d] build 2026-05-05j — back to monochrome simple-icons");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -1072,57 +1072,46 @@ function makeStreetTexture(theme) {
 
 // ---------- AWS service icons ----------
 
-// Paths into the mhlabs/aws-icons-directory repo (full-color official AWS
-// architecture icons). Served via jsdelivr. Falls back to a glyph drawn from
-// explanations.js when a type has no mapping or the request fails.
-const ICON_BASE =
-  "https://cdn.jsdelivr.net/gh/mhlabs/aws-icons-directory@main/icons/Architecture-Service-Icons/";
-const ICON_PATHS = {
-  ec2:        "Arch_Compute/64/Arch_Amazon-EC2_64.svg",
-  asg:        "Arch_Compute/64/Arch_Amazon-EC2-Auto-Scaling_64.svg",
-  lambda:     "Arch_Compute/64/Arch_AWS-Lambda_64.svg",
-  ecs:        "Arch_Containers/64/Arch_Amazon-Elastic-Container-Service_64.svg",
-  eks:        "Arch_Containers/64/Arch_Amazon-Elastic-Kubernetes-Service_64.svg",
-  rds:        "Arch_Database/64/Arch_Amazon-RDS_64.svg",
-  aurora:     "Arch_Database/64/Arch_Amazon-Aurora_64.svg",
-  dynamodb:   "Arch_Database/64/Arch_Amazon-DynamoDB_64.svg",
-  s3:         "Arch_Storage/64/Arch_Amazon-Simple-Storage-Service_64.svg",
-  cloudfront: "Arch_Networking-Content/64/Arch_Amazon-CloudFront_64.svg",
-  route53:    "Arch_Networking-Content/64/Arch_Amazon-Route-53_64.svg",
-  vpc:        "Arch_Networking-Content/64/Arch_Amazon-Virtual-Private-Cloud_64.svg",
-  igw:        "Arch_Networking-Content/64/Arch_Amazon-Virtual-Private-Cloud_64.svg",
-  nat:        "Arch_Networking-Content/64/Arch_Amazon-Virtual-Private-Cloud_64.svg",
-  endpoint:   "Arch_Networking-Content/64/Arch_Amazon-Virtual-Private-Cloud_64.svg",
-  alb:        "Arch_Networking-Content/64/Arch_Elastic-Load-Balancing_64.svg",
-  nlb:        "Arch_Networking-Content/64/Arch_Elastic-Load-Balancing_64.svg",
-  tgw:        "Arch_Networking-Content/64/Arch_AWS-Transit-Gateway_64.svg",
-  vpn:        "Arch_Networking-Content/64/Arch_AWS-Site-to-Site-VPN_64.svg",
-  dx:         "Arch_Networking-Content/64/Arch_AWS-Direct-Connect_64.svg",
-  waf:        "Arch_Security-Identity-Compliance/64/Arch_AWS-WAF_64.svg",
-  apigw:      "Arch_App-Integration/64/Arch_Amazon-API-Gateway_64.svg",
+// Slugs into the simple-icons npm package (served via jsdelivr). These are
+// monochrome SVGs — we force-inject a white fill so the icons read as
+// clean transparent line-art on the building decals.
+const ICON_SLUGS = {
+  ec2:        "amazonec2",
+  asg:        "amazonec2",
+  s3:         "amazons3",
+  rds:        "amazonrds",
+  aurora:     "amazonrds",
+  dynamodb:   "amazondynamodb",
+  lambda:     "awslambda",
+  cloudfront: "amazoncloudfront",
+  route53:    "amazonroute53",
+  apigw:      "amazonapigateway",
+  ecs:        "amazonecs",
+  eks:        "amazoneks",
 };
 const ICON_CACHE = new Map(); // type -> Promise<HTMLImageElement | null>
 
 function loadIconImage(type) {
   if (ICON_CACHE.has(type)) return ICON_CACHE.get(type);
-  const path = ICON_PATHS[type];
-  if (!path) {
+  const slug = ICON_SLUGS[type];
+  if (!slug) {
     const p = Promise.resolve(null);
     ICON_CACHE.set(type, p);
     return p;
   }
-  const url = ICON_BASE + path;
+  const url = `https://cdn.jsdelivr.net/npm/simple-icons@13/icons/${slug}.svg`;
   const p = fetch(url)
     .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
     .then((svg) => {
-      // Preserve the icon's original AWS colors. Only ensure the SVG has
-      // explicit dimensions so drawImage scales reliably, and replace any
-      // currentColor (rare in these assets) with a sensible default.
-      svg = svg.replace(/currentColor/g, "#232F3E");
+      // Strip explicit fills so our injected white wins, replace any
+      // currentColor, and ensure dimensions so drawImage scales reliably.
+      svg = svg.replace(/\sfill="[^"]*"/g, "");
+      svg = svg.replace(/currentColor/g, "#ffffff");
       svg = svg.replace(/<svg\b([^>]*?)>/, (m, attrs) => {
         let a = attrs;
         if (!/\swidth\s*=/.test(a)) a += ' width="256"';
         if (!/\sheight\s*=/.test(a)) a += ' height="256"';
+        a += ' fill="#ffffff"';
         return `<svg${a}>`;
       });
       const dataUrl =
@@ -1135,7 +1124,7 @@ function loadIconImage(type) {
       });
     })
     .catch((err) => {
-      console.warn("[viz3d] icon load failed for", type, path, err);
+      console.warn("[viz3d] icon load failed for", type, slug, err);
       return null;
     });
   ICON_CACHE.set(type, p);
