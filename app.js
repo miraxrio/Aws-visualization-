@@ -18,6 +18,8 @@
     hint3d: document.getElementById("hint-3d"),
     netName: document.getElementById("net-name"),
     netMeta: document.getElementById("net-meta"),
+    timelinePanel: document.getElementById("timeline-panel"),
+    timelineList: document.getElementById("timeline-list"),
     detailTitle: document.getElementById("detail-title"),
     detailSummary: document.getElementById("detail-summary"),
     detailProps: document.getElementById("detail-props"),
@@ -26,6 +28,9 @@
   };
 
   let currentData = null;
+  let currentVersions = null;   // full versions array if the loaded network is multi-version
+  let currentVersionId = null;
+  let networkName = null;       // top-level network name (separate from version-specific name)
   let paused = false;
   let mode = "2d";
 
@@ -36,17 +41,94 @@
   };
 
   function loadData(data) {
-    if (!data || !data.vpcs) {
-      alert("That JSON doesn't look like a network topology — expected a top-level 'vpcs' array.");
+    // Multi-version network: { name, versions: [{ id, name, author, timestamp,
+    // status, note, data: { vpcs, flows, ... } }, ...] }
+    if (data && Array.isArray(data.versions) && data.versions.length) {
+      currentVersions = data.versions;
+      networkName = data.name || null;
+      const latest = currentVersions[currentVersions.length - 1];
+      currentVersionId = latest.id;
+      renderTimeline();
+      els.timelinePanel.hidden = false;
+      applyVersionData(latest.data);
+      fadeHint();
       return;
     }
+
+    // Single-version network (the original schema): top-level vpcs/flows
+    if (!data || !data.vpcs) {
+      alert("That JSON doesn't look like a network topology — expected a top-level 'vpcs' array (or a 'versions' array).");
+      return;
+    }
+    currentVersions = null;
+    currentVersionId = null;
+    networkName = data.name || null;
+    els.timelinePanel.hidden = true;
+    applyVersionData(data);
+    fadeHint();
+  }
+
+  function applyVersionData(data) {
     currentData = data;
     AwsViz.render(data);
     if (window.AwsViz3D && window.AwsViz3D.isReady()) {
       window.AwsViz3D.render(data);
     }
     updateSummary(data);
-    fadeHint();
+  }
+
+  function selectVersion(id) {
+    if (!currentVersions) return;
+    const ver = currentVersions.find((v) => v.id === id);
+    if (!ver) return;
+    currentVersionId = id;
+    applyVersionData(ver.data);
+    renderTimeline();
+  }
+
+  function renderTimeline() {
+    if (!currentVersions) {
+      els.timelineList.innerHTML = "";
+      return;
+    }
+    els.timelineList.innerHTML = currentVersions
+      .map((v) => {
+        const isActive = v.id === currentVersionId;
+        const status = v.status || "ok";
+        const statusLabel = status === "broken" ? "broken" : status === "fixed" ? "fixed" : "ok";
+        const date = v.timestamp ? formatVersionDate(v.timestamp) : "";
+        const author = v.author ? escapeHtml(v.author).replace(/@.+$/, "") : "unknown";
+        const noteHtml = v.note
+          ? `<div class="version-note status-${status}">${escapeHtml(v.note)}</div>`
+          : "";
+        return `
+          <div class="version-item ${isActive ? "is-active" : ""}" data-version-id="${escapeHtml(v.id)}">
+            <span class="version-dot status-${status}"></span>
+            <div class="version-header">
+              <div>
+                <div class="version-name">${escapeHtml(v.name || v.id)}</div>
+                <div class="version-byline">
+                  <span class="author">${author}</span>
+                  ${date ? `<span>· ${escapeHtml(date)}</span>` : ""}
+                </div>
+              </div>
+              <span class="version-status ${status}">${statusLabel}</span>
+            </div>
+            ${noteHtml}
+          </div>
+        `;
+      })
+      .join("");
+
+    els.timelineList.querySelectorAll(".version-item").forEach((el) => {
+      el.addEventListener("click", () => selectVersion(el.getAttribute("data-version-id")));
+    });
+  }
+
+  function formatVersionDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   }
 
   // ---- Mode switching ----
@@ -146,11 +228,14 @@
   });
 
   function updateSummary(data) {
-    els.netName.textContent = data.name || "Unnamed network";
+    // Prefer the top-level network name when working with a multi-version
+    // network so the header doesn't flicker between "v1", "v2", "v3" labels.
+    els.netName.textContent = networkName || data.name || "Unnamed network";
     const counts = countResources(data);
     const region = data.region || (data.vpcs[0] && data.vpcs[0].region) || "—";
+    const verLabel = currentVersionId ? `version ${currentVersionId} · ` : "";
     els.netMeta.textContent =
-      `${data.vpcs.length} VPC${data.vpcs.length !== 1 ? "s" : ""} · ` +
+      `${verLabel}${data.vpcs.length} VPC${data.vpcs.length !== 1 ? "s" : ""} · ` +
       `${counts.subnets} subnets · ${counts.resources} resources · ` +
       `${counts.flows} flows · ${region}`;
   }
@@ -343,40 +428,42 @@
   });
 
   // Embedded fallback so the page works even when opened from file://.
-  // Mirrors sample-network.json.
-  const EMBEDDED_SAMPLE = {
-    name: "Three-Tier Web App",
-    region: "us-east-1",
-    vpcs: [
-      {
-        id: "vpc-prod",
-        name: "Production",
-        cidr: "10.0.0.0/16",
-        region: "us-east-1",
-        subnets: [
-          { id: "pub-1a", name: "Public 1a", cidr: "10.0.1.0/24",  tier: "public",  az: "us-east-1a" },
-          { id: "prv-1a", name: "App 1a",    cidr: "10.0.11.0/24", tier: "private", az: "us-east-1a" },
-          { id: "db-1a",  name: "Data 1a",   cidr: "10.0.21.0/24", tier: "data",    az: "us-east-1a" },
-          { id: "pub-1b", name: "Public 1b", cidr: "10.0.2.0/24",  tier: "public",  az: "us-east-1b" },
-          { id: "prv-1b", name: "App 1b",    cidr: "10.0.12.0/24", tier: "private", az: "us-east-1b" },
-          { id: "db-1b",  name: "Data 1b",   cidr: "10.0.22.0/24", tier: "data",    az: "us-east-1b" },
-        ],
-        gateways: [
-          { id: "igw-prod", type: "igw", name: "Internet GW" },
-          { id: "nat-1a",   type: "nat", name: "NAT 1a", subnet: "pub-1a" },
-          { id: "nat-1b",   type: "nat", name: "NAT 1b", subnet: "pub-1b" },
-        ],
-        resources: [
-          { id: "alb",   type: "alb",    name: "Web ALB",    subnet: "pub-1a" },
-          { id: "waf",   type: "waf",    name: "WAF",        subnet: "pub-1b" },
-          { id: "app-a", type: "ecs",    name: "API Tasks",  subnet: "prv-1a" },
-          { id: "app-b", type: "ecs",    name: "API Tasks",  subnet: "prv-1b" },
-          { id: "fn",    type: "lambda", name: "Webhook Fn", subnet: "prv-1b" },
-          { id: "rds-w", type: "aurora", name: "Aurora W",   subnet: "db-1a" },
-          { id: "rds-r", type: "aurora", name: "Aurora R",   subnet: "db-1b" },
-        ],
-      },
-    ],
+  // Mirrors sample-network.json — three versions of the same network so
+  // the timeline panel works even without a working fetch.
+  const SHARED_SUBNETS_AB = [
+    { id: "pub-1a", name: "Public 1a", cidr: "10.0.1.0/24",  tier: "public",  az: "us-east-1a" },
+    { id: "prv-1a", name: "App 1a",    cidr: "10.0.11.0/24", tier: "private", az: "us-east-1a" },
+    { id: "db-1a",  name: "Data 1a",   cidr: "10.0.21.0/24", tier: "data",    az: "us-east-1a" },
+    { id: "pub-1b", name: "Public 1b", cidr: "10.0.2.0/24",  tier: "public",  az: "us-east-1b" },
+    { id: "prv-1b", name: "App 1b",    cidr: "10.0.12.0/24", tier: "private", az: "us-east-1b" },
+    { id: "db-1b",  name: "Data 1b",   cidr: "10.0.22.0/24", tier: "data",    az: "us-east-1b" },
+  ];
+  const SUBNETS_C = [
+    { id: "pub-1c", name: "Public 1c", cidr: "10.0.3.0/24",  tier: "public",  az: "us-east-1c" },
+    { id: "prv-1c", name: "App 1c",    cidr: "10.0.13.0/24", tier: "private", az: "us-east-1c" },
+    { id: "db-1c",  name: "Data 1c",   cidr: "10.0.23.0/24", tier: "data",    az: "us-east-1c" },
+  ];
+
+  const V1 = {
+    name: "Three-Tier Web App · v1", region: "us-east-1",
+    vpcs: [{
+      id: "vpc-prod", name: "Production", cidr: "10.0.0.0/16", region: "us-east-1",
+      subnets: SHARED_SUBNETS_AB,
+      gateways: [
+        { id: "igw-prod", type: "igw", name: "Internet GW" },
+        { id: "nat-1a",   type: "nat", name: "NAT 1a", subnet: "pub-1a" },
+        { id: "nat-1b",   type: "nat", name: "NAT 1b", subnet: "pub-1b" },
+      ],
+      resources: [
+        { id: "alb",   type: "alb",    name: "Web ALB",    subnet: "pub-1a" },
+        { id: "waf",   type: "waf",    name: "WAF",        subnet: "pub-1b" },
+        { id: "app-a", type: "ecs",    name: "API Tasks",  subnet: "prv-1a" },
+        { id: "app-b", type: "ecs",    name: "API Tasks",  subnet: "prv-1b" },
+        { id: "fn",    type: "lambda", name: "Webhook Fn", subnet: "prv-1b" },
+        { id: "rds-w", type: "aurora", name: "Aurora W",   subnet: "db-1a" },
+        { id: "rds-r", type: "aurora", name: "Aurora R",   subnet: "db-1b" },
+      ],
+    }],
     flows: [
       { from: "internet", to: "alb",   label: "HTTPS 443", kind: "internet" },
       { from: "internet", to: "waf",   label: "inspect",   kind: "internet" },
@@ -389,6 +476,93 @@
       { from: "app-b",    to: "nat-1b",label: "egress",    kind: "egress" },
       { from: "nat-1a",   to: "igw-prod", label: "0.0.0.0/0", kind: "egress" },
       { from: "nat-1b",   to: "igw-prod", label: "0.0.0.0/0", kind: "egress" },
+    ],
+  };
+  const V2 = {
+    name: "Three-Tier Web App · v2 (broken)", region: "us-east-1",
+    vpcs: [{
+      id: "vpc-prod", name: "Production", cidr: "10.0.0.0/16", region: "us-east-1",
+      subnets: [...SHARED_SUBNETS_AB, ...SUBNETS_C],
+      gateways: [
+        { id: "igw-prod", type: "igw", name: "Internet GW" },
+        { id: "nat-1a",   type: "nat", name: "NAT 1a", subnet: "pub-1a" },
+        { id: "nat-1b",   type: "nat", name: "NAT 1b", subnet: "pub-1b" },
+      ],
+      resources: [
+        { id: "alb",   type: "alb",    name: "Web ALB",       subnet: "pub-1a" },
+        { id: "waf",   type: "waf",    name: "WAF",           subnet: "pub-1b" },
+        { id: "app-a", type: "ecs",    name: "API Tasks 1a",  subnet: "prv-1a" },
+        { id: "app-b", type: "ecs",    name: "API Tasks 1b",  subnet: "prv-1b" },
+        { id: "app-c", type: "ecs",    name: "API Tasks 1c",  subnet: "prv-1c" },
+        { id: "fn",    type: "lambda", name: "Webhook Fn",    subnet: "prv-1b" },
+        { id: "rds-w", type: "aurora", name: "Aurora W",      subnet: "db-1a"  },
+        { id: "rds-r", type: "aurora", name: "Aurora R 1b",   subnet: "db-1b"  },
+        { id: "rds-x", type: "aurora", name: "Aurora R 1c",   subnet: "db-1c"  },
+      ],
+    }],
+    flows: [
+      { from: "internet", to: "alb",     label: "HTTPS 443", kind: "internet" },
+      { from: "internet", to: "waf",     label: "inspect",   kind: "internet" },
+      { from: "alb",      to: "app-a",   label: "HTTP" },
+      { from: "alb",      to: "app-b",   label: "HTTP" },
+      { from: "alb",      to: "app-c",   label: "HTTP" },
+      { from: "app-a",    to: "rds-w",   label: "5432 write" },
+      { from: "app-b",    to: "rds-r",   label: "5432 read"  },
+      { from: "app-c",    to: "rds-x",   label: "5432 read"  },
+      { from: "fn",       to: "rds-r",   label: "5432 read"  },
+      { from: "app-a",    to: "nat-1a",  label: "egress",    kind: "egress" },
+      { from: "app-b",    to: "nat-1b",  label: "egress",    kind: "egress" },
+      { from: "app-c",    to: "nat-1a",  label: "egress (cross-AZ!)", kind: "egress" },
+      { from: "nat-1a",   to: "igw-prod",label: "0.0.0.0/0", kind: "egress" },
+      { from: "nat-1b",   to: "igw-prod",label: "0.0.0.0/0", kind: "egress" },
+    ],
+  };
+  const V3 = {
+    name: "Three-Tier Web App · v3 (fixed)", region: "us-east-1",
+    vpcs: [{
+      id: "vpc-prod", name: "Production", cidr: "10.0.0.0/16", region: "us-east-1",
+      subnets: [...SHARED_SUBNETS_AB, ...SUBNETS_C],
+      gateways: [
+        { id: "igw-prod", type: "igw", name: "Internet GW" },
+        { id: "nat-1a",   type: "nat", name: "NAT 1a", subnet: "pub-1a" },
+        { id: "nat-1b",   type: "nat", name: "NAT 1b", subnet: "pub-1b" },
+        { id: "nat-1c",   type: "nat", name: "NAT 1c", subnet: "pub-1c" },
+      ],
+      resources: V2.vpcs[0].resources,
+    }],
+    flows: [
+      { from: "internet", to: "alb",     label: "HTTPS 443", kind: "internet" },
+      { from: "internet", to: "waf",     label: "inspect",   kind: "internet" },
+      { from: "alb",      to: "app-a",   label: "HTTP" },
+      { from: "alb",      to: "app-b",   label: "HTTP" },
+      { from: "alb",      to: "app-c",   label: "HTTP" },
+      { from: "app-a",    to: "rds-w",   label: "5432 write" },
+      { from: "app-b",    to: "rds-r",   label: "5432 read"  },
+      { from: "app-c",    to: "rds-x",   label: "5432 read"  },
+      { from: "fn",       to: "rds-r",   label: "5432 read"  },
+      { from: "app-a",    to: "nat-1a",  label: "egress",    kind: "egress" },
+      { from: "app-b",    to: "nat-1b",  label: "egress",    kind: "egress" },
+      { from: "app-c",    to: "nat-1c",  label: "egress",    kind: "egress" },
+      { from: "nat-1a",   to: "igw-prod",label: "0.0.0.0/0", kind: "egress" },
+      { from: "nat-1b",   to: "igw-prod",label: "0.0.0.0/0", kind: "egress" },
+      { from: "nat-1c",   to: "igw-prod",label: "0.0.0.0/0", kind: "egress" },
+    ],
+  };
+  const EMBEDDED_SAMPLE = {
+    name: "Three-Tier Web App",
+    region: "us-east-1",
+    versions: [
+      { id: "v1", name: "Initial 3-tier deployment", author: "alice@example.com",
+        timestamp: "2025-01-15T10:00:00Z", status: "ok",
+        note: "Two-AZ ALB + ECS + Aurora setup. Production ready.", data: V1 },
+      { id: "v2", name: "Expand to third AZ (us-east-1c)", author: "bob@example.com",
+        timestamp: "2025-02-03T14:30:00Z", status: "broken",
+        note: "Webhook integrations from app-1c are timing out. The new us-east-1c AZ has the app subnet (prv-1c) and a data subnet (db-1c) but NO NAT gateway in pub-1c. The route table for prv-1c was pointed at nat-1a in another AZ — that doubles latency, costs cross-AZ data-transfer fees, and on any 1a outage app-1c loses its internet egress entirely.",
+        data: V2 },
+      { id: "v3", name: "Add NAT gateway in 1c", author: "alice@example.com",
+        timestamp: "2025-02-04T09:15:00Z", status: "fixed",
+        note: "Provisioned nat-1c in pub-1c (its own Elastic IP) and updated prv-1c's route table to send 0.0.0.0/0 to nat-1c. App tasks in 1c now egress through the local NAT — webhooks succeed, cross-AZ data-transfer cost is gone, and an outage in 1a no longer takes 1c offline.",
+        data: V3 },
     ],
   };
 
