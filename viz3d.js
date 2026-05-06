@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05h — neon outer floor + streets inside VPCs + sky-blue UI");
+console.log("[viz3d] build 2026-05-05i — eagle-eye view for VPC/subnet tour steps");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -1323,7 +1323,7 @@ function focus(id, opts = {}) {
   // Frustum-fit distance.
   const fitDistance = r.extent * 1.92;
   const distance = isContainer
-    ? clamp(fitDistance + 18, 30, Math.max(CITY.w, CITY.d) * 1.1 + 80)
+    ? clamp(fitDistance * 1.18 + 18, 35, Math.max(CITY.w, CITY.d) * 1.1 + 80)
     : clamp(Math.max(r.extent * 5, r.height * 1.6) + 6, 18, 80);
 
   // Side-on viewing: pick a horizontal direction radiating outward from the
@@ -1345,22 +1345,35 @@ function focus(id, opts = {}) {
   const dirX = horizDir.x * ca - horizDir.z * sa;
   const dirZ = horizDir.x * sa + horizDir.z * ca;
 
-  // Elevation: side-on for buildings (slight overhead), 3/4 for containers.
-  const elev = isContainer
-    ? distance * 0.5
-    : r.height * 0.55 + 4;
-
+  // Containers (VPC / subnet) get an eagle-eye view — camera nearly
+  // straight overhead with a slight ~78° tilt so the floor plan reads at
+  // a glance. That keeps subnet tour steps visually distinct from the
+  // side-on street-level view used for individual buildings (EC2, ALB,
+  // Aurora, etc), so a "DATA · Data 1a" step doesn't read like another
+  // building step. Buildings keep the side-on view.
   const aim = new THREE.Vector3(
     target.x,
-    isContainer ? r.height * 0.5 : r.height * 0.45 + 1,
+    isContainer ? Math.min(r.height * 0.5, 3) : r.height * 0.45 + 1,
     target.z,
   );
 
-  const camPos = new THREE.Vector3(
-    target.x + dirX * distance,
-    aim.y + elev,
-    target.z + dirZ * distance,
-  );
+  let camPos;
+  if (isContainer) {
+    const horizOffset = distance * 0.22;  // shallow horizontal nudge
+    const elev = distance * 1.00;         // tall vertical lift
+    camPos = new THREE.Vector3(
+      target.x + dirX * horizOffset,
+      aim.y + elev,
+      target.z + dirZ * horizOffset,
+    );
+  } else {
+    const elev = r.height * 0.55 + 4;
+    camPos = new THREE.Vector3(
+      target.x + dirX * distance,
+      aim.y + elev,
+      target.z + dirZ * distance,
+    );
+  }
 
   const travel = camera.position.distanceTo(camPos);
   const auto = clamp(900 + travel * 5, 1200, 2600);
