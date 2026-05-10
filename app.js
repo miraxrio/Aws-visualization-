@@ -9,6 +9,27 @@
     mode3d: document.getElementById("mode-3d"),
     exploreBtn: document.getElementById("explore-btn"),
     exploreHud: document.getElementById("explore-hud"),
+    attackBtn: document.getElementById("attack-btn"),
+    attackModal: document.getElementById("attack-modal"),
+    attackGrid: document.getElementById("attack-grid"),
+    attackModalClose: document.getElementById("attack-modal-close"),
+    attackHud: document.getElementById("attack-hud"),
+    attackHudIcon: document.getElementById("attack-hud-icon"),
+    attackHudName: document.getElementById("attack-hud-name"),
+    attackHudPhase: document.getElementById("attack-hud-phase"),
+    attackProgressFill: document.getElementById("attack-progress-fill"),
+    attackStatSpawned: document.getElementById("attack-stat-spawned"),
+    attackStatBlocked: document.getElementById("attack-stat-blocked"),
+    attackStatArrived: document.getElementById("attack-stat-arrived"),
+    attackLog: document.getElementById("attack-log"),
+    attackAbort: document.getElementById("attack-abort"),
+    attackSummary: document.getElementById("attack-summary"),
+    attackSummaryClose: document.getElementById("attack-summary-close"),
+    attackSummaryOutcome: document.getElementById("attack-summary-outcome"),
+    attackSummaryStats: document.getElementById("attack-summary-stats"),
+    attackSummaryLog: document.getElementById("attack-summary-log"),
+    attackSummaryReplay: document.getElementById("attack-summary-replay"),
+    attackSummaryDone: document.getElementById("attack-summary-done"),
     themeToggle: document.getElementById("theme-toggle"),
     themeIconNight: document.getElementById("theme-icon-night"),
     themeIconDay: document.getElementById("theme-icon-day"),
@@ -145,9 +166,18 @@
     els.stage3d.hidden = mode !== "3d";
     els.hint3d.hidden = mode !== "3d";
     els.exploreBtn.hidden = mode !== "3d";
-    if (mode !== "3d" && window.AwsViz3D && window.AwsViz3D.isExploring()) {
-      window.AwsViz3D.exitExplore();
-      els.exploreHud.hidden = true;
+    els.attackBtn.hidden = mode !== "3d";
+    if (mode !== "3d") {
+      if (window.AwsViz3D && window.AwsViz3D.isExploring()) {
+        window.AwsViz3D.exitExplore();
+        els.exploreHud.hidden = true;
+      }
+      if (window.AwsViz3D && window.AwsViz3D.isAttackActive && window.AwsViz3D.isAttackActive()) {
+        window.AwsViz3D.stopAttack();
+      }
+      els.attackHud.hidden = true;
+      els.attackModal.hidden = true;
+      els.attackSummary.hidden = true;
     }
 
     if (mode === "3d") {
@@ -211,6 +241,170 @@
       }
       els.exploreHud.hidden = false;
       window.AwsViz3D.enterExplore();
+    }
+  });
+
+  // ---- Attack simulation ----
+
+  let lastAttackId = null;
+
+  function openAttackModal() {
+    if (!window.AwsViz3D || !window.AwsViz3D.isReady()) return;
+    // Close anything else that might fight us
+    if (window.AwsViz3D.isExploring && window.AwsViz3D.isExploring()) {
+      window.AwsViz3D.exitExplore();
+    }
+    const tourBar = document.getElementById("tour-bar");
+    if (tourBar && tourBar.classList.contains("open") && window.AwsTour) {
+      window.AwsTour.close();
+    }
+    populateAttackGrid();
+    els.attackModal.hidden = false;
+  }
+
+  function populateAttackGrid() {
+    const types = window.AwsViz3D.attackTypes ? window.AwsViz3D.attackTypes() : [];
+    els.attackGrid.innerHTML = types
+      .map(
+        (t) => `
+          <button class="attack-card" data-attack="${escapeHtml(t.id)}">
+            <span class="attack-card-icon">${escapeHtml(t.icon || "!")}</span>
+            <span>
+              <h3>${escapeHtml(t.name)}</h3>
+              <p>${escapeHtml(t.description)}</p>
+            </span>
+          </button>`,
+      )
+      .join("");
+    els.attackGrid.querySelectorAll(".attack-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        startAttack(card.getAttribute("data-attack"));
+      });
+    });
+  }
+
+  function startAttack(id) {
+    if (!window.AwsViz3D) return;
+    lastAttackId = id;
+    els.attackModal.hidden = true;
+    els.attackSummary.hidden = true;
+    els.attackHud.hidden = false;
+    els.attackLog.innerHTML = "";
+    setAttackStat(els.attackStatSpawned, 0);
+    setAttackStat(els.attackStatBlocked, 0);
+    setAttackStat(els.attackStatArrived, 0);
+    els.attackProgressFill.style.right = "100%";
+    window.AwsViz3D.startAttack(id);
+  }
+
+  function setAttackStat(el, value) {
+    el.textContent = String(value);
+  }
+
+  function renderAttackLog(events) {
+    // Render the last 8 events in the live HUD
+    const recent = events.slice(-8);
+    els.attackLog.innerHTML = recent
+      .map((ev) => `
+        <li class="sev-${escapeHtml(ev.severity)}">
+          <span>${escapeHtml(formatTime(ev.t))}</span>
+          <span>${escapeHtml(ev.message)}</span>
+        </li>`)
+      .join("");
+    // Auto-scroll to bottom
+    els.attackLog.scrollTop = els.attackLog.scrollHeight;
+  }
+
+  function formatTime(ms) {
+    if (typeof ms !== "number") return "";
+    const totalS = ms / 1000;
+    const m = Math.floor(totalS / 60);
+    const s = Math.floor(totalS - m * 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  // viz3d.js calls these when an attack is running
+  window.AwsAttack = {
+    onStart(def) {
+      els.attackHudIcon.textContent = def.icon || "!";
+      els.attackHudName.textContent = def.name;
+      els.attackHudPhase.textContent = "Starting…";
+    },
+    onTick(state) {
+      if (!state) return;
+      els.attackHudPhase.textContent = state.phaseLabel || "";
+      els.attackProgressFill.style.right = `${100 - state.progress * 100}%`;
+      setAttackStat(els.attackStatSpawned, state.stats.spawned);
+      setAttackStat(els.attackStatBlocked, state.stats.blocked);
+      setAttackStat(els.attackStatArrived, state.stats.arrived);
+      renderAttackLog(state.events);
+    },
+    onEnd(summary) {
+      // Hide live HUD, show summary modal
+      els.attackHud.hidden = true;
+      renderAttackSummary(summary);
+      els.attackSummary.hidden = false;
+    },
+    onStop() {
+      els.attackHud.hidden = true;
+    },
+  };
+
+  function renderAttackSummary(summary) {
+    els.attackSummaryOutcome.className =
+      `attack-summary-outcome status-${summary.outcomeStatus || "warn"}`;
+    els.attackSummaryOutcome.textContent = summary.outcome;
+
+    els.attackSummaryStats.innerHTML = summary.stats
+      .map(
+        (s) => `
+          <div>
+            <div class="label">${escapeHtml(s.label)}</div>
+            <div class="value">${escapeHtml(String(s.value))}</div>
+          </div>`,
+      )
+      .join("");
+
+    els.attackSummaryLog.innerHTML = summary.events
+      .map(
+        (ev) => `
+          <li class="sev-${escapeHtml(ev.severity)}">
+            <span class="t">${escapeHtml(formatTime(ev.t))}</span>
+            <span></span>
+            <span>${escapeHtml(ev.message)}</span>
+          </li>`,
+      )
+      .join("");
+  }
+
+  els.attackBtn.addEventListener("click", openAttackModal);
+  els.attackModalClose.addEventListener("click", () => {
+    els.attackModal.hidden = true;
+  });
+  els.attackAbort.addEventListener("click", () => {
+    if (window.AwsViz3D) window.AwsViz3D.stopAttack();
+    els.attackHud.hidden = true;
+  });
+  els.attackSummaryClose.addEventListener("click", () => {
+    if (window.AwsViz3D) window.AwsViz3D.stopAttack();
+    els.attackSummary.hidden = true;
+  });
+  els.attackSummaryDone.addEventListener("click", () => {
+    if (window.AwsViz3D) window.AwsViz3D.stopAttack();
+    els.attackSummary.hidden = true;
+  });
+  els.attackSummaryReplay.addEventListener("click", () => {
+    if (lastAttackId) startAttack(lastAttackId);
+  });
+
+  // Click outside the modal cards dismisses
+  els.attackModal.addEventListener("click", (e) => {
+    if (e.target === els.attackModal) els.attackModal.hidden = true;
+  });
+  els.attackSummary.addEventListener("click", (e) => {
+    if (e.target === els.attackSummary) {
+      if (window.AwsViz3D) window.AwsViz3D.stopAttack();
+      els.attackSummary.hidden = true;
     }
   });
 

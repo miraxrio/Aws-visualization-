@@ -37,6 +37,7 @@
       <button id="load-sample" class="btn ghost">Load sample</button>
       <button id="start-tour" class="btn primary">Start tour</button>
       <button id="explore-btn" class="btn ghost mode-3d-only" hidden>Explore</button>
+      <button id="attack-btn" class="btn ghost mode-3d-only" hidden>Simulate attack</button>
       <button id="toggle-flow" class="btn ghost">Pause traffic</button>
       <button id="reset-zoom" class="btn ghost">Reset view</button>
       <button id="theme-toggle" class="btn ghost icon-only" title="Toggle day / night" aria-label="Toggle day or night theme">
@@ -194,5 +195,63 @@
   </div>
 
   <script src="tour.js" defer></script>
+
+  <!-- Attack picker modal -->
+  <div class="attack-modal" id="attack-modal" hidden role="dialog" aria-modal="true" aria-labelledby="attack-modal-title">
+    <div class="attack-modal-card">
+      <div class="attack-modal-head">
+        <h2 id="attack-modal-title">Simulate a cyber attack</h2>
+        <button class="tour-btn" id="attack-modal-close" aria-label="Cancel">
+          <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+        </button>
+      </div>
+      <p class="muted attack-modal-sub">
+        Pick a scenario. Red attackers will assault your network from the appropriate
+        source; defenders will catch what they can. You'll get a full summary at the end.
+      </p>
+      <div class="attack-grid" id="attack-grid"></div>
+    </div>
+  </div>
+
+  <!-- Live attack HUD -->
+  <div class="attack-hud" id="attack-hud" hidden>
+    <div class="attack-hud-head">
+      <span class="attack-hud-icon" id="attack-hud-icon">⚡</span>
+      <div class="attack-hud-titles">
+        <div class="attack-hud-name" id="attack-hud-name">DDoS</div>
+        <div class="attack-hud-phase" id="attack-hud-phase">Phase</div>
+      </div>
+      <button class="tour-btn" id="attack-abort" title="Abort simulation" aria-label="Abort">
+        <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+      </button>
+    </div>
+    <div class="attack-progress"><span id="attack-progress-fill"></span></div>
+    <div class="attack-stats">
+      <span><b id="attack-stat-spawned">0</b><i>spawned</i></span>
+      <span><b id="attack-stat-blocked">0</b><i>blocked</i></span>
+      <span><b id="attack-stat-arrived">0</b><i>reached</i></span>
+    </div>
+    <ul class="attack-log" id="attack-log"></ul>
+  </div>
+
+  <!-- End-of-attack summary -->
+  <div class="attack-modal" id="attack-summary" hidden role="dialog" aria-modal="true" aria-labelledby="attack-summary-title">
+    <div class="attack-modal-card">
+      <div class="attack-modal-head">
+        <h2 id="attack-summary-title">Attack summary</h2>
+        <button class="tour-btn" id="attack-summary-close" aria-label="Close">
+          <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+        </button>
+      </div>
+      <div class="attack-summary-outcome" id="attack-summary-outcome"></div>
+      <div class="attack-summary-stats" id="attack-summary-stats"></div>
+      <h3 class="muted attack-summary-eyebrow">Event timeline</h3>
+      <ol class="attack-summary-log" id="attack-summary-log"></ol>
+      <div class="attack-summary-actions">
+        <button class="btn ghost" id="attack-summary-replay">Run again</button>
+        <button class="btn primary" id="attack-summary-done">Done</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

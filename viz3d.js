@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05k — tight icon decals + spinning Aurora/Lambda");
+console.log("[viz3d] build 2026-05-05l — attack simulation");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -17,6 +17,10 @@ let cameraTween = null;
 let raf = null;
 let lastT = 0;
 let focusEffect = null; // { group, targetMesh, baseEmissive }
+
+// Attack-simulation state. attackState is null when no attack is in flight.
+let attackState = null;
+let attackerLayer = null; // Three.js group all attack visuals are parented to
 
 // Theme handles, populated by init()
 let sky, sunLight, rimLight, hemiLight, ambientLight, stars, ground;
@@ -125,6 +129,11 @@ function init(container) {
 
   cityGroup = new THREE.Group();
   scene.add(cityGroup);
+
+  // Attack simulation visuals live in their own group so they tear down
+  // cleanly without touching the city.
+  attackerLayer = new THREE.Group();
+  scene.add(attackerLayer);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -1490,6 +1499,616 @@ function getTheme() {
   return currentTheme;
 }
 
+// ---------- attack simulation ----------
+
+// Pre-defined attack scenarios. Each has its own initialise/tick logic so
+// DDoS, SQL injection, and ransomware can have visually distinct stories
+// without an explosion of branching.
+const ATTACK_DEFS = {
+  ddos: {
+    id: "ddos",
+    name: "DDoS Volumetric Flood",
+    icon: "⚡",
+    description:
+      "A massive surge of bogus traffic from the internet attempts to overwhelm your edge. WAF rate-limits most of it.",
+    duration: 22000,
+    phases: [
+      { t: 0,     label: "Reconnaissance" },
+      { t: 3000,  label: "Initial wave" },
+      { t: 8000,  label: "Peak surge" },
+      { t: 14000, label: "WAF mitigation" },
+      { t: 19000, label: "Recovery" },
+    ],
+    init(state) {
+      const cdn = findInRegistry(["cloudfront"]);
+      const albs = findInRegistry(["alb"]);
+      const wafs = findInRegistry(["waf"]);
+      // Targets the attackers aim at. Prefer CDN + ALB if present.
+      state.cfg = {
+        targets: cdn.concat(albs).map((e) => e.id),
+        defenders: wafs.map((e) => e.id),
+        source: "internet",
+        // Bands of (timeRange, spawnRate per second, blockRate)
+        bands: [
+          { tStart: 800,   tEnd: 2800,  rate: 4,   blockRate: 0.05 },
+          { tStart: 3000,  tEnd: 7800,  rate: 22,  blockRate: 0.32 },
+          { tStart: 8000,  tEnd: 13800, rate: 50,  blockRate: 0.55 },
+          { tStart: 14000, tEnd: 18800, rate: 38,  blockRate: 0.85 },
+          { tStart: 19000, tEnd: 21500, rate: 8,   blockRate: 0.55 },
+        ],
+      };
+      if (state.cfg.targets.length === 0) {
+        // Fall back to whatever public-facing thing exists.
+        const fallback = findInRegistry(["alb", "nlb", "ec2", "ecs", "waf"]);
+        state.cfg.targets = fallback.slice(0, 1).map((e) => e.id);
+      }
+      pushEvent(state, "info",
+        `Attackers spotted from the public internet → targeting ${state.cfg.targets.length} edge resource(s)`);
+    },
+    tick(state, dt, elapsed) {
+      tickBandedSpawn(state, dt, elapsed);
+    },
+    summarize(state) {
+      const arrived = state.stats.arrived;
+      const total = state.stats.spawned;
+      const blocked = state.stats.blocked;
+      const outcome = arrived === 0
+        ? "Service stayed up — every request blocked."
+        : arrived < total * 0.15
+        ? "Service stayed up. WAF absorbed the surge."
+        : arrived < total * 0.5
+        ? "Brownout for some users. Edge held but degraded."
+        : "Edge overwhelmed — manual mitigation required.";
+      return {
+        outcome,
+        outcomeStatus: arrived === 0 || arrived < total * 0.15 ? "ok" : (arrived < total * 0.5 ? "warn" : "danger"),
+        stats: [
+          { label: "Total bogus requests", value: total.toLocaleString() },
+          { label: "Blocked by WAF",       value: `${blocked.toLocaleString()} (${pct(blocked, total)}%)` },
+          { label: "Reached edge",         value: arrived.toLocaleString() },
+          { label: "Peak request rate",    value: `${state.stats.peakRate} req/s` },
+        ],
+      };
+    },
+  },
+
+  sqli: {
+    id: "sqli",
+    name: "SQL Injection Cascade",
+    icon: "💉",
+    description:
+      "Persistent payload-laden requests try to traverse the edge → app → database. WAF and security groups peel off most.",
+    duration: 22000,
+    phases: [
+      { t: 0,     label: "Probing" },
+      { t: 4000,  label: "Bypass attempts" },
+      { t: 10000, label: "App-tier exploit" },
+      { t: 16000, label: "Database probes" },
+      { t: 19500, label: "Mitigation" },
+    ],
+    init(state) {
+      const cdn = findInRegistry(["cloudfront"]);
+      const wafs = findInRegistry(["waf"]);
+      const albs = findInRegistry(["alb"]);
+      const apps = findInRegistry(["ecs", "ec2", "lambda"]);
+      const dbs = findInRegistry(["aurora", "rds"]);
+      // Build a hop chain through whatever is present.
+      const path = [];
+      if (cdn[0])  path.push(cdn[0].id);
+      if (wafs[0]) path.push(wafs[0].id);
+      if (albs[0]) path.push(albs[0].id);
+      if (apps[0]) path.push(apps[0].id);
+      if (dbs[0])  path.push(dbs[0].id);
+      state.cfg = {
+        source: "internet",
+        // Cumulative intercept chance at each hop boundary
+        path,
+        hopBlockChance: [0.15, 0.55, 0.25, 0.55, 0.55].slice(0, path.length),
+        bands: [
+          { tStart: 600,   tEnd: 4000,  rate: 1.5, blockRate: 0 },
+          { tStart: 4000,  tEnd: 10000, rate: 3,   blockRate: 0 },
+          { tStart: 10000, tEnd: 16000, rate: 4,   blockRate: 0 },
+          { tStart: 16000, tEnd: 19500, rate: 3,   blockRate: 0 },
+          { tStart: 19500, tEnd: 21500, rate: 1,   blockRate: 0 },
+        ],
+      };
+      pushEvent(state, "info",
+        `Probe chain: ${path.length ? path.join(" → ") : "(no clear path found)"}`);
+    },
+    tick(state, dt, elapsed) {
+      tickBandedSpawn(state, dt, elapsed);
+    },
+    summarize(state) {
+      const arrived = state.stats.arrived;
+      const total = state.stats.spawned;
+      const outcome = arrived === 0
+        ? "All injection attempts intercepted. DB stayed safe."
+        : arrived < 5
+        ? `${arrived} request(s) reached the database, but each was caught by the SG’s deny-by-default rules. Review parameterised queries.`
+        : "Multiple payloads reached the database tier — auditing required.";
+      return {
+        outcome,
+        outcomeStatus: arrived === 0 ? "ok" : arrived < 5 ? "warn" : "danger",
+        stats: [
+          { label: "Total injection attempts", value: total.toLocaleString() },
+          { label: "Blocked by WAF / SG",      value: state.stats.blocked.toLocaleString() },
+          { label: "Reached database",         value: arrived.toLocaleString() },
+        ],
+      };
+    },
+  },
+
+  ransomware: {
+    id: "ransomware",
+    name: "Ransomware Lateral Spread",
+    icon: "🦠",
+    description:
+      "An ECS task is compromised. The malware scans neighbours and spreads laterally; security groups slow it but don't stop it cold.",
+    duration: 24000,
+    phases: [
+      { t: 0,     label: "Foothold" },
+      { t: 3500,  label: "Reconnaissance" },
+      { t: 8000,  label: "Lateral movement" },
+      { t: 15000, label: "Privilege escalation" },
+      { t: 20000, label: "Encryption" },
+    ],
+    init(state) {
+      const candidates = findInRegistry(["ecs", "lambda", "ec2"]);
+      if (candidates.length) {
+        const seed = candidates[0].id;
+        state.cfg = {
+          infected: new Set([seed]),
+          spreadInterval: 1300,
+          lastSpawnT: 0,
+          spreadTypes: ["ecs", "lambda", "ec2", "aurora", "rds", "dynamodb", "s3"],
+          source: seed,
+        };
+        markInfected(state, seed);
+        pushEvent(state, "danger", `Initial foothold: ${seed} compromised`);
+      } else {
+        state.cfg = { infected: new Set(), spreadInterval: 1500, lastSpawnT: 0, spreadTypes: [] };
+      }
+    },
+    tick(state, dt, elapsed) {
+      const cfg = state.cfg;
+      if (!cfg.infected || cfg.infected.size === 0) return;
+      // Spread accelerates as the attack progresses
+      const interval = Math.max(380, cfg.spreadInterval - elapsed * 0.04);
+      if (elapsed - cfg.lastSpawnT < interval) return;
+      cfg.lastSpawnT = elapsed;
+
+      const sources = [...cfg.infected];
+      const possible = findInRegistry(cfg.spreadTypes).filter((e) => !cfg.infected.has(e.id));
+      if (possible.length === 0) return;
+
+      const sourceId = sources[Math.floor(Math.random() * sources.length)];
+      const target = possible[Math.floor(Math.random() * possible.length)];
+      // Block rate: SGs catch fewer attempts as the malware learns
+      const blockRate = Math.max(0.18, 0.65 - elapsed / 50000);
+      spawnAttacker(state, {
+        sourceId,
+        targetId: target.id,
+        blockRate,
+        defenderName: "Security Group",
+        onArrival(s) {
+          s.cfg.infected.add(target.id);
+          markInfected(s, target.id);
+          pushEvent(s, "danger", `${target.id} compromised (spread from ${sourceId})`);
+        },
+        onBlocked(s) {
+          pushEvent(s, "ok", `SG dropped ${sourceId} → ${target.id}`);
+        },
+      });
+    },
+    summarize(state) {
+      const compromised = (state.cfg.infected || new Set()).size;
+      const total = state.stats.spawned;
+      const outcome = compromised <= 1
+        ? "Lateral movement contained. The breached node was the only one infected."
+        : compromised < 5
+        ? `${compromised} nodes compromised. Isolate them immediately and rotate credentials.`
+        : "Wide-spread compromise. Trigger DR runbook and rotate every SG.";
+      return {
+        outcome,
+        outcomeStatus: compromised <= 1 ? "ok" : compromised < 5 ? "warn" : "danger",
+        stats: [
+          { label: "Lateral attempts",  value: total.toLocaleString() },
+          { label: "Blocked by SGs",    value: state.stats.blocked.toLocaleString() },
+          { label: "Nodes compromised", value: compromised.toString() },
+        ],
+      };
+    },
+  },
+};
+
+function findInRegistry(types) {
+  const out = [];
+  registry.forEach((entry, id) => {
+    if (types.includes(entry.type)) out.push({ id, entry });
+  });
+  return out;
+}
+
+function pushEvent(state, severity, message) {
+  state.events.push({ t: performance.now() - state.startTime, severity, message });
+  if (state.events.length > 200) state.events.shift();
+}
+
+function pct(a, b) {
+  if (!b) return 0;
+  return Math.round((a / b) * 100);
+}
+
+// Spawn attackers based on the current "band" definitions in state.cfg.bands.
+// Each band is { tStart, tEnd, rate, blockRate }. Used by DDoS and SQLi.
+function tickBandedSpawn(state, dt, elapsed) {
+  const cfg = state.cfg;
+  if (!cfg || !cfg.bands) return;
+  cfg._spawnAccum = cfg._spawnAccum || {};
+
+  cfg.bands.forEach((b, i) => {
+    if (elapsed < b.tStart || elapsed >= b.tEnd) return;
+    cfg._spawnAccum[i] = (cfg._spawnAccum[i] || 0) + b.rate * dt;
+    while (cfg._spawnAccum[i] >= 1) {
+      cfg._spawnAccum[i] -= 1;
+      const target = pickRandom(cfg.targets);
+      if (state.def.id === "sqli") {
+        spawnAttackerOnPath(state, cfg.path, cfg.hopBlockChance);
+      } else {
+        spawnAttacker(state, {
+          sourceId: cfg.source,
+          targetId: target,
+          blockRate: b.blockRate,
+          defenderName: "WAF",
+        });
+      }
+    }
+  });
+
+  // Track peak QPS over a 1-second sliding window
+  const window = state._rateWindow = state._rateWindow || [];
+  while (window.length && window[0] < elapsed - 1000) window.shift();
+}
+
+function pickRandom(arr) {
+  return arr.length ? arr[Math.floor(Math.random() * arr.length)] : null;
+}
+
+// Build a curve for an attacker travelling from source to target with a
+// gentle arc upward.
+function attackerCurve(sourceId, targetId) {
+  const src = registry.get(sourceId);
+  const tgt = registry.get(targetId);
+  if (!src || !tgt) return null;
+  const start = src.position.clone();
+  const end = tgt.position.clone();
+  const mid = start.clone().lerp(end, 0.5);
+  mid.y += Math.min(38, Math.max(8, start.distanceTo(end) * 0.32));
+  return new THREE.CatmullRomCurve3([start, mid, end]);
+}
+
+// Build a multi-hop curve through a list of node ids (for SQLi).
+function attackerPathCurve(sourceId, hopIds) {
+  const src = registry.get(sourceId);
+  if (!src) return null;
+  const points = [src.position.clone()];
+  for (const id of hopIds) {
+    const e = registry.get(id);
+    if (!e) continue;
+    points.push(e.position.clone().add(new THREE.Vector3(0, 1, 0)));
+  }
+  if (points.length < 2) return null;
+  return new THREE.CatmullRomCurve3(points);
+}
+
+function makeAttackerSphere(color) {
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.7, 12, 8),
+    new THREE.MeshBasicMaterial({ color }),
+  );
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(2.0, 12, 8),
+    new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  );
+  return { sphere, halo };
+}
+
+function spawnAttacker(state, { sourceId, targetId, blockRate = 0, defenderName = "defender", onArrival, onBlocked }) {
+  const curve = attackerCurve(sourceId, targetId);
+  if (!curve) return;
+  const tgt = registry.get(targetId);
+  const { sphere, halo } = makeAttackerSphere(0xff3a5b);
+  attackerLayer.add(sphere);
+  attackerLayer.add(halo);
+  const blocked = Math.random() < blockRate;
+  const interceptT = blocked ? 0.45 + Math.random() * 0.2 : null;
+  state.attackers.push({
+    sphere, halo, curve,
+    t: 0,
+    speed: 0.55 + Math.random() * 0.25, // 1.4–2.2s end-to-end
+    blocked, interceptT,
+    targetId, defenderName,
+    targetName: (tgt && tgt.name) || targetId,
+    onArrival, onBlocked,
+  });
+  state.stats.spawned++;
+  // Track for peak rate
+  if (state._rateWindow) state._rateWindow.push(performance.now() - state.startTime);
+  state.stats.peakRate = Math.max(state.stats.peakRate, state._rateWindow ? state._rateWindow.length : 0);
+}
+
+function spawnAttackerOnPath(state, path, hopBlockChance) {
+  if (!path || path.length === 0) return;
+  const curve = attackerPathCurve(state.cfg.source, path);
+  if (!curve) return;
+  // Roll for block at each hop
+  let blockedHop = -1;
+  for (let i = 0; i < path.length; i++) {
+    if (Math.random() < (hopBlockChance[i] || 0)) { blockedHop = i; break; }
+  }
+  const { sphere, halo } = makeAttackerSphere(0xff3a5b);
+  attackerLayer.add(sphere);
+  attackerLayer.add(halo);
+  const finalTargetId = path[path.length - 1];
+  const tgt = registry.get(finalTargetId);
+  // Map blockedHop to a curve t. Even spacing along the path of waypoints.
+  const interceptT = blockedHop >= 0
+    ? Math.min(0.95, (blockedHop + 0.5) / path.length)
+    : null;
+  const defenderName = blockedHop >= 0 ? `at ${path[blockedHop]}` : null;
+  state.attackers.push({
+    sphere, halo, curve,
+    t: 0,
+    speed: 0.45 + Math.random() * 0.2,
+    blocked: blockedHop >= 0,
+    interceptT,
+    targetId: finalTargetId, defenderName,
+    targetName: (tgt && tgt.name) || finalTargetId,
+  });
+  state.stats.spawned++;
+}
+
+function spawnPuff(pos, color) {
+  const mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat);
+  mesh.position.copy(pos);
+  attackerLayer.add(mesh);
+  attackState.puffs.push({
+    mesh, life: 0.55, duration: 0.55,
+    startScale: 0.6, endScale: 4.5,
+  });
+}
+
+function flashTarget(id, color = 0xff3a5b, durationS = 0.7) {
+  const r = registry.get(id);
+  if (!r || !r.mesh || !r.mesh.material) return;
+  attackState.flashes.push({
+    mesh: r.mesh,
+    life: durationS,
+    duration: durationS,
+    originalEmissive: r.mesh.material.emissive.getHex(),
+    originalIntensity: r.mesh.material.emissiveIntensity,
+    color,
+  });
+  r.mesh.material.emissive.setHex(color);
+  r.mesh.material.emissiveIntensity = Math.min(1.4, (r.mesh.material.emissiveIntensity || 0.45) + 0.7);
+}
+
+function markInfected(state, id) {
+  // Permanent red glow on infected nodes
+  const r = registry.get(id);
+  if (!r || !r.mesh || !r.mesh.material) return;
+  state.infectedMeshes = state.infectedMeshes || new Map();
+  if (state.infectedMeshes.has(id)) return;
+  state.infectedMeshes.set(id, {
+    mesh: r.mesh,
+    originalEmissive: r.mesh.material.emissive.getHex(),
+    originalIntensity: r.mesh.material.emissiveIntensity,
+  });
+  r.mesh.material.emissive.setHex(0xff3a5b);
+  r.mesh.material.emissiveIntensity = 0.65;
+}
+
+function startAttack(id) {
+  if (!initialized) return;
+  if (attackState) stopAttack();
+  const def = ATTACK_DEFS[id];
+  if (!def) return;
+
+  attackState = {
+    def,
+    startTime: performance.now(),
+    attackers: [],
+    puffs: [],
+    flashes: [],
+    events: [],
+    stats: { spawned: 0, blocked: 0, arrived: 0, peakRate: 0 },
+    cfg: {},
+    currentPhase: -1,
+    summaryShown: false,
+  };
+
+  // Camera: bird's-eye over the city so the user sees the whole battle
+  cameraTween = null;
+  const dist = Math.max(CITY.w, CITY.d) * 0.8 + 90;
+  tweenCamera(
+    new THREE.Vector3(0, dist * 0.85, dist * 0.45),
+    new THREE.Vector3(0, 4, 0),
+    1100,
+  );
+
+  if (def.init) def.init(attackState);
+
+  if (window.AwsAttack && typeof window.AwsAttack.onStart === "function") {
+    window.AwsAttack.onStart(def);
+  }
+}
+
+function stopAttack() {
+  if (!attackState) return;
+  // Return any infected meshes' emissive to their original values
+  if (attackState.infectedMeshes) {
+    attackState.infectedMeshes.forEach((info) => {
+      info.mesh.material.emissive.setHex(info.originalEmissive);
+      info.mesh.material.emissiveIntensity = info.originalIntensity;
+    });
+  }
+  // Same for any in-flight target flashes
+  attackState.flashes.forEach((f) => {
+    f.mesh.material.emissive.setHex(f.originalEmissive);
+    f.mesh.material.emissiveIntensity = f.originalIntensity;
+  });
+  // Wipe attacker visuals
+  attackerLayer.traverse((c) => {
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) {
+      const ms = Array.isArray(c.material) ? c.material : [c.material];
+      ms.forEach((m) => m.dispose());
+    }
+  });
+  while (attackerLayer.children.length) attackerLayer.remove(attackerLayer.children[0]);
+  attackState = null;
+  if (window.AwsAttack && typeof window.AwsAttack.onStop === "function") {
+    window.AwsAttack.onStop();
+  }
+}
+
+function isAttackActive() {
+  return !!attackState;
+}
+
+function getAttackState() {
+  if (!attackState) return null;
+  const elapsed = performance.now() - attackState.startTime;
+  return {
+    defId: attackState.def.id,
+    name: attackState.def.name,
+    icon: attackState.def.icon,
+    duration: attackState.def.duration,
+    elapsed,
+    phaseLabel: attackState.def.phases[Math.max(0, attackState.currentPhase)]
+      ? attackState.def.phases[Math.max(0, attackState.currentPhase)].label
+      : "",
+    progress: Math.min(1, elapsed / attackState.def.duration),
+    stats: { ...attackState.stats },
+    events: attackState.events.slice(-30),
+  };
+}
+
+function buildAttackSummary() {
+  if (!attackState) return null;
+  const summary = attackState.def.summarize(attackState);
+  return {
+    name: attackState.def.name,
+    icon: attackState.def.icon,
+    outcome: summary.outcome,
+    outcomeStatus: summary.outcomeStatus,
+    stats: summary.stats,
+    events: attackState.events.slice(),
+  };
+}
+
+function updateAttack(now, dt) {
+  if (!attackState) return;
+  const elapsed = now - attackState.startTime;
+
+  // Phase transitions
+  let phase = 0;
+  for (let i = 0; i < attackState.def.phases.length; i++) {
+    if (elapsed >= attackState.def.phases[i].t) phase = i;
+  }
+  if (phase !== attackState.currentPhase) {
+    attackState.currentPhase = phase;
+    pushEvent(attackState, "info", `▶ ${attackState.def.phases[phase].label}`);
+  }
+
+  // Attack-specific spawn logic
+  if (elapsed < attackState.def.duration && attackState.def.tick) {
+    attackState.def.tick(attackState, dt, elapsed);
+  }
+
+  // Move attackers
+  attackState.attackers = attackState.attackers.filter((a) => {
+    a.t += a.speed * dt;
+    if (a.blocked && a.interceptT != null && a.t >= a.interceptT) {
+      const p = a.curve.getPointAt(a.interceptT);
+      spawnPuff(p, 0xffd966);
+      attackState.stats.blocked++;
+      if (a.onBlocked) a.onBlocked(attackState);
+      else pushEvent(attackState, "ok",
+        `Blocked${a.defenderName ? " " + a.defenderName : ""} → ${a.targetName}`);
+      attackerLayer.remove(a.sphere); attackerLayer.remove(a.halo);
+      a.sphere.geometry.dispose(); a.sphere.material.dispose();
+      a.halo.geometry.dispose(); a.halo.material.dispose();
+      return false;
+    }
+    if (a.t >= 1) {
+      flashTarget(a.targetId, 0xff3a5b, 0.7);
+      attackState.stats.arrived++;
+      if (a.onArrival) a.onArrival(attackState);
+      else pushEvent(attackState, "danger", `Reached ${a.targetName}`);
+      attackerLayer.remove(a.sphere); attackerLayer.remove(a.halo);
+      a.sphere.geometry.dispose(); a.sphere.material.dispose();
+      a.halo.geometry.dispose(); a.halo.material.dispose();
+      return false;
+    }
+    const p = a.curve.getPointAt(Math.min(0.9999, a.t));
+    a.sphere.position.copy(p);
+    a.halo.position.copy(p);
+    return true;
+  });
+
+  // Animate puffs (yellow blocked-here markers)
+  attackState.puffs = attackState.puffs.filter((p) => {
+    p.life -= dt;
+    if (p.life <= 0) {
+      attackerLayer.remove(p.mesh);
+      p.mesh.geometry.dispose(); p.mesh.material.dispose();
+      return false;
+    }
+    const alive = p.life / p.duration;
+    p.mesh.scale.setScalar(p.startScale + (p.endScale - p.startScale) * (1 - alive));
+    p.mesh.material.opacity = alive;
+    return true;
+  });
+
+  // Animate target flashes
+  attackState.flashes = attackState.flashes.filter((f) => {
+    f.life -= dt;
+    if (f.life <= 0) {
+      f.mesh.material.emissive.setHex(f.originalEmissive);
+      f.mesh.material.emissiveIntensity = f.originalIntensity;
+      return false;
+    }
+    const t = f.life / f.duration;
+    f.mesh.material.emissiveIntensity = f.originalIntensity + 0.7 * t;
+    return true;
+  });
+
+  // Notify HUD
+  if (window.AwsAttack && typeof window.AwsAttack.onTick === "function") {
+    window.AwsAttack.onTick(getAttackState());
+  }
+
+  // End condition: duration expired AND all attackers drained.
+  if (
+    !attackState.summaryShown &&
+    elapsed > attackState.def.duration + 1500 &&
+    attackState.attackers.length === 0
+  ) {
+    attackState.summaryShown = true;
+    if (window.AwsAttack && typeof window.AwsAttack.onEnd === "function") {
+      window.AwsAttack.onEnd(buildAttackSummary());
+    }
+  }
+}
+
 // ---------- explore (first-person walk) ----------
 
 function enterExplore() {
@@ -1905,6 +2524,8 @@ function animate() {
 
   if (cameraTween) cameraTween(now);
 
+  if (attackState) updateAttack(now, dt);
+
   if (exploreActive) updateExplore(dt);
   else controls.update();
 
@@ -1922,5 +2543,13 @@ window.AwsViz3D = {
   isExploring,
   setTheme,
   getTheme,
+  startAttack,
+  stopAttack,
+  isAttackActive,
+  getAttackState,
+  buildAttackSummary,
+  attackTypes: () => Object.values(ATTACK_DEFS).map((d) => ({
+    id: d.id, name: d.name, icon: d.icon, description: d.description,
+  })),
   isReady: () => initialized,
 };
