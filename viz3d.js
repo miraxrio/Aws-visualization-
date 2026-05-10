@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05m — siege-style attack visuals");
+console.log("[viz3d] build 2026-05-05n — siege phases: descent → patrol → assault");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -1531,12 +1531,14 @@ const ATTACK_DEFS = {
         // Bands of (timeRange, spawnRate per second, blockRate). Rates are
         // tuned for the bigger / slower siege units so the field reads
         // "army" rather than "swarm".
+        // Rates tuned for the 3-phase siege units (each lives ~4–5s on
+        // screen). Peak band gives ~10 concurrent units in patrol/assault.
         bands: [
-          { tStart: 800,   tEnd: 2800,  rate: 2.5, blockRate: 0.05 },
-          { tStart: 3000,  tEnd: 7800,  rate: 9,   blockRate: 0.32 },
-          { tStart: 8000,  tEnd: 13800, rate: 18,  blockRate: 0.55 },
-          { tStart: 14000, tEnd: 18800, rate: 14,  blockRate: 0.85 },
-          { tStart: 19000, tEnd: 21500, rate: 4,   blockRate: 0.55 },
+          { tStart: 800,   tEnd: 2800,  rate: 1.6, blockRate: 0.05 },
+          { tStart: 3000,  tEnd: 7800,  rate: 5,   blockRate: 0.32 },
+          { tStart: 8000,  tEnd: 13800, rate: 9,   blockRate: 0.55 },
+          { tStart: 14000, tEnd: 18800, rate: 7,   blockRate: 0.85 },
+          { tStart: 19000, tEnd: 21500, rate: 2.5, blockRate: 0.55 },
         ],
       };
       if (state.cfg.targets.length === 0) {
@@ -1787,38 +1789,84 @@ function pickRandom(arr) {
 }
 
 function makeAttackerUnit() {
-  // A red capsule "soldier" with a ground aura and a glowing halo so a
-  // single attacker reads as a unit, not just a dot. Returned as a Group
-  // so callers can move it as one object along the curve.
+  // A tall red spire with a glowing beacon column above it. Designed to
+  // be visible against any background and to tower over the city
+  // (buildings are 8–22 units tall; spire+beacon is ~22 units of red
+  // light from the ground up).
   const grp = new THREE.Group();
 
-  const bodyGeo = new THREE.CapsuleGeometry(0.55, 1.6, 6, 12);
+  // Spire body — short cylinder + cone tip
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0xff2a4d,
-    emissive: 0xff4477,
-    emissiveIntensity: 0.75,
-    roughness: 0.45,
-    metalness: 0.4,
+    color: 0xff1840,
+    emissive: 0xff3a5b,
+    emissiveIntensity: 1.4,
+    metalness: 0.55,
+    roughness: 0.32,
   });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 1.4;
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.7, 1.6, 5.0, 10),
+    bodyMat,
+  );
+  body.position.y = 2.7;
   grp.add(body);
 
-  const haloGeo = new THREE.SphereGeometry(1.5, 14, 10);
-  const haloMat = new THREE.MeshBasicMaterial({
-    color: 0xff3a5b, transparent: true, opacity: 0.45,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const halo = new THREE.Mesh(haloGeo, haloMat);
-  halo.position.y = 1.3;
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.7, 1.7, 10),
+    bodyMat,
+  );
+  tip.position.y = 6.0;
+  grp.add(tip);
+
+  // Translucent halo around the spire
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(3.3, 18, 14),
+    new THREE.MeshBasicMaterial({
+      color: 0xff3a5b, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  );
+  halo.position.y = 3.4;
   grp.add(halo);
 
+  // Vertical beacon column starting at the tip — visible from every angle
+  // including from above
+  const beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25, 0.55, 16, 10, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xff3a5b, transparent: true, opacity: 0.6,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
+    }),
+  );
+  beacon.position.y = 14.5;
+  grp.add(beacon);
+
+  // Big ground aura sprite so the unit reads from a bird's-eye view too
   const aura = makeRedAuraSprite();
-  aura.position.y = 0.15;
-  aura.scale.set(4, 4, 1);
+  aura.position.y = 0.25;
+  aura.scale.set(8.5, 8.5, 1);
   grp.add(aura);
 
   return { group: grp, body, halo };
+}
+
+// Red light beam from the sky to a landing point — drawn during the
+// descent phase so you can see attackers raining down from the internet.
+function makeDescentBeam(from, to) {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const length = dir.length();
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.6, 0.6, length, 12, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xff3a5b, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
+    }),
+  );
+  beam.position.copy(from).add(dir.clone().multiplyScalar(0.5));
+  beam.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    dir.clone().normalize(),
+  );
+  return beam;
 }
 
 let _redAuraTex = null;
@@ -1921,27 +1969,104 @@ function attackerPathCurve(hopIds) {
   return new THREE.CatmullRomCurve3(points);
 }
 
-function spawnAttacker(state, { sourceId, targetId, blockRate = 0, defenderName = "defender", onArrival, onBlocked, kind }) {
-  // Pick the right curve shape for the kind of attack
-  let curve;
-  if (kind === "spread") curve = attackerSpreadCurve(sourceId, targetId);
-  else if (kind === "siege") curve = attackerSiegeCurve(targetId);
-  else curve = attackerCurve(sourceId, targetId);
-  if (!curve) return;
-  const tgt = registry.get(targetId);
+// Three-phase attacker: descent → patrol → assault.
+// - descent:   drops in from the internet portal in the sky on a glowing
+//              red beam, lands at a random point on the city perimeter
+// - patrol:    walks laterally along the perimeter (creates the visible
+//              "siege ring" around the city)
+// - assault:   charges across the streets to the actual target. May be
+//              blocked partway through by a defender shield.
+//
+// "kind: spread" (ransomware) skips descent and patrol — the attacker
+// originates from an already-infected node and crawls across the ground
+// to the next victim.
+function spawnAttacker(state, opts) {
+  const tgt = registry.get(opts.targetId);
+  if (!tgt) return;
+
   const visual = makeAttackerUnit();
   attackerLayer.add(visual.group);
-  const blocked = Math.random() < blockRate;
-  const interceptT = blocked ? 0.55 + Math.random() * 0.2 : null;
-  state.attackers.push({
-    visual, curve,
-    t: 0,
-    speed: 0.28 + Math.random() * 0.12,  // ~3 s end-to-end so the siege reads
-    blocked, interceptT,
-    targetId, defenderName,
-    targetName: (tgt && tgt.name) || targetId,
-    onArrival, onBlocked,
-  });
+
+  const blocked = opts.blocked != null
+    ? opts.blocked
+    : Math.random() < (opts.blockRate || 0);
+  const interceptT = blocked
+    ? (opts.interceptT != null ? opts.interceptT : 0.35 + Math.random() * 0.35)
+    : null;
+
+  let attacker;
+
+  if (opts.kind === "spread") {
+    const src = registry.get(opts.sourceId);
+    const start = src
+      ? new THREE.Vector3(src.position.x, 1, src.position.z)
+      : new THREE.Vector3(0, 1, 0);
+    visual.group.position.copy(start);
+    attacker = {
+      visual,
+      beam: null,
+      phase: "assault",
+      phaseT: 0,
+      assaultDuration: 1.7 + Math.random() * 0.5,
+      assaultStart: start,
+      assaultEnd: tgt.position.clone(),
+    };
+  } else {
+    // Sky origin near the internet portal but pushed up so attackers
+    // visibly fall in from above.
+    const internet = registry.get("internet");
+    const sky = internet
+      ? new THREE.Vector3(internet.position.x, internet.position.y + 55, internet.position.z)
+      : new THREE.Vector3(0, 80, 0);
+
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.max(CITY.w, CITY.d) * 0.92 + 32;
+    const landing = new THREE.Vector3(Math.cos(angle) * r, 1, Math.sin(angle) * r);
+
+    // Pull sky a bit toward the landing direction so each beam is angled
+    // (rather than every beam coming from the same sky point)
+    const skyOffset = sky.clone().lerp(landing, 0.18);
+    skyOffset.y = sky.y; // keep it high
+
+    // Patrol along the perimeter — visible left/right march
+    const patrolDir = Math.random() < 0.5 ? 1 : -1;
+    const patrolDelta = patrolDir * (0.28 + Math.random() * 0.32);
+    const patrolEnd = new THREE.Vector3(
+      Math.cos(angle + patrolDelta) * r,
+      1,
+      Math.sin(angle + patrolDelta) * r,
+    );
+
+    visual.group.position.copy(skyOffset);
+    const beam = makeDescentBeam(skyOffset, landing);
+    attackerLayer.add(beam);
+
+    attacker = {
+      visual,
+      beam,
+      phase: "descent",
+      phaseT: 0,
+      descentDuration: 0.7 + Math.random() * 0.3,
+      patrolDuration: 1.4 + Math.random() * 0.7,
+      assaultDuration: 1.9 + Math.random() * 0.4,
+      descentStart: skyOffset,
+      descentEnd: landing,
+      patrolStart: landing,
+      patrolEnd,
+      assaultStart: patrolEnd,
+      assaultEnd: tgt.position.clone(),
+    };
+  }
+
+  attacker.blocked = blocked;
+  attacker.interceptT = interceptT;
+  attacker.targetId = opts.targetId;
+  attacker.defenderName = opts.defenderName || "defender";
+  attacker.targetName = (tgt && tgt.name) || opts.targetId;
+  attacker.onArrival = opts.onArrival;
+  attacker.onBlocked = opts.onBlocked;
+
+  state.attackers.push(attacker);
   state.stats.spawned++;
   if (state._rateWindow) state._rateWindow.push(performance.now() - state.startTime);
   state.stats.peakRate = Math.max(state.stats.peakRate, state._rateWindow ? state._rateWindow.length : 0);
@@ -1949,33 +2074,34 @@ function spawnAttacker(state, { sourceId, targetId, blockRate = 0, defenderName 
 
 function spawnAttackerOnPath(state, path, hopBlockChance) {
   if (!path || path.length === 0) return;
-  const curve = attackerPathCurve(path);
-  if (!curve) return;
+  // Roll for block at each hop in order — first hit wins
   let blockedHop = -1;
   for (let i = 0; i < path.length; i++) {
     if (Math.random() < (hopBlockChance[i] || 0)) { blockedHop = i; break; }
   }
-  const visual = makeAttackerUnit();
-  attackerLayer.add(visual.group);
   const finalTargetId = path[path.length - 1];
-  const tgt = registry.get(finalTargetId);
-  // The first curve point is the perimeter spawn, then one per hop, so
-  // hop i lives between control points (i+1) and (i+2). Map block to t.
-  const totalSegments = path.length;
+  // Map blocked hop to a fraction of the assault phase (cdn = early,
+  // db = late) so the defender that catches it determines where the
+  // shield sparks fire.
   const interceptT = blockedHop >= 0
-    ? Math.min(0.95, (blockedHop + 1.5) / (totalSegments + 1))
+    ? Math.min(0.92, 0.18 + (blockedHop / Math.max(1, path.length - 1)) * 0.7)
     : null;
-  const defenderName = blockedHop >= 0 ? `at ${path[blockedHop]}` : null;
-  state.attackers.push({
-    visual, curve,
-    t: 0,
-    speed: 0.22 + Math.random() * 0.1,
+  spawnAttacker(state, {
+    sourceId: "internet",
+    targetId: finalTargetId,
+    kind: "siege",
     blocked: blockedHop >= 0,
     interceptT,
-    targetId: finalTargetId, defenderName,
-    targetName: (tgt && tgt.name) || finalTargetId,
+    defenderName: blockedHop >= 0 ? `at ${path[blockedHop]}` : null,
   });
-  state.stats.spawned++;
+}
+
+function disposeAttackerBeam(attacker) {
+  if (!attacker.beam) return;
+  attackerLayer.remove(attacker.beam);
+  attacker.beam.geometry.dispose();
+  attacker.beam.material.dispose();
+  attacker.beam = null;
 }
 
 // Blue spark when a defender stops an attacker — clearly distinct from a
@@ -2206,31 +2332,66 @@ function updateAttack(now, dt) {
     attackState.def.tick(attackState, dt, elapsed);
   }
 
-  // Move attackers
+  // Move attackers through their three-phase state machine.
   attackState.attackers = attackState.attackers.filter((a) => {
-    a.t += a.speed * dt;
-    if (a.blocked && a.interceptT != null && a.t >= a.interceptT) {
-      const p = a.curve.getPointAt(a.interceptT);
+    a.phaseT += dt;
+
+    if (a.phase === "descent") {
+      const t = Math.min(1, a.phaseT / a.descentDuration);
+      a.visual.group.position.lerpVectors(a.descentStart, a.descentEnd, t);
+      if (a.beam) a.beam.material.opacity = 0.85 * (1 - t * 0.85);
+      if (t >= 1) {
+        disposeAttackerBeam(a);
+        a.phase = "patrol";
+        a.phaseT = 0;
+      }
+      return true;
+    }
+
+    if (a.phase === "patrol") {
+      const t = Math.min(1, a.phaseT / a.patrolDuration);
+      a.visual.group.position.lerpVectors(a.patrolStart, a.patrolEnd, t);
+      if (t >= 1) {
+        a.phase = "assault";
+        a.phaseT = 0;
+      }
+      return true;
+    }
+
+    // assault
+    const t = Math.min(1, a.phaseT / a.assaultDuration);
+
+    if (a.blocked && a.interceptT != null && t >= a.interceptT) {
+      const p = new THREE.Vector3()
+        .lerpVectors(a.assaultStart, a.assaultEnd, a.interceptT);
+      // Lift slightly so the spark doesn't sink into the ground
+      p.y = Math.max(p.y, 1.5);
       spawnDefenseSpark(p);
       attackState.stats.blocked++;
       if (a.onBlocked) a.onBlocked(attackState);
       else pushEvent(attackState, "ok",
         `Blocked${a.defenderName ? " " + a.defenderName : ""} → ${a.targetName}`);
       disposeAttackerVisual(a.visual);
+      disposeAttackerBeam(a);
       return false;
     }
-    if (a.t >= 1) {
-      const p = a.curve.getPointAt(0.999);
-      spawnImpact(p);
+    if (t >= 1) {
+      spawnImpact(a.assaultEnd);
       flashTarget(a.targetId, 0xff3a5b, 0.9);
       attackState.stats.arrived++;
       if (a.onArrival) a.onArrival(attackState);
       else pushEvent(attackState, "danger", `Reached ${a.targetName}`);
       disposeAttackerVisual(a.visual);
+      disposeAttackerBeam(a);
       return false;
     }
-    const p = a.curve.getPointAt(Math.min(0.9999, a.t));
-    a.visual.group.position.copy(p);
+    const pos = new THREE.Vector3().lerpVectors(a.assaultStart, a.assaultEnd, t);
+    // Lift gradually toward elevated targets so the unit doesn't clip
+    // through the floor when charging at a tall building.
+    if (a.assaultEnd.y > 1) {
+      pos.y = 1 + (a.assaultEnd.y - 1) * t;
+    }
+    a.visual.group.position.copy(pos);
     return true;
   });
 
