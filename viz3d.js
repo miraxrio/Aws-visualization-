@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05n — siege phases: descent → patrol → assault");
+console.log("[viz3d] build 2026-05-05o — gate spawn + slot ring + RTS explosions");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -1611,11 +1611,11 @@ const ATTACK_DEFS = {
         // Defenders worth showing a shield on
         defenders: [...wafs, ...dbs].map((e) => e.id),
         bands: [
-          { tStart: 600,   tEnd: 4000,  rate: 0.8, blockRate: 0 },
-          { tStart: 4000,  tEnd: 10000, rate: 1.6, blockRate: 0 },
-          { tStart: 10000, tEnd: 16000, rate: 2.2, blockRate: 0 },
-          { tStart: 16000, tEnd: 19500, rate: 1.6, blockRate: 0 },
-          { tStart: 19500, tEnd: 21500, rate: 0.6, blockRate: 0 },
+          { tStart: 600,   tEnd: 4000,  rate: 1.8, blockRate: 0 },
+          { tStart: 4000,  tEnd: 10000, rate: 4,   blockRate: 0 },
+          { tStart: 10000, tEnd: 16000, rate: 6,   blockRate: 0 },
+          { tStart: 16000, tEnd: 19500, rate: 4,   blockRate: 0 },
+          { tStart: 19500, tEnd: 21500, rate: 1.5, blockRate: 0 },
         ],
       };
       pushEvent(state, "info",
@@ -1665,7 +1665,7 @@ const ATTACK_DEFS = {
         const dbs = findInRegistry(["aurora", "rds", "dynamodb"]);
         state.cfg = {
           infected: new Set([seed]),
-          spreadInterval: 1300,
+          spreadInterval: 650,           // start faster so the spread reads
           lastSpawnT: 0,
           spreadTypes: ["ecs", "lambda", "ec2", "aurora", "rds", "dynamodb", "s3"],
           source: seed,
@@ -1685,7 +1685,7 @@ const ATTACK_DEFS = {
       const cfg = state.cfg;
       if (!cfg.infected || cfg.infected.size === 0) return;
       // Spread accelerates as the attack progresses
-      const interval = Math.max(380, cfg.spreadInterval - elapsed * 0.04);
+      const interval = Math.max(220, cfg.spreadInterval - elapsed * 0.04);
       if (elapsed - cfg.lastSpawnT < interval) return;
       cfg.lastSpawnT = elapsed;
 
@@ -1789,61 +1789,64 @@ function pickRandom(arr) {
 }
 
 function makeAttackerUnit() {
-  // A tall red spire with a glowing beacon column above it. Designed to
-  // be visible against any background and to tower over the city
-  // (buildings are 8–22 units tall; spire+beacon is ~22 units of red
-  // light from the ground up).
+  // Bigger / chunkier than before so individual units read at city scale.
+  // Body: 1.5 base × 0.9 top × 6 tall cylinder + 2.4 cone tip = ~8.4 unit
+  // tall spire. Plus a 22-unit beacon column above and a 12u ground aura,
+  // for ~30 units of red light per attacker.
   const grp = new THREE.Group();
 
-  // Spire body — short cylinder + cone tip
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0xff1840,
+    color: 0xff0d3a,
     emissive: 0xff3a5b,
-    emissiveIntensity: 1.4,
-    metalness: 0.55,
-    roughness: 0.32,
+    emissiveIntensity: 1.55,
+    metalness: 0.6,
+    roughness: 0.3,
   });
   const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.7, 1.6, 5.0, 10),
+    new THREE.CylinderGeometry(0.9, 1.5, 6.0, 12),
     bodyMat,
   );
-  body.position.y = 2.7;
+  body.position.y = 3.2;
   grp.add(body);
 
-  const tip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.7, 1.7, 10),
-    bodyMat,
-  );
-  tip.position.y = 6.0;
+  const tipMat = new THREE.MeshStandardMaterial({
+    color: 0xffa040,
+    emissive: 0xffaa55,
+    emissiveIntensity: 1.7,
+    metalness: 0.55,
+    roughness: 0.28,
+  });
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.4, 12), tipMat);
+  tip.position.y = 7.4;
   grp.add(tip);
 
-  // Translucent halo around the spire
+  // Big halo around the body
   const halo = new THREE.Mesh(
-    new THREE.SphereGeometry(3.3, 18, 14),
+    new THREE.SphereGeometry(4.2, 18, 14),
     new THREE.MeshBasicMaterial({
-      color: 0xff3a5b, transparent: true, opacity: 0.5,
+      color: 0xff3a5b, transparent: true, opacity: 0.55,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }),
   );
-  halo.position.y = 3.4;
+  halo.position.y = 3.8;
   grp.add(halo);
 
-  // Vertical beacon column starting at the tip — visible from every angle
-  // including from above
+  // Beacon column shooting up — keeps the attacker visible from any
+  // camera angle including bird's-eye
   const beacon = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.25, 0.55, 16, 10, 1, true),
+    new THREE.CylinderGeometry(0.3, 0.7, 22, 12, 1, true),
     new THREE.MeshBasicMaterial({
-      color: 0xff3a5b, transparent: true, opacity: 0.6,
+      color: 0xff3a5b, transparent: true, opacity: 0.7,
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
     }),
   );
-  beacon.position.y = 14.5;
+  beacon.position.y = 19;
   grp.add(beacon);
 
-  // Big ground aura sprite so the unit reads from a bird's-eye view too
+  // Big ground aura
   const aura = makeRedAuraSprite();
-  aura.position.y = 0.25;
-  aura.scale.set(8.5, 8.5, 1);
+  aura.position.y = 0.3;
+  aura.scale.set(12, 12, 1);
   grp.add(aura);
 
   return { group: grp, body, halo };
@@ -1969,17 +1972,19 @@ function attackerPathCurve(hopIds) {
   return new THREE.CatmullRomCurve3(points);
 }
 
-// Three-phase attacker: descent → patrol → assault.
-// - descent:   drops in from the internet portal in the sky on a glowing
-//              red beam, lands at a random point on the city perimeter
-// - patrol:    walks laterally along the perimeter (creates the visible
-//              "siege ring" around the city)
-// - assault:   charges across the streets to the actual target. May be
-//              blocked partway through by a defender shield.
+// External attackers (DDoS, SQLi) all spawn at the EXACT internet portal
+// position. They follow a curved descent path out to a slot on a perimeter
+// ring, hold formation there for ~1.5s (the siege ring forms visibly),
+// then charge to the actual target.
 //
-// "kind: spread" (ransomware) skips descent and patrol — the attacker
-// originates from an already-infected node and crawls across the ground
-// to the next victim.
+// Slot assignment is round-robin around 18 angles so the army naturally
+// fills a circle around the city, matching the user's "form up around
+// the fortress, then attack" reference.
+//
+// "kind: spread" (ransomware) skips descent + formation — it crawls
+// across the ground from an already-infected node to the next victim.
+const FORMATION_SLOTS = 18;
+
 function spawnAttacker(state, opts) {
   const tgt = registry.get(opts.targetId);
   if (!tgt) return;
@@ -2012,33 +2017,29 @@ function spawnAttacker(state, opts) {
       assaultEnd: tgt.position.clone(),
     };
   } else {
-    // Sky origin near the internet portal but pushed up so attackers
-    // visibly fall in from above.
+    // The portal IS the gate — every attacker emerges from it.
     const internet = registry.get("internet");
-    const sky = internet
-      ? new THREE.Vector3(internet.position.x, internet.position.y + 55, internet.position.z)
-      : new THREE.Vector3(0, 80, 0);
+    const portalPos = internet ? internet.position.clone() : new THREE.Vector3(0, 16, 0);
 
-    const angle = Math.random() * Math.PI * 2;
-    const r = Math.max(CITY.w, CITY.d) * 0.92 + 32;
-    const landing = new THREE.Vector3(Math.cos(angle) * r, 1, Math.sin(angle) * r);
+    // Round-robin slot assignment so the formation fills a visible ring
+    state.formationIndex = ((state.formationIndex || 0) + 1) % FORMATION_SLOTS;
+    const baseAngle = (state.formationIndex / FORMATION_SLOTS) * Math.PI * 2;
+    const angle = baseAngle + (Math.random() - 0.5) * 0.06; // tiny jitter
+    const r = Math.max(CITY.w, CITY.d) * 0.95 + 36;
+    const slot = new THREE.Vector3(Math.cos(angle) * r, 1, Math.sin(angle) * r);
 
-    // Pull sky a bit toward the landing direction so each beam is angled
-    // (rather than every beam coming from the same sky point)
-    const skyOffset = sky.clone().lerp(landing, 0.18);
-    skyOffset.y = sky.y; // keep it high
-
-    // Patrol along the perimeter — visible left/right march
-    const patrolDir = Math.random() < 0.5 ? 1 : -1;
-    const patrolDelta = patrolDir * (0.28 + Math.random() * 0.32);
-    const patrolEnd = new THREE.Vector3(
-      Math.cos(angle + patrolDelta) * r,
-      1,
-      Math.sin(angle + patrolDelta) * r,
+    // Curved descent from the portal up over the edge of the city, then
+    // down to the slot. The control point is pulled outward / upward so
+    // the descent reads as a swooping arc rather than a straight dive.
+    const mid = new THREE.Vector3(
+      portalPos.x + (slot.x - portalPos.x) * 0.6,
+      Math.max(portalPos.y + 6, 26),
+      portalPos.z + (slot.z - portalPos.z) * 0.6,
     );
+    const descentCurve = new THREE.CatmullRomCurve3([portalPos, mid, slot]);
 
-    visual.group.position.copy(skyOffset);
-    const beam = makeDescentBeam(skyOffset, landing);
+    visual.group.position.copy(portalPos);
+    const beam = makeDescentBeam(portalPos, slot);
     attackerLayer.add(beam);
 
     attacker = {
@@ -2046,14 +2047,12 @@ function spawnAttacker(state, opts) {
       beam,
       phase: "descent",
       phaseT: 0,
-      descentDuration: 0.7 + Math.random() * 0.3,
-      patrolDuration: 1.4 + Math.random() * 0.7,
+      descentDuration: 1.3 + Math.random() * 0.4, // a bit longer so the swoop reads
+      formationDuration: 1.4 + Math.random() * 0.6,
       assaultDuration: 1.9 + Math.random() * 0.4,
-      descentStart: skyOffset,
-      descentEnd: landing,
-      patrolStart: landing,
-      patrolEnd,
-      assaultStart: patrolEnd,
+      descentCurve,
+      slot,
+      assaultStart: slot,
       assaultEnd: tgt.position.clone(),
     };
   }
@@ -2104,22 +2103,69 @@ function disposeAttackerBeam(attacker) {
   attacker.beam = null;
 }
 
-// Blue spark when a defender stops an attacker — clearly distinct from a
-// red impact at a target.
-function spawnDefenseSpark(pos) {
-  const flash = new THREE.Mesh(
-    new THREE.SphereGeometry(1.6, 14, 10),
+// Big multi-stage explosion when a defender intercepts an attacker —
+// reads as a tower-defense / RTS hit instead of a tiny spark. White-hot
+// core, expanding orange shell, expanding ground shockwave ring, and a
+// burst of glowing sparks flying outward with gravity.
+function spawnDefenseExplosion(pos) {
+  const layer = attackerLayer;
+
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(2.4, 18, 14),
     new THREE.MeshBasicMaterial({
-      color: 0x6cd1ff, transparent: true, opacity: 0.95,
+      color: 0xfff7c0, transparent: true, opacity: 1,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }),
   );
-  flash.position.copy(pos);
-  attackerLayer.add(flash);
-  attackState.puffs.push({
-    mesh: flash, life: 0.45, duration: 0.45,
-    startScale: 0.5, endScale: 6,
-  });
+  core.position.copy(pos);
+  layer.add(core);
+
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(3.6, 18, 14),
+    new THREE.MeshBasicMaterial({
+      color: 0xffaa44, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  );
+  shell.position.copy(pos);
+  layer.add(shell);
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(1.0, 1.9, 56),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd566, transparent: true, opacity: 1,
+      side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(pos.x, 0.55, pos.z);
+  layer.add(ring);
+
+  // Flying sparks — small spheres with a velocity + gravity so they fall
+  const sparks = [];
+  for (let i = 0; i < 12; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 9 + Math.random() * 8;
+    const elev = 0.4 + Math.random() * 0.7;
+    const spark = new THREE.Mesh(
+      new THREE.SphereGeometry(0.45, 8, 6),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd566, transparent: true, opacity: 1,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }),
+    );
+    spark.position.copy(pos);
+    layer.add(spark);
+    sparks.push({
+      mesh: spark,
+      vx: Math.cos(angle) * speed,
+      vy: speed * elev,
+      vz: Math.sin(angle) * speed,
+    });
+  }
+
+  attackState.explosions = attackState.explosions || [];
+  attackState.explosions.push({ core, shell, ring, sparks, life: 0.85, duration: 0.85 });
 }
 
 // Dramatic red impact at a successful target hit: a vertical light column
@@ -2338,19 +2384,23 @@ function updateAttack(now, dt) {
 
     if (a.phase === "descent") {
       const t = Math.min(1, a.phaseT / a.descentDuration);
-      a.visual.group.position.lerpVectors(a.descentStart, a.descentEnd, t);
-      if (a.beam) a.beam.material.opacity = 0.85 * (1 - t * 0.85);
+      // Curved swoop from the portal out to the slot
+      const p = a.descentCurve.getPointAt(t);
+      a.visual.group.position.copy(p);
+      if (a.beam) a.beam.material.opacity = 0.95 * (1 - Math.max(0, t - 0.2) / 0.8);
       if (t >= 1) {
         disposeAttackerBeam(a);
-        a.phase = "patrol";
+        a.phase = "formation";
         a.phaseT = 0;
       }
       return true;
     }
 
-    if (a.phase === "patrol") {
-      const t = Math.min(1, a.phaseT / a.patrolDuration);
-      a.visual.group.position.lerpVectors(a.patrolStart, a.patrolEnd, t);
+    if (a.phase === "formation") {
+      const t = Math.min(1, a.phaseT / a.formationDuration);
+      // Hold formation: stay in slot, gentle bob so the unit reads "alive"
+      const bob = Math.sin(a.phaseT * 4.5) * 0.18;
+      a.visual.group.position.set(a.slot.x, a.slot.y + bob, a.slot.z);
       if (t >= 1) {
         a.phase = "assault";
         a.phaseT = 0;
@@ -2364,9 +2414,9 @@ function updateAttack(now, dt) {
     if (a.blocked && a.interceptT != null && t >= a.interceptT) {
       const p = new THREE.Vector3()
         .lerpVectors(a.assaultStart, a.assaultEnd, a.interceptT);
-      // Lift slightly so the spark doesn't sink into the ground
-      p.y = Math.max(p.y, 1.5);
-      spawnDefenseSpark(p);
+      // Lift slightly so the explosion doesn't sink into the ground
+      p.y = Math.max(p.y, 2.5);
+      spawnDefenseExplosion(p);
       attackState.stats.blocked++;
       if (a.onBlocked) a.onBlocked(attackState);
       else pushEvent(attackState, "ok",
@@ -2386,8 +2436,6 @@ function updateAttack(now, dt) {
       return false;
     }
     const pos = new THREE.Vector3().lerpVectors(a.assaultStart, a.assaultEnd, t);
-    // Lift gradually toward elevated targets so the unit doesn't clip
-    // through the floor when charging at a tall building.
     if (a.assaultEnd.y > 1) {
       pos.y = 1 + (a.assaultEnd.y - 1) * t;
     }
@@ -2406,6 +2454,40 @@ function updateAttack(now, dt) {
     const alive = p.life / p.duration;
     p.mesh.scale.setScalar(p.startScale + (p.endScale - p.startScale) * (1 - alive));
     p.mesh.material.opacity = alive;
+    return true;
+  });
+
+  // Animate defense explosions
+  attackState.explosions = (attackState.explosions || []).filter((e) => {
+    e.life -= dt;
+    if (e.life <= 0) {
+      [e.core, e.shell, e.ring].forEach((m) => {
+        attackerLayer.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+      });
+      e.sparks.forEach((s) => {
+        attackerLayer.remove(s.mesh);
+        s.mesh.geometry.dispose();
+        s.mesh.material.dispose();
+      });
+      return false;
+    }
+    const alive = e.life / e.duration;
+    e.core.scale.setScalar(0.6 + (1 - alive) * 0.7);
+    e.core.material.opacity = alive * alive;
+    e.shell.scale.setScalar(0.8 + (1 - alive) * 5.5);
+    e.shell.material.opacity = alive * 0.75;
+    const rsc = 1 + (1 - alive) * 28;
+    e.ring.scale.setScalar(rsc);
+    e.ring.material.opacity = alive;
+    e.sparks.forEach((s) => {
+      s.mesh.position.x += s.vx * dt;
+      s.mesh.position.y += s.vy * dt;
+      s.mesh.position.z += s.vz * dt;
+      s.vy -= 28 * dt; // gravity
+      s.mesh.material.opacity = alive;
+    });
     return true;
   });
 
