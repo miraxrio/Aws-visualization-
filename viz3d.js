@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05s — bruteforce attack + multi-cloud attack targeting + spread layout");
+console.log("[viz3d] build 2026-05-05t — battle SFX + voice narration + per-attack colours");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -1591,6 +1591,142 @@ function getTheme() {
 
 // ---------- attack simulation ----------
 
+// ---- audio: synthesized SFX (WebAudio, no external files) -----------
+let _audioCtx = null;
+function ensureAudio() {
+  if (_audioCtx) return _audioCtx;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  _audioCtx = new AC();
+  return _audioCtx;
+}
+
+// User-controllable: piggyback on the speech toggle so one switch silences
+// both narration and SFX. Defaults to on.
+function audioEnabled() {
+  return localStorage.getItem("aws-viz.speak") !== "0";
+}
+
+function playAttackStartSfx() {
+  if (!audioEnabled()) return;
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  // Low ominous rumble swelling up
+  const rumble = ctx.createOscillator();
+  const rumbleGain = ctx.createGain();
+  rumble.type = "sawtooth";
+  rumble.frequency.setValueAtTime(70, now);
+  rumble.frequency.exponentialRampToValueAtTime(140, now + 0.7);
+  rumbleGain.gain.setValueAtTime(0.0001, now);
+  rumbleGain.gain.exponentialRampToValueAtTime(0.22, now + 0.15);
+  rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+  rumble.connect(rumbleGain).connect(ctx.destination);
+  rumble.start(now);
+  rumble.stop(now + 0.95);
+
+  // War-horn fifth on top
+  [0.18, 0.32].forEach((t, i) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "square";
+    const f = i === 0 ? 392 : 587; // G4, D5
+    o.frequency.setValueAtTime(f, now + t);
+    g.gain.setValueAtTime(0.0001, now + t);
+    g.gain.exponentialRampToValueAtTime(0.12, now + t + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.32);
+    o.connect(g).connect(ctx.destination);
+    o.start(now + t);
+    o.stop(now + t + 0.35);
+  });
+}
+
+let _lastBlockSfxT = 0;
+function playBlockSfx() {
+  if (!audioEnabled()) return;
+  const t = performance.now();
+  if (t - _lastBlockSfxT < 70) return; // throttle when blocks come in waves
+  _lastBlockSfxT = t;
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  // Sharp metallic "tink" from a defender shield
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = "square";
+  o.frequency.setValueAtTime(1500, now);
+  o.frequency.exponentialRampToValueAtTime(600, now + 0.06);
+  g.gain.setValueAtTime(0.08, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+  o.connect(g).connect(ctx.destination);
+  o.start(now);
+  o.stop(now + 0.1);
+}
+
+let _lastImpactSfxT = 0;
+function playImpactSfx() {
+  if (!audioEnabled()) return;
+  const t = performance.now();
+  if (t - _lastImpactSfxT < 110) return;
+  _lastImpactSfxT = t;
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  // Sub-bass thump
+  const sub = ctx.createOscillator();
+  const subG = ctx.createGain();
+  sub.type = "sine";
+  sub.frequency.setValueAtTime(140, now);
+  sub.frequency.exponentialRampToValueAtTime(48, now + 0.28);
+  subG.gain.setValueAtTime(0.22, now);
+  subG.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+  sub.connect(subG).connect(ctx.destination);
+  sub.start(now);
+  sub.stop(now + 0.34);
+  // Noise crackle on top, filtered low
+  const len = Math.floor(ctx.sampleRate * 0.18);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const noise = ctx.createBufferSource();
+  const filt = ctx.createBiquadFilter();
+  const noiseG = ctx.createGain();
+  filt.type = "lowpass";
+  filt.frequency.setValueAtTime(900, now);
+  filt.frequency.exponentialRampToValueAtTime(220, now + 0.16);
+  noiseG.gain.setValueAtTime(0.08, now);
+  noiseG.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+  noise.buffer = buf;
+  noise.connect(filt);
+  filt.connect(noiseG);
+  noiseG.connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + 0.18);
+}
+
+function playAttackEndSfx(victory) {
+  if (!audioEnabled()) return;
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  // Major chord arpeggio for a clean defence; minor descent for a hit.
+  const notes = victory
+    ? [{ f: 523.25, t: 0 }, { f: 659.26, t: 0.16 }, { f: 783.99, t: 0.32 }] // C5 E5 G5
+    : [{ f: 392.00, t: 0 }, { f: 369.99, t: 0.18 }, { f: 311.13, t: 0.36 }]; // G4 F#4 Eb4
+  notes.forEach(({ f, t }) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(f, now + t);
+    g.gain.setValueAtTime(0.0001, now + t);
+    g.gain.exponentialRampToValueAtTime(0.13, now + t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.5);
+    o.connect(g).connect(ctx.destination);
+    o.start(now + t);
+    o.stop(now + t + 0.55);
+  });
+}
+
 // Pre-defined attack scenarios. Each has its own initialise/tick logic so
 // DDoS, SQL injection, and ransomware can have visually distinct stories
 // without an explosion of branching.
@@ -1599,6 +1735,7 @@ const ATTACK_DEFS = {
     id: "ddos",
     name: "DDoS Volumetric Flood",
     icon: "⚡",
+    color: 0xff1840, // signature red — overwhelming brute volume
     description:
       "A massive surge of bogus traffic from the internet attempts to overwhelm your edge. WAF rate-limits most of it.",
     duration: 22000,
@@ -1672,6 +1809,7 @@ const ATTACK_DEFS = {
     id: "bruteforce",
     name: "Credential Stuffing Botnet",
     icon: "🔑",
+    color: 0xff9418, // amber — locks / keys
     description:
       "A botnet hammers your login endpoint with stolen credential pairs. WAF rate-limits the bursts; MFA / lockout rules catch what slips through. If both fail, accounts get taken over.",
     duration: 22000,
@@ -1746,6 +1884,7 @@ const ATTACK_DEFS = {
     id: "ransomware",
     name: "Ransomware Lateral Spread",
     icon: "🦠",
+    color: 0xd428e0, // magenta — corruption / infection
     description:
       "An ECS task is compromised. The malware scans neighbours and spreads laterally; security groups slow it but don't stop it cold.",
     duration: 24000,
@@ -1845,6 +1984,7 @@ const ATTACK_DEFS = {
     id: "portscan",
     name: "Reconnaissance Port Scan",
     icon: "🔭",
+    color: 0x22d4f0, // cyan — sensors / surveillance
     description:
       "An automated scanner fingerprints every reachable port on every public-facing asset. Network ACLs and security groups drop the noise; whatever replies tells the attacker what to attack next.",
     duration: 16000,
@@ -1909,6 +2049,7 @@ const ATTACK_DEFS = {
     id: "exfil",
     name: "Data Exfiltration",
     icon: "📤",
+    color: 0xf8c828, // gold — loot leaving
     description:
       "An attacker who already has a foothold on a database starts streaming data outbound. Egress firewall and DLP intercept what they can.",
     duration: 22000,
@@ -2042,16 +2183,21 @@ function pickRandom(arr) {
   return arr.length ? arr[Math.floor(Math.random() * arr.length)] : null;
 }
 
-function makeAttackerUnit() {
+function makeAttackerUnit(color) {
   // Bigger / chunkier than before so individual units read at city scale.
-  // Body: 1.5 base × 0.9 top × 6 tall cylinder + 2.4 cone tip = ~8.4 unit
-  // tall spire. Plus a 22-unit beacon column above and a 12u ground aura,
-  // for ~30 units of red light per attacker.
+  // Body + halo + beacon + ground aura are all tinted with `color` so
+  // each attack type has its own visual signature (DDoS red, brute-
+  // force amber, ransomware magenta, port-scan cyan, exfil gold).
+  const baseHex = color || 0xff1840;
+  const baseColor = new THREE.Color(baseHex);
+  // Brighter / warmer shade for the cone tip so it reads as flame
+  const tipColor = baseColor.clone().offsetHSL(0.04, 0.05, 0.18);
+
   const grp = new THREE.Group();
 
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0xff0d3a,
-    emissive: 0xff3a5b,
+    color: baseColor.clone(),
+    emissive: baseColor.clone(),
     emissiveIntensity: 1.55,
     metalness: 0.6,
     roughness: 0.3,
@@ -2064,8 +2210,8 @@ function makeAttackerUnit() {
   grp.add(body);
 
   const tipMat = new THREE.MeshStandardMaterial({
-    color: 0xffa040,
-    emissive: 0xffaa55,
+    color: tipColor,
+    emissive: tipColor,
     emissiveIntensity: 1.7,
     metalness: 0.55,
     roughness: 0.28,
@@ -2078,7 +2224,7 @@ function makeAttackerUnit() {
   const halo = new THREE.Mesh(
     new THREE.SphereGeometry(4.2, 18, 14),
     new THREE.MeshBasicMaterial({
-      color: 0xff3a5b, transparent: true, opacity: 0.55,
+      color: baseColor.clone(), transparent: true, opacity: 0.55,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }),
   );
@@ -2090,15 +2236,15 @@ function makeAttackerUnit() {
   const beacon = new THREE.Mesh(
     new THREE.CylinderGeometry(0.3, 0.7, 22, 12, 1, true),
     new THREE.MeshBasicMaterial({
-      color: 0xff3a5b, transparent: true, opacity: 0.7,
+      color: baseColor.clone(), transparent: true, opacity: 0.7,
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
     }),
   );
   beacon.position.y = 19;
   grp.add(beacon);
 
-  // Big ground aura
-  const aura = makeRedAuraSprite();
+  // Big ground aura (uses a per-colour cached texture)
+  const aura = makeAuraSprite(baseHex);
   aura.position.y = 0.3;
   aura.scale.set(12, 12, 1);
   grp.add(aura);
@@ -2109,13 +2255,14 @@ function makeAttackerUnit() {
 // Vertical "drop-pod" beam at the slot. The beam sits OUTSIDE the city
 // (the slot is already on the perimeter ring) and points straight down,
 // so it never crosses the network interior — fixing the previous portal-
-// to-slot beam that drew a red line through every building.
-function makeDescentBeam(slot) {
+// to-slot beam that drew a red line through every building. Tinted to
+// match the attack's signature colour.
+function makeDescentBeam(slot, color) {
   const beamHeight = 55;
   const beam = new THREE.Mesh(
     new THREE.CylinderGeometry(0.55, 1.4, beamHeight, 16, 1, true),
     new THREE.MeshBasicMaterial({
-      color: 0xff3a5b, transparent: true, opacity: 0.75,
+      color: color || 0xff3a5b, transparent: true, opacity: 0.75,
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
     }),
   );
@@ -2123,22 +2270,34 @@ function makeDescentBeam(slot) {
   return beam;
 }
 
-let _redAuraTex = null;
-function makeRedAuraSprite() {
-  if (!_redAuraTex) {
-    const c = document.createElement("canvas");
-    c.width = c.height = 128;
-    const ctx = c.getContext("2d");
+// Per-colour cache of the radial-gradient aura texture so we don't bake
+// the same canvas 200 times during a heavy wave.
+const _auraTexCache = new Map();
+function isCachedAuraTexture(tex) {
+  for (const v of _auraTexCache.values()) if (v === tex) return true;
+  return false;
+}
+function makeAuraSprite(color) {
+  let tex = _auraTexCache.get(color);
+  if (!tex) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    const col = new THREE.Color(color);
+    const r = Math.round(col.r * 255),
+          g = Math.round(col.g * 255),
+          b = Math.round(col.b * 255);
     const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    grad.addColorStop(0,    "rgba(255, 60, 90, 0.78)");
-    grad.addColorStop(0.45, "rgba(255, 50, 80, 0.32)");
-    grad.addColorStop(1,    "rgba(255, 40, 70, 0)");
+    grad.addColorStop(0,    `rgba(${r}, ${g}, ${b}, 0.78)`);
+    grad.addColorStop(0.45, `rgba(${r}, ${g}, ${b}, 0.32)`);
+    grad.addColorStop(1,    `rgba(${r}, ${g}, ${b}, 0)`);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 128, 128);
-    _redAuraTex = new THREE.CanvasTexture(c);
+    tex = new THREE.CanvasTexture(canvas);
+    _auraTexCache.set(color, tex);
   }
   const mat = new THREE.SpriteMaterial({
-    map: _redAuraTex,
+    map: tex,
     transparent: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
@@ -2153,7 +2312,11 @@ function disposeAttackerVisual(visual) {
     if (c.geometry) c.geometry.dispose();
     if (c.material) {
       const ms = Array.isArray(c.material) ? c.material : [c.material];
-      ms.forEach((m) => { if (m.map && m !== _redAuraTex) m.map.dispose && m.map.dispose(); m.dispose(); });
+      ms.forEach((m) => {
+        // Skip cached aura textures — they're shared across many units
+        if (m.map && !isCachedAuraTexture(m.map)) m.map.dispose && m.map.dispose();
+        m.dispose();
+      });
     }
   });
 }
@@ -2250,7 +2413,8 @@ function spawnAttacker(state, opts) {
     return;
   }
 
-  const visual = makeAttackerUnit();
+  const attackColor = (state.def && state.def.color) || 0xff1840;
+  const visual = makeAttackerUnit(attackColor);
   attackerLayer.add(visual.group);
 
   const blocked = opts.blocked != null
@@ -2327,7 +2491,7 @@ function spawnAttacker(state, opts) {
     ]);
 
     visual.group.position.copy(portalPos);
-    const beam = makeDescentBeam(slot);
+    const beam = makeDescentBeam(slot, attackColor);
     attackerLayer.add(beam);
 
     attacker = {
@@ -2407,6 +2571,7 @@ function disposeAttackerBeam(attacker) {
 // core, expanding orange shell, expanding ground shockwave ring, and a
 // burst of glowing sparks flying outward with gravity.
 function spawnDefenseExplosion(pos) {
+  playBlockSfx();
   const layer = attackerLayer;
 
   const core = new THREE.Mesh(
@@ -2470,9 +2635,13 @@ function spawnDefenseExplosion(pos) {
 // Dramatic red impact at a successful target hit: a vertical light column
 // and an expanding shockwave ring on the ground.
 function spawnImpact(pos) {
+  // Impact takes its colour from the current attack so each attack type
+  // has its own bloom. SFX trigger here too.
+  playImpactSfx();
+  const tint = (attackState && attackState.def && attackState.def.color) || 0xff3a5b;
   const colGeo = new THREE.CylinderGeometry(0.6, 1.6, 28, 14, 1, true);
   const colMat = new THREE.MeshBasicMaterial({
-    color: 0xff3a5b, transparent: true, opacity: 0.85,
+    color: tint, transparent: true, opacity: 0.85,
     blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
   });
   const col = new THREE.Mesh(colGeo, colMat);
@@ -2481,7 +2650,7 @@ function spawnImpact(pos) {
 
   const ringGeo = new THREE.RingGeometry(0.8, 1.6, 48);
   const ringMat = new THREE.MeshBasicMaterial({
-    color: 0xff3a5b, transparent: true, opacity: 0.95,
+    color: tint, transparent: true, opacity: 0.95,
     blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
   });
   const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -2586,6 +2755,8 @@ function startAttack(id) {
   if (def.init) def.init(attackState);
   spawnDefenseShields(attackState);
 
+  playAttackStartSfx();
+
   if (window.AwsAttack && typeof window.AwsAttack.onStart === "function") {
     window.AwsAttack.onStart(def);
   }
@@ -2611,7 +2782,7 @@ function stopAttack() {
     if (c.material) {
       const ms = Array.isArray(c.material) ? c.material : [c.material];
       ms.forEach((m) => {
-        if (m.map && m.map !== _redAuraTex) m.map.dispose && m.map.dispose();
+        if (m.map && !isCachedAuraTexture(m.map)) m.map.dispose && m.map.dispose();
         m.dispose();
       });
     }
@@ -2872,8 +3043,11 @@ function updateAttack(now, dt) {
     attackState.attackers.length === 0
   ) {
     attackState.summaryShown = true;
+    const summary = buildAttackSummary();
+    // Victorious chord if defenders held; minor descent otherwise.
+    playAttackEndSfx(summary.outcomeStatus === "ok");
     if (window.AwsAttack && typeof window.AwsAttack.onEnd === "function") {
-      window.AwsAttack.onEnd(buildAttackSummary());
+      window.AwsAttack.onEnd(summary);
     }
   }
 }

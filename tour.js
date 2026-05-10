@@ -669,4 +669,14 @@
 
   // Expose for debugging
   window.AwsTour = { open, close, play, pause, next, prev };
+
+  // Shared narrator for callers outside the tour (the attack simulator).
+  // Returns the speech estimate in ms (0 when disabled / unsupported).
+  window.AwsSpeak = {
+    speak(text, onEnd) {
+      return speak(text, onEnd);
+    },
+    stop() { stopSpeaking(); },
+    enabled() { return speechSupported && speakEnabled; },
+  };
 })();

@@ -332,11 +332,21 @@
   }
 
   // viz3d.js calls these when an attack is running
+  let _attackLastSpokenPhase = null;
+  function attackSpeak(text) {
+    if (window.AwsSpeak && window.AwsSpeak.enabled() && text) {
+      window.AwsSpeak.speak(text);
+    }
+  }
   window.AwsAttack = {
     onStart(def) {
       els.attackHudIcon.textContent = def.icon || "!";
       els.attackHudName.textContent = def.name;
       els.attackHudPhase.textContent = "Starting…";
+      _attackLastSpokenPhase = null;
+      // Narrate the attack name once at start so the user knows what's
+      // unfolding without having to read the HUD.
+      attackSpeak(def.name + ".");
     },
     onTick(state) {
       if (!state) return;
@@ -346,15 +356,25 @@
       setAttackStat(els.attackStatBlocked, state.stats.blocked);
       setAttackStat(els.attackStatArrived, state.stats.arrived);
       renderAttackLog(state.events);
+      // Speak each new phase label exactly once. Skip the first one if
+      // the start-narration is still ringing — give the synth ~1.2s.
+      if (state.phaseLabel && state.phaseLabel !== _attackLastSpokenPhase) {
+        const first = _attackLastSpokenPhase === null;
+        _attackLastSpokenPhase = state.phaseLabel;
+        if (!first || state.elapsed > 1200) attackSpeak(state.phaseLabel + ".");
+      }
     },
     onEnd(summary) {
       // Hide live HUD, show summary modal
       els.attackHud.hidden = true;
       renderAttackSummary(summary);
       els.attackSummary.hidden = false;
+      // Narrate the outcome so the user gets the verdict without reading.
+      attackSpeak(summary.outcome);
     },
     onStop() {
       els.attackHud.hidden = true;
+      if (window.AwsSpeak && window.AwsSpeak.enabled()) window.AwsSpeak.stop();
     },
   };
 
