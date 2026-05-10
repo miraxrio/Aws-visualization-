@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05p — descent arcs over city, drop-pod beams");
+console.log("[viz3d] build 2026-05-05q — sqli/ransomware visibility + robust modal");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -1595,7 +1595,7 @@ const ATTACK_DEFS = {
       const wafs = findInRegistry(["waf"]);
       const albs = findInRegistry(["alb"]);
       const apps = findInRegistry(["ecs", "ec2", "lambda"]);
-      const dbs = findInRegistry(["aurora", "rds"]);
+      const dbs = findInRegistry(["aurora", "rds", "dynamodb"]);
       // Build a hop chain through whatever is present.
       const path = [];
       if (cdn[0])  path.push(cdn[0].id);
@@ -1603,6 +1603,13 @@ const ATTACK_DEFS = {
       if (albs[0]) path.push(albs[0].id);
       if (apps[0]) path.push(apps[0].id);
       if (dbs[0])  path.push(dbs[0].id);
+      // Fall back: if the network has no clear edge / app / db chain,
+      // just aim at *any* internal resource so the attack still spawns
+      // visibly. Better than rendering nothing.
+      if (path.length === 0) {
+        const any = findInRegistry(["alb", "nlb", "ecs", "ec2", "lambda", "aurora", "rds", "dynamodb", "s3"]);
+        if (any[0]) path.push(any[0].id);
+      }
       state.cfg = {
         source: "internet",
         // Cumulative intercept chance at each hop boundary
@@ -1610,14 +1617,18 @@ const ATTACK_DEFS = {
         hopBlockChance: [0.15, 0.55, 0.25, 0.55, 0.55].slice(0, path.length),
         // Defenders worth showing a shield on
         defenders: [...wafs, ...dbs].map((e) => e.id),
+        // Higher rates so the attack reads clearly. With ~5s lifecycle
+        // per attacker, peak ~14 concurrent units.
         bands: [
-          { tStart: 600,   tEnd: 4000,  rate: 1.8, blockRate: 0 },
-          { tStart: 4000,  tEnd: 10000, rate: 4,   blockRate: 0 },
-          { tStart: 10000, tEnd: 16000, rate: 6,   blockRate: 0 },
-          { tStart: 16000, tEnd: 19500, rate: 4,   blockRate: 0 },
-          { tStart: 19500, tEnd: 21500, rate: 1.5, blockRate: 0 },
+          { tStart: 400,   tEnd: 4000,  rate: 4,  blockRate: 0 },
+          { tStart: 4000,  tEnd: 10000, rate: 8,  blockRate: 0 },
+          { tStart: 10000, tEnd: 16000, rate: 12, blockRate: 0 },
+          { tStart: 16000, tEnd: 19500, rate: 8,  blockRate: 0 },
+          { tStart: 19500, tEnd: 21500, rate: 3,  blockRate: 0 },
         ],
       };
+      console.log("[viz3d/attack] sqli init — path:", path,
+        "defenders:", state.cfg.defenders);
       pushEvent(state, "info",
         `Probe chain: ${path.length ? path.join(" → ") : "(no clear path found)"}`);
     },
@@ -1665,7 +1676,7 @@ const ATTACK_DEFS = {
         const dbs = findInRegistry(["aurora", "rds", "dynamodb"]);
         state.cfg = {
           infected: new Set([seed]),
-          spreadInterval: 650,           // start faster so the spread reads
+          spreadInterval: 380,           // start fast so the spread reads
           lastSpawnT: 0,
           spreadTypes: ["ecs", "lambda", "ec2", "aurora", "rds", "dynamodb", "s3"],
           source: seed,
@@ -1673,6 +1684,8 @@ const ATTACK_DEFS = {
           // bashes into it.
           defenders: dbs.map((e) => e.id),
         };
+        console.log("[viz3d/attack] ransomware init — seed:", seed,
+          "candidates:", candidates.length);
         markInfected(state, seed);
         pushEvent(state, "danger", `Initial foothold: ${seed} compromised`);
       } else {
@@ -1685,7 +1698,7 @@ const ATTACK_DEFS = {
       const cfg = state.cfg;
       if (!cfg.infected || cfg.infected.size === 0) return;
       // Spread accelerates as the attack progresses
-      const interval = Math.max(220, cfg.spreadInterval - elapsed * 0.04);
+      const interval = Math.max(140, cfg.spreadInterval - elapsed * 0.04);
       if (elapsed - cfg.lastSpawnT < interval) return;
       cfg.lastSpawnT = elapsed;
 
@@ -1984,7 +1997,17 @@ const FORMATION_SLOTS = 18;
 
 function spawnAttacker(state, opts) {
   const tgt = registry.get(opts.targetId);
-  if (!tgt) return;
+  if (!tgt) {
+    if (!state._missTargetWarned) {
+      state._missTargetWarned = new Set();
+    }
+    if (!state._missTargetWarned.has(opts.targetId)) {
+      state._missTargetWarned.add(opts.targetId);
+      console.warn("[viz3d/attack] target not in registry:", opts.targetId,
+        "(opts:", opts, ")");
+    }
+    return;
+  }
 
   const visual = makeAttackerUnit();
   attackerLayer.add(visual.group);
@@ -2070,13 +2093,24 @@ function spawnAttacker(state, opts) {
 }
 
 function spawnAttackerOnPath(state, path, hopBlockChance) {
-  if (!path || path.length === 0) return;
+  if (!path || path.length === 0) {
+    if (!state._pathWarned) {
+      state._pathWarned = true;
+      console.warn("[viz3d/attack] spawnAttackerOnPath: empty path", path);
+    }
+    return;
+  }
   // Roll for block at each hop in order — first hit wins
   let blockedHop = -1;
   for (let i = 0; i < path.length; i++) {
     if (Math.random() < (hopBlockChance[i] || 0)) { blockedHop = i; break; }
   }
   const finalTargetId = path[path.length - 1];
+  if (!state._firstPathSpawn) {
+    state._firstPathSpawn = true;
+    console.log("[viz3d/attack] sqli spawning along path:", path,
+      "→ target", finalTargetId, "blockedHop:", blockedHop);
+  }
   // Map blocked hop to a fraction of the assault phase (cdn = early,
   // db = late) so the defender that catches it determines where the
   // shield sparks fire.

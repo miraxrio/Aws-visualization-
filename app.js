@@ -250,7 +250,11 @@
 
   function openAttackModal() {
     if (!window.AwsViz3D || !window.AwsViz3D.isReady()) return;
-    // Close anything else that might fight us
+    // Whatever else is going on, always end up in a clean state where
+    // the picker is the only thing visible.
+    if (window.AwsViz3D.isAttackActive && window.AwsViz3D.isAttackActive()) {
+      window.AwsViz3D.stopAttack();
+    }
     if (window.AwsViz3D.isExploring && window.AwsViz3D.isExploring()) {
       window.AwsViz3D.exitExplore();
     }
@@ -258,7 +262,11 @@
     if (tourBar && tourBar.classList.contains("open") && window.AwsTour) {
       window.AwsTour.close();
     }
+    els.attackHud.hidden = true;
+    els.attackSummary.hidden = true;
     populateAttackGrid();
+    // Defensive: clear any stale inline display style and force visible
+    els.attackModal.style.display = "";
     els.attackModal.hidden = false;
   }
 
