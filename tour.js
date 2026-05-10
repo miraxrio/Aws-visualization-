@@ -478,7 +478,31 @@
 
   function composeText(step) {
     if (!step) return "";
-    return [step.title, step.narration, step.extra].filter(Boolean).join(". ");
+    // Strip the "— Service Type" suffix from spoken titles when it
+    // overlaps with the resource name. Without this the synth reads
+    // "Front Door — Azure Front Door" as both halves, which is
+    // immediately repetitive. The visible UI title is unchanged; this
+    // only affects what gets sent to speechSynthesis.
+    let title = step.title || "";
+    if (title) {
+      const m = title.match(/^(.+?)\s+[—–-]\s+(.+)$/);
+      if (m) {
+        const left = m[1].trim();
+        const right = m[2].trim();
+        const leftWords = new Set(left.toLowerCase().split(/\s+/).filter(Boolean));
+        const rightWords = right.toLowerCase().split(/\s+/).filter(Boolean);
+        const overlap = rightWords.filter((w) => leftWords.has(w)).length;
+        // If half or more of the right-hand words are already on the
+        // left, drop the right side (eg. "Front Door — Azure Front Door"
+        // → "Front Door"; "Aurora W — Aurora Cluster" → "Aurora W").
+        if (rightWords.length > 0 &&
+            (overlap >= rightWords.length * 0.5 ||
+             overlap >= leftWords.size * 0.5)) {
+          title = left;
+        }
+      }
+    }
+    return [title, step.narration, step.extra].filter(Boolean).join(". ");
   }
 
   function freezeProgress() {

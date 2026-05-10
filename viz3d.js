@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05r — Azure types + portscan + exfil attacks");
+console.log("[viz3d] build 2026-05-05s — bruteforce attack + multi-cloud attack targeting + spread layout");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -35,7 +35,7 @@ const exploreKeys = { fwd: false, back: false, left: false, right: false, up: fa
 const _moveDir = new THREE.Vector3();
 let proxEntryId = null; // id of the element currently triggering the prox HUD
 
-const SCALE_TARGET = 220; // city max dimension in 3D units
+const SCALE_TARGET = 290; // city max dimension in 3D units
 let SCALE = 0.15;
 const CITY = { cx: 0, cz: 0, w: 0, d: 0 };
 
@@ -528,7 +528,10 @@ function resolveType(type) {
 
 function pickSize(type, w, d) {
   const t = resolveType(type);
-  const fw = Math.max(5, Math.min(w, d) * 0.85);
+  // Cap the maximum footprint so densely-packed networks (lots of
+  // resources per subnet) don't end up with buildings touching each
+  // other — buildings stay in proportion but leave gaps for streets.
+  const fw = Math.max(4, Math.min(Math.min(w, d) * 0.7, 13));
   const heights = {
     ec2: 14, asg: 11, ecs: 13, eks: 17, lambda: 10,
     alb: 8, nlb: 8, waf: 12, igw: 9, nat: 7,
@@ -1607,9 +1610,9 @@ const ATTACK_DEFS = {
       { t: 19000, label: "Recovery" },
     ],
     init(state) {
-      const cdn = findInRegistry(["cloudfront"]);
-      const albs = findInRegistry(["alb"]);
-      const wafs = findInRegistry(["waf"]);
+      const cdn = findInRegistry(["cloudfront", "frontdoor", "cdn"]);
+      const albs = findInRegistry(["alb", "nlb", "appgw"]);
+      const wafs = findInRegistry(["waf", "azurewaf", "azurefirewall"]);
       // Targets the attackers aim at. Prefer CDN + ALB if present.
       state.cfg = {
         targets: cdn.concat(albs).map((e) => e.id),
@@ -1630,7 +1633,9 @@ const ATTACK_DEFS = {
       };
       if (state.cfg.targets.length === 0) {
         // Fall back to whatever public-facing thing exists.
-        const fallback = findInRegistry(["alb", "nlb", "ec2", "ecs", "waf"]);
+        const fallback = findInRegistry([
+          "alb", "nlb", "appgw", "ec2", "ecs", "vm", "appservice", "aks", "waf", "azurewaf",
+        ]);
         state.cfg.targets = fallback.slice(0, 1).map((e) => e.id);
       }
       pushEvent(state, "info",
@@ -1663,80 +1668,75 @@ const ATTACK_DEFS = {
     },
   },
 
-  sqli: {
-    id: "sqli",
-    name: "SQL Injection Cascade",
-    icon: "💉",
+  bruteforce: {
+    id: "bruteforce",
+    name: "Credential Stuffing Botnet",
+    icon: "🔑",
     description:
-      "Persistent payload-laden requests try to traverse the edge → app → database. WAF and security groups peel off most.",
+      "A botnet hammers your login endpoint with stolen credential pairs. WAF rate-limits the bursts; MFA / lockout rules catch what slips through. If both fail, accounts get taken over.",
     duration: 22000,
     phases: [
-      { t: 0,     label: "Probing" },
-      { t: 4000,  label: "Bypass attempts" },
-      { t: 10000, label: "App-tier exploit" },
-      { t: 16000, label: "Database probes" },
-      { t: 19500, label: "Mitigation" },
+      { t: 0,     label: "Slow probing" },
+      { t: 4000,  label: "Volume ramp" },
+      { t: 9000,  label: "Peak credential stuffing" },
+      { t: 16000, label: "Throttle engaged" },
+      { t: 20000, label: "Attack subsides" },
     ],
     init(state) {
-      const cdn = findInRegistry(["cloudfront"]);
-      const wafs = findInRegistry(["waf"]);
-      const albs = findInRegistry(["alb"]);
-      const apps = findInRegistry(["ecs", "ec2", "lambda"]);
-      const dbs = findInRegistry(["aurora", "rds", "dynamodb"]);
-      // Build a hop chain through whatever is present.
-      const path = [];
-      if (cdn[0])  path.push(cdn[0].id);
-      if (wafs[0]) path.push(wafs[0].id);
-      if (albs[0]) path.push(albs[0].id);
-      if (apps[0]) path.push(apps[0].id);
-      if (dbs[0])  path.push(dbs[0].id);
-      // Fall back: if the network has no clear edge / app / db chain,
-      // just aim at *any* internal resource so the attack still spawns
-      // visibly. Better than rendering nothing.
-      if (path.length === 0) {
-        const any = findInRegistry(["alb", "nlb", "ecs", "ec2", "lambda", "aurora", "rds", "dynamodb", "s3"]);
-        if (any[0]) path.push(any[0].id);
+      // Pick the most plausible auth target available on the network —
+      // identity provider first, then the front door, then any
+      // load-balancer / app-gateway, then any web frontend.
+      const authPicks = [
+        findInRegistry(["entra"]),
+        findInRegistry(["frontdoor", "cloudfront", "cdn"]),
+        findInRegistry(["appgw", "alb", "nlb", "apigw"]),
+        findInRegistry(["appservice", "ec2", "ecs", "vm", "aks"]),
+      ].find((arr) => arr.length > 0);
+      const targetId = authPicks ? authPicks[0].id : null;
+      if (!targetId) {
+        state.cfg = { ok: false };
+        pushEvent(state, "info", "(no obvious auth endpoint found on this network)");
+        return;
       }
+      const defenders = findInRegistry(["waf", "azurewaf", "azurefirewall", "entra"])
+        .map((e) => e.id);
       state.cfg = {
+        ok: true,
         source: "internet",
-        // Cumulative intercept chance at each hop boundary
-        path,
-        hopBlockChance: [0.15, 0.55, 0.25, 0.55, 0.55].slice(0, path.length),
-        // Defenders worth showing a shield on
-        defenders: [...wafs, ...dbs].map((e) => e.id),
-        // Higher rates so the attack reads clearly. With ~5s lifecycle
-        // per attacker, peak ~14 concurrent units.
+        targets: [targetId],
+        defenders,
+        // High volume waves with rate-limiting clamping down over time
         bands: [
-          { tStart: 400,   tEnd: 4000,  rate: 4,  blockRate: 0 },
-          { tStart: 4000,  tEnd: 10000, rate: 8,  blockRate: 0 },
-          { tStart: 10000, tEnd: 16000, rate: 12, blockRate: 0 },
-          { tStart: 16000, tEnd: 19500, rate: 8,  blockRate: 0 },
-          { tStart: 19500, tEnd: 21500, rate: 3,  blockRate: 0 },
+          { tStart: 200,   tEnd: 4000,  rate: 4,  blockRate: 0.40 },
+          { tStart: 4000,  tEnd: 9000,  rate: 10, blockRate: 0.65 },
+          { tStart: 9000,  tEnd: 16000, rate: 16, blockRate: 0.85 },
+          { tStart: 16000, tEnd: 20000, rate: 8,  blockRate: 0.95 },
+          { tStart: 20000, tEnd: 21500, rate: 2,  blockRate: 0.85 },
         ],
       };
-      console.log("[viz3d/attack] sqli init — path:", path,
-        "defenders:", state.cfg.defenders);
-      pushEvent(state, "info",
-        `Probe chain: ${path.length ? path.join(" → ") : "(no clear path found)"}`);
+      console.log("[viz3d/attack] bruteforce init — target:", targetId,
+        "defenders:", defenders);
+      pushEvent(state, "info", `Botnet hammering ${targetId} with stolen credentials`);
     },
     tick(state, dt, elapsed) {
+      if (!state.cfg.ok) return;
       tickBandedSpawn(state, dt, elapsed);
     },
     summarize(state) {
-      const arrived = state.stats.arrived;
       const total = state.stats.spawned;
-      const outcome = arrived === 0
-        ? "All injection attempts intercepted. DB stayed safe."
-        : arrived < 5
-        ? `${arrived} request(s) reached the database, but each was caught by the SG’s deny-by-default rules. Review parameterised queries.`
-        : "Multiple payloads reached the database tier — auditing required.";
+      const blocked = state.stats.blocked;
+      const arrived = state.stats.arrived;
       return {
-        outcome,
+        outcome: arrived === 0
+          ? "Rate-limiting absorbed every burst. No accounts taken over."
+          : arrived < 5
+          ? `${arrived} login(s) slipped through the rate-limiter — likely caught by MFA or account lockout. Audit the affected IDs.`
+          : `Multiple successful logins (${arrived}). Some accounts are likely compromised — force a password rotation and review session tokens.`,
         outcomeStatus: arrived === 0 ? "ok" : arrived < 5 ? "warn" : "danger",
         stats: [
-          { label: "Total injection attempts", value: total.toLocaleString() },
-          { label: "Blocked by WAF / SG",      value: state.stats.blocked.toLocaleString() },
-          { label: "Reached database",         value: arrived.toLocaleString() },
+          { label: "Login attempts",  value: total.toLocaleString() },
+          { label: "Rate-limited",    value: blocked.toLocaleString() },
+          { label: "Reached auth",    value: arrived.toLocaleString() },
         ],
       };
     },
@@ -1757,15 +1757,23 @@ const ATTACK_DEFS = {
       { t: 20000, label: "Encryption" },
     ],
     init(state) {
-      const candidates = findInRegistry(["ecs", "lambda", "ec2"]);
+      const candidates = findInRegistry([
+        "ecs", "lambda", "ec2", "vm", "vmss", "appservice", "function", "containerapp", "aks",
+      ]);
       if (candidates.length) {
         const seed = candidates[0].id;
-        const dbs = findInRegistry(["aurora", "rds", "dynamodb"]);
+        const dbs = findInRegistry([
+          "aurora", "rds", "dynamodb", "sql", "postgresql", "mysql", "cosmosdb",
+        ]);
         state.cfg = {
           infected: new Set([seed]),
           spreadInterval: 380,           // start fast so the spread reads
           lastSpawnT: 0,
-          spreadTypes: ["ecs", "lambda", "ec2", "aurora", "rds", "dynamodb", "s3"],
+          spreadTypes: [
+            "ecs", "lambda", "ec2", "aurora", "rds", "dynamodb", "s3",
+            "vm", "vmss", "appservice", "function", "containerapp", "aks",
+            "sql", "postgresql", "mysql", "cosmosdb", "blob", "redis",
+          ],
           source: seed,
           // Crown-jewel data tier gets the SG dome — the malware visibly
           // bashes into it.
@@ -2015,17 +2023,13 @@ function tickBandedSpawn(state, dt, elapsed) {
     while (cfg._spawnAccum[i] >= 1) {
       cfg._spawnAccum[i] -= 1;
       const target = pickRandom(cfg.targets);
-      if (state.def.id === "sqli") {
-        spawnAttackerOnPath(state, cfg.path, cfg.hopBlockChance);
-      } else {
-        spawnAttacker(state, {
-          sourceId: cfg.source,
-          targetId: target,
-          blockRate: b.blockRate,
-          defenderName: "WAF",
-          kind: "siege",
-        });
-      }
+      spawnAttacker(state, {
+        sourceId: cfg.source,
+        targetId: target,
+        blockRate: b.blockRate,
+        defenderName: "defender",
+        kind: "siege",
+      });
     }
   });
 
