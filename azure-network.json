@@ -1,0 +1,484 @@
+{
+  "name": "Contoso Retail — Azure Platform",
+  "region": "eastus",
+  "versions": [
+    {
+      "id": "v1",
+      "name": "MVP launch — App Service + Azure SQL",
+      "author": "alice@contoso.com",
+      "timestamp": "2024-09-10T11:00:00Z",
+      "status": "ok",
+      "note": "Single region (East US). App Service hosting the storefront, Azure SQL backing it, Blob Storage for product media, Azure DNS in front.",
+      "data": {
+        "name": "Contoso Retail · v1",
+        "region": "eastus",
+        "vpcs": [
+          {
+            "id": "vnet-prod",
+            "name": "vnet-prod",
+            "cidr": "10.10.0.0/16",
+            "region": "eastus",
+            "subnets": [
+              { "id": "pub-eu", "name": "Public",  "cidr": "10.10.1.0/24",  "tier": "public",  "az": "eastus-1" },
+              { "id": "app-eu", "name": "App",     "cidr": "10.10.11.0/24", "tier": "private", "az": "eastus-1" },
+              { "id": "db-eu",  "name": "Data",    "cidr": "10.10.21.0/24", "tier": "data",    "az": "eastus-1" }
+            ],
+            "gateways": [
+              { "id": "igw-eu", "type": "igw", "name": "VNet Internet" }
+            ],
+            "resources": [
+              { "id": "dns",    "type": "azuredns",   "name": "contoso.com DNS",  "subnet": "pub-eu" },
+              { "id": "web",    "type": "appservice", "name": "Storefront",       "subnet": "app-eu" },
+              { "id": "sqldb",  "type": "sql",        "name": "ContosoOrders DB", "subnet": "db-eu"  },
+              { "id": "media",  "type": "blob",       "name": "Product Media",    "subnet": "db-eu"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "dns",   "label": "DNS",       "kind": "internet" },
+          { "from": "internet", "to": "web",   "label": "HTTPS 443", "kind": "internet" },
+          { "from": "web",      "to": "sqldb", "label": "1433" },
+          { "from": "web",      "to": "media", "label": "GET / PUT" }
+        ]
+      }
+    },
+    {
+      "id": "v2",
+      "name": "Migrate web tier to AKS",
+      "author": "bob@contoso.com",
+      "timestamp": "2024-11-04T15:30:00Z",
+      "status": "broken",
+      "note": "Storefront pods can't reach the database. The new AKS pod subnet (10.10.12.0/24) routes outbound traffic through the cluster's NSG, but the rule allowing app→SQL on 1433 still references the OLD App Service subnet (10.10.11.0/24). Every order request times out at the data tier. Hotfix is to add the AKS pod subnet to the inbound NSG on SQL.",
+      "data": {
+        "name": "Contoso Retail · v2 (broken AKS NSG)",
+        "region": "eastus",
+        "vpcs": [
+          {
+            "id": "vnet-prod",
+            "name": "vnet-prod",
+            "cidr": "10.10.0.0/16",
+            "region": "eastus",
+            "subnets": [
+              { "id": "pub-eu",  "name": "Public",   "cidr": "10.10.1.0/24",  "tier": "public",  "az": "eastus-1" },
+              { "id": "aks-eu",  "name": "AKS Pods", "cidr": "10.10.12.0/24", "tier": "private", "az": "eastus-1" },
+              { "id": "db-eu",   "name": "Data",     "cidr": "10.10.21.0/24", "tier": "data",    "az": "eastus-1" }
+            ],
+            "gateways": [
+              { "id": "igw-eu", "type": "igw", "name": "VNet Internet" }
+            ],
+            "resources": [
+              { "id": "dns",        "type": "azuredns",     "name": "contoso.com DNS",   "subnet": "pub-eu" },
+              { "id": "ingress",    "type": "appgw",        "name": "Ingress AGW",       "subnet": "pub-eu" },
+              { "id": "aks-cluster","type": "aks",          "name": "Storefront AKS",    "subnet": "aks-eu" },
+              { "id": "func-order", "type": "function",     "name": "Order Webhook Fn",  "subnet": "aks-eu" },
+              { "id": "sqldb",      "type": "sql",          "name": "ContosoOrders DB",  "subnet": "db-eu"  },
+              { "id": "media",      "type": "blob",         "name": "Product Media",     "subnet": "db-eu"  },
+              { "id": "nsg-db",     "type": "nsg",          "name": "nsg-data (STALE)",  "subnet": "db-eu"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet",    "to": "dns",         "label": "DNS",       "kind": "internet" },
+          { "from": "internet",    "to": "ingress",     "label": "HTTPS 443", "kind": "internet" },
+          { "from": "ingress",     "to": "aks-cluster", "label": "HTTP" },
+          { "from": "aks-cluster", "to": "sqldb",       "label": "1433 BLOCKED" },
+          { "from": "func-order",  "to": "sqldb",       "label": "1433 BLOCKED" },
+          { "from": "aks-cluster", "to": "media",       "label": "GET / PUT" }
+        ]
+      }
+    },
+    {
+      "id": "v3",
+      "name": "Fix NSG + add Redis + Private Endpoints",
+      "author": "bob@contoso.com",
+      "timestamp": "2024-11-05T10:20:00Z",
+      "status": "fixed",
+      "note": "Updated nsg-data to allow the AKS pod CIDR (10.10.12.0/24) inbound on 1433. While we were there, moved Storage and SQL behind Private Endpoints so traffic never touches the public endpoint, and added Azure Cache for Redis to absorb hot product-catalogue reads.",
+      "data": {
+        "name": "Contoso Retail · v3 (containers, fixed)",
+        "region": "eastus",
+        "vpcs": [
+          {
+            "id": "vnet-prod",
+            "name": "vnet-prod",
+            "cidr": "10.10.0.0/16",
+            "region": "eastus",
+            "subnets": [
+              { "id": "pub-eu", "name": "Public",   "cidr": "10.10.1.0/24",  "tier": "public",  "az": "eastus-1" },
+              { "id": "aks-eu", "name": "AKS Pods", "cidr": "10.10.12.0/24", "tier": "private", "az": "eastus-1" },
+              { "id": "db-eu",  "name": "Data",     "cidr": "10.10.21.0/24", "tier": "data",    "az": "eastus-1" }
+            ],
+            "gateways": [
+              { "id": "igw-eu", "type": "igw", "name": "VNet Internet" }
+            ],
+            "resources": [
+              { "id": "dns",        "type": "azuredns",        "name": "contoso.com DNS",      "subnet": "pub-eu" },
+              { "id": "ingress",    "type": "appgw",           "name": "Ingress AGW",          "subnet": "pub-eu" },
+              { "id": "aks-cluster","type": "aks",             "name": "Storefront AKS",       "subnet": "aks-eu" },
+              { "id": "func-order", "type": "function",        "name": "Order Webhook Fn",     "subnet": "aks-eu" },
+              { "id": "cache",      "type": "redis",           "name": "Redis Cache",          "subnet": "aks-eu" },
+              { "id": "sqldb",      "type": "sql",             "name": "ContosoOrders DB",     "subnet": "db-eu"  },
+              { "id": "pe-sql",     "type": "privateendpoint", "name": "SQL Private Endpoint", "subnet": "db-eu"  },
+              { "id": "media",      "type": "blob",            "name": "Product Media",        "subnet": "db-eu"  },
+              { "id": "pe-blob",    "type": "privateendpoint", "name": "Blob Private Endpoint","subnet": "db-eu"  },
+              { "id": "nsg-db",     "type": "nsg",             "name": "nsg-data",             "subnet": "db-eu"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet",    "to": "dns",         "label": "DNS",       "kind": "internet" },
+          { "from": "internet",    "to": "ingress",     "label": "HTTPS 443", "kind": "internet" },
+          { "from": "ingress",     "to": "aks-cluster", "label": "HTTP" },
+          { "from": "aks-cluster", "to": "cache",       "label": "GET hot keys" },
+          { "from": "aks-cluster", "to": "pe-sql",      "label": "1433 read/write" },
+          { "from": "func-order",  "to": "pe-sql",      "label": "1433" },
+          { "from": "pe-sql",      "to": "sqldb",       "label": "private link" },
+          { "from": "aks-cluster", "to": "pe-blob",     "label": "GET / PUT" },
+          { "from": "pe-blob",     "to": "media",       "label": "private link" }
+        ]
+      }
+    },
+    {
+      "id": "v4",
+      "name": "Front Door + WAF + Entra ID",
+      "author": "alice@contoso.com",
+      "timestamp": "2025-01-22T09:40:00Z",
+      "status": "ok",
+      "note": "Pushed the front door out to the edge. Azure Front Door Premium with a WAF policy, Application Gateway behind it, Entra ID handling customer auth. P95 asset latency dropped from 290 ms → 38 ms.",
+      "data": {
+        "name": "Contoso Retail · v4 (edge)",
+        "region": "eastus",
+        "vpcs": [
+          {
+            "id": "vnet-prod",
+            "name": "vnet-prod",
+            "cidr": "10.10.0.0/16",
+            "region": "eastus",
+            "subnets": [
+              { "id": "pub-eu", "name": "Public",   "cidr": "10.10.1.0/24",  "tier": "public",  "az": "eastus-1" },
+              { "id": "aks-eu", "name": "AKS Pods", "cidr": "10.10.12.0/24", "tier": "private", "az": "eastus-1" },
+              { "id": "db-eu",  "name": "Data",     "cidr": "10.10.21.0/24", "tier": "data",    "az": "eastus-1" }
+            ],
+            "gateways": [
+              { "id": "igw-eu", "type": "igw", "name": "VNet Internet" }
+            ],
+            "resources": [
+              { "id": "dns",         "type": "azuredns",        "name": "contoso.com DNS",      "subnet": "pub-eu" },
+              { "id": "fd",          "type": "frontdoor",       "name": "Front Door Premium",   "subnet": "pub-eu" },
+              { "id": "wafpolicy",   "type": "azurewaf",        "name": "WAF Policy",           "subnet": "pub-eu" },
+              { "id": "ingress",     "type": "appgw",           "name": "Ingress AGW",          "subnet": "pub-eu" },
+              { "id": "entra",       "type": "entra",           "name": "Entra ID (customers)", "subnet": "pub-eu" },
+              { "id": "aks-cluster", "type": "aks",             "name": "Storefront AKS",       "subnet": "aks-eu" },
+              { "id": "func-order",  "type": "function",        "name": "Order Webhook Fn",     "subnet": "aks-eu" },
+              { "id": "cache",       "type": "redis",           "name": "Redis Cache",          "subnet": "aks-eu" },
+              { "id": "sqldb",       "type": "sql",             "name": "ContosoOrders DB",     "subnet": "db-eu"  },
+              { "id": "pe-sql",      "type": "privateendpoint", "name": "SQL Private Endpoint", "subnet": "db-eu"  },
+              { "id": "media",       "type": "blob",            "name": "Product Media",        "subnet": "db-eu"  },
+              { "id": "pe-blob",     "type": "privateendpoint", "name": "Blob Private Endpoint","subnet": "db-eu"  },
+              { "id": "nsg-db",      "type": "nsg",             "name": "nsg-data",             "subnet": "db-eu"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet",    "to": "dns",         "label": "DNS",       "kind": "internet" },
+          { "from": "internet",    "to": "fd",          "label": "HTTPS 443", "kind": "internet" },
+          { "from": "fd",          "to": "wafpolicy",   "label": "inspect" },
+          { "from": "wafpolicy",   "to": "ingress",     "label": "HTTPS" },
+          { "from": "internet",    "to": "entra",       "label": "OAuth 2.0", "kind": "internet" },
+          { "from": "entra",       "to": "aks-cluster", "label": "JWT" },
+          { "from": "ingress",     "to": "aks-cluster", "label": "HTTP" },
+          { "from": "aks-cluster", "to": "cache",       "label": "GET hot keys" },
+          { "from": "aks-cluster", "to": "pe-sql",      "label": "1433" },
+          { "from": "func-order",  "to": "pe-sql",      "label": "1433" },
+          { "from": "pe-sql",      "to": "sqldb",       "label": "private link" },
+          { "from": "aks-cluster", "to": "pe-blob",     "label": "GET / PUT" },
+          { "from": "pe-blob",     "to": "media",       "label": "private link" }
+        ]
+      }
+    },
+    {
+      "id": "v5",
+      "name": "Multi-region failover — West US 3 + Cosmos DB",
+      "author": "alice@contoso.com",
+      "timestamp": "2025-03-18T14:00:00Z",
+      "status": "ok",
+      "note": "Added a second region (West US 3). Front Door routes by latency; SQL has an Active Geo-Replication readable secondary; Cosmos DB takes over the high-RPS catalog reads with multi-region writes. Bastion provisioned in each region for break-glass admin access.",
+      "data": {
+        "name": "Contoso Retail · v5 (multi-region)",
+        "region": "eastus",
+        "vpcs": [
+          {
+            "id": "vnet-prod",
+            "name": "vnet-prod (East US)",
+            "cidr": "10.10.0.0/16",
+            "region": "eastus",
+            "subnets": [
+              { "id": "pub-eu", "name": "Public",   "cidr": "10.10.1.0/24",  "tier": "public",  "az": "eastus-1" },
+              { "id": "aks-eu", "name": "AKS Pods", "cidr": "10.10.12.0/24", "tier": "private", "az": "eastus-1" },
+              { "id": "db-eu",  "name": "Data",     "cidr": "10.10.21.0/24", "tier": "data",    "az": "eastus-1" }
+            ],
+            "gateways": [
+              { "id": "igw-eu",     "type": "igw",     "name": "VNet Internet" },
+              { "id": "bastion-eu", "type": "bastion", "name": "Bastion East", "subnet": "pub-eu" }
+            ],
+            "resources": [
+              { "id": "dns",         "type": "azuredns",        "name": "contoso.com DNS",      "subnet": "pub-eu" },
+              { "id": "fd",          "type": "frontdoor",       "name": "Front Door Premium",   "subnet": "pub-eu" },
+              { "id": "wafpolicy",   "type": "azurewaf",        "name": "WAF Policy",           "subnet": "pub-eu" },
+              { "id": "ingress",     "type": "appgw",           "name": "Ingress AGW East",     "subnet": "pub-eu" },
+              { "id": "entra",       "type": "entra",           "name": "Entra ID (customers)", "subnet": "pub-eu" },
+              { "id": "aks-east",    "type": "aks",             "name": "Storefront AKS E",     "subnet": "aks-eu" },
+              { "id": "func-order",  "type": "function",        "name": "Order Webhook Fn",     "subnet": "aks-eu" },
+              { "id": "cache-east",  "type": "redis",           "name": "Redis East",           "subnet": "aks-eu" },
+              { "id": "sqldb-w",     "type": "sql",             "name": "Orders Primary",       "subnet": "db-eu"  },
+              { "id": "pe-sql-east", "type": "privateendpoint", "name": "PE SQL East",          "subnet": "db-eu"  },
+              { "id": "cosmos",      "type": "cosmosdb",        "name": "Catalog Cosmos",       "subnet": "db-eu"  },
+              { "id": "media",       "type": "blob",            "name": "Product Media",        "subnet": "db-eu"  },
+              { "id": "pe-blob-east","type": "privateendpoint", "name": "PE Blob East",         "subnet": "db-eu"  },
+              { "id": "nsg-db-east", "type": "nsg",             "name": "nsg-data E",           "subnet": "db-eu"  }
+            ]
+          },
+          {
+            "id": "vnet-prod-wus",
+            "name": "vnet-prod (West US 3)",
+            "cidr": "10.20.0.0/16",
+            "region": "westus3",
+            "subnets": [
+              { "id": "pub-wu", "name": "Public",   "cidr": "10.20.1.0/24",  "tier": "public",  "az": "westus3-1" },
+              { "id": "aks-wu", "name": "AKS Pods", "cidr": "10.20.12.0/24", "tier": "private", "az": "westus3-1" },
+              { "id": "db-wu",  "name": "Data",     "cidr": "10.20.21.0/24", "tier": "data",    "az": "westus3-1" }
+            ],
+            "gateways": [
+              { "id": "igw-wu",     "type": "igw",     "name": "VNet Internet WUS" },
+              { "id": "bastion-wu", "type": "bastion", "name": "Bastion West", "subnet": "pub-wu" }
+            ],
+            "resources": [
+              { "id": "ingress-w",    "type": "appgw",           "name": "Ingress AGW West",  "subnet": "pub-wu" },
+              { "id": "aks-west",     "type": "aks",             "name": "Storefront AKS W",  "subnet": "aks-wu" },
+              { "id": "cache-west",   "type": "redis",           "name": "Redis West",        "subnet": "aks-wu" },
+              { "id": "sqldb-r",      "type": "sql",             "name": "Orders Secondary",  "subnet": "db-wu"  },
+              { "id": "pe-sql-west",  "type": "privateendpoint", "name": "PE SQL West",       "subnet": "db-wu"  },
+              { "id": "media-w",      "type": "blob",            "name": "Media Replica",     "subnet": "db-wu"  },
+              { "id": "pe-blob-west", "type": "privateendpoint", "name": "PE Blob West",      "subnet": "db-wu"  },
+              { "id": "nsg-db-west",  "type": "nsg",             "name": "nsg-data W",        "subnet": "db-wu"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet",    "to": "dns",          "label": "DNS",       "kind": "internet" },
+          { "from": "internet",    "to": "fd",           "label": "HTTPS 443", "kind": "internet" },
+          { "from": "fd",          "to": "wafpolicy",    "label": "inspect" },
+          { "from": "wafpolicy",   "to": "ingress",      "label": "east origin" },
+          { "from": "wafpolicy",   "to": "ingress-w",    "label": "west origin" },
+          { "from": "internet",    "to": "entra",        "label": "OAuth",     "kind": "internet" },
+          { "from": "ingress",     "to": "aks-east",     "label": "HTTP" },
+          { "from": "ingress-w",   "to": "aks-west",     "label": "HTTP" },
+          { "from": "aks-east",    "to": "cache-east",   "label": "GET" },
+          { "from": "aks-west",    "to": "cache-west",   "label": "GET" },
+          { "from": "aks-east",    "to": "pe-sql-east",  "label": "1433 write" },
+          { "from": "aks-west",    "to": "pe-sql-west",  "label": "1433 read" },
+          { "from": "func-order",  "to": "pe-sql-east",  "label": "1433" },
+          { "from": "pe-sql-east", "to": "sqldb-w",      "label": "private link" },
+          { "from": "pe-sql-west", "to": "sqldb-r",      "label": "private link" },
+          { "from": "sqldb-w",     "to": "sqldb-r",      "label": "geo-replicate" },
+          { "from": "aks-east",    "to": "cosmos",       "label": "catalog reads" },
+          { "from": "aks-west",    "to": "cosmos",       "label": "catalog reads" },
+          { "from": "aks-east",    "to": "pe-blob-east", "label": "GET / PUT" },
+          { "from": "aks-west",    "to": "pe-blob-west", "label": "GET / PUT" },
+          { "from": "pe-blob-east","to": "media",        "label": "private link" },
+          { "from": "pe-blob-west","to": "media-w",      "label": "private link" }
+        ]
+      }
+    },
+    {
+      "id": "v6",
+      "name": "Cost cut — drop Application Gateway",
+      "author": "eve@contoso.com",
+      "timestamp": "2025-05-08T16:50:00Z",
+      "status": "broken",
+      "note": "PRODUCTION INCIDENT — DO NOT KEEP. Tried to save the App Gateway SKU by pointing Front Door directly at the AKS public IPs and dropping AGW + the regional WAF. Within 48 hours bot traffic against the storefront tripled, several scraping farms flooded /api/checkout, and inventory miscounts started showing up. Putting WAF back in v7.",
+      "data": {
+        "name": "Contoso Retail · v6 (broken — no WAF / AGW)",
+        "region": "eastus",
+        "vpcs": [
+          {
+            "id": "vnet-prod",
+            "name": "vnet-prod (East US)",
+            "cidr": "10.10.0.0/16",
+            "region": "eastus",
+            "subnets": [
+              { "id": "pub-eu", "name": "Public",   "cidr": "10.10.1.0/24",  "tier": "public",  "az": "eastus-1" },
+              { "id": "aks-eu", "name": "AKS Pods", "cidr": "10.10.12.0/24", "tier": "private", "az": "eastus-1" },
+              { "id": "db-eu",  "name": "Data",     "cidr": "10.10.21.0/24", "tier": "data",    "az": "eastus-1" }
+            ],
+            "gateways": [
+              { "id": "igw-eu",     "type": "igw",     "name": "VNet Internet" },
+              { "id": "bastion-eu", "type": "bastion", "name": "Bastion East", "subnet": "pub-eu" }
+            ],
+            "resources": [
+              { "id": "dns",         "type": "azuredns",        "name": "contoso.com DNS",  "subnet": "pub-eu" },
+              { "id": "fd",          "type": "frontdoor",       "name": "Front Door",       "subnet": "pub-eu" },
+              { "id": "pip-east",    "type": "publicip",        "name": "AKS Public IP E",  "subnet": "pub-eu" },
+              { "id": "entra",       "type": "entra",           "name": "Entra ID",         "subnet": "pub-eu" },
+              { "id": "aks-east",    "type": "aks",             "name": "Storefront AKS E", "subnet": "aks-eu" },
+              { "id": "func-order",  "type": "function",        "name": "Order Webhook Fn", "subnet": "aks-eu" },
+              { "id": "cache-east",  "type": "redis",           "name": "Redis East",       "subnet": "aks-eu" },
+              { "id": "sqldb-w",     "type": "sql",             "name": "Orders Primary",   "subnet": "db-eu"  },
+              { "id": "pe-sql-east", "type": "privateendpoint", "name": "PE SQL East",      "subnet": "db-eu"  },
+              { "id": "cosmos",      "type": "cosmosdb",        "name": "Catalog Cosmos",   "subnet": "db-eu"  },
+              { "id": "media",       "type": "blob",            "name": "Product Media",    "subnet": "db-eu"  },
+              { "id": "pe-blob-east","type": "privateendpoint", "name": "PE Blob East",     "subnet": "db-eu"  }
+            ]
+          },
+          {
+            "id": "vnet-prod-wus",
+            "name": "vnet-prod (West US 3)",
+            "cidr": "10.20.0.0/16",
+            "region": "westus3",
+            "subnets": [
+              { "id": "pub-wu", "name": "Public",   "cidr": "10.20.1.0/24",  "tier": "public",  "az": "westus3-1" },
+              { "id": "aks-wu", "name": "AKS Pods", "cidr": "10.20.12.0/24", "tier": "private", "az": "westus3-1" },
+              { "id": "db-wu",  "name": "Data",     "cidr": "10.20.21.0/24", "tier": "data",    "az": "westus3-1" }
+            ],
+            "gateways": [
+              { "id": "igw-wu",     "type": "igw",     "name": "VNet Internet WUS" },
+              { "id": "bastion-wu", "type": "bastion", "name": "Bastion West", "subnet": "pub-wu" }
+            ],
+            "resources": [
+              { "id": "pip-west",    "type": "publicip",        "name": "AKS Public IP W", "subnet": "pub-wu" },
+              { "id": "aks-west",    "type": "aks",             "name": "Storefront AKS W","subnet": "aks-wu" },
+              { "id": "cache-west",  "type": "redis",           "name": "Redis West",      "subnet": "aks-wu" },
+              { "id": "sqldb-r",     "type": "sql",             "name": "Orders Secondary","subnet": "db-wu"  },
+              { "id": "pe-sql-west", "type": "privateendpoint", "name": "PE SQL West",     "subnet": "db-wu"  },
+              { "id": "media-w",     "type": "blob",            "name": "Media Replica",   "subnet": "db-wu"  },
+              { "id": "pe-blob-west","type": "privateendpoint", "name": "PE Blob West",    "subnet": "db-wu"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet", "to": "dns",       "label": "DNS",                  "kind": "internet" },
+          { "from": "internet", "to": "fd",        "label": "HTTPS 443",            "kind": "internet" },
+          { "from": "fd",       "to": "pip-east",  "label": "HTTP (no WAF!)",       "kind": "internet" },
+          { "from": "fd",       "to": "pip-west",  "label": "HTTP (no WAF!)",       "kind": "internet" },
+          { "from": "internet", "to": "entra",     "label": "OAuth",                "kind": "internet" },
+          { "from": "pip-east", "to": "aks-east",  "label": "HTTP" },
+          { "from": "pip-west", "to": "aks-west",  "label": "HTTP" },
+          { "from": "aks-east", "to": "cache-east","label": "GET" },
+          { "from": "aks-west", "to": "cache-west","label": "GET" },
+          { "from": "aks-east", "to": "pe-sql-east","label": "1433 write" },
+          { "from": "aks-west", "to": "pe-sql-west","label": "1433 read" },
+          { "from": "func-order","to": "pe-sql-east","label": "1433" },
+          { "from": "pe-sql-east","to": "sqldb-w", "label": "private link" },
+          { "from": "pe-sql-west","to": "sqldb-r", "label": "private link" },
+          { "from": "sqldb-w",  "to": "sqldb-r",   "label": "geo-replicate" },
+          { "from": "aks-east", "to": "cosmos",    "label": "catalog reads" },
+          { "from": "aks-west", "to": "cosmos",    "label": "catalog reads" },
+          { "from": "aks-east", "to": "pe-blob-east","label": "GET / PUT" },
+          { "from": "aks-west", "to": "pe-blob-west","label": "GET / PUT" },
+          { "from": "pe-blob-east","to": "media",  "label": "private link" },
+          { "from": "pe-blob-west","to": "media-w","label": "private link" }
+        ]
+      }
+    },
+    {
+      "id": "v7",
+      "name": "Restore AGW + WAF, add Azure Firewall",
+      "author": "alice@contoso.com",
+      "timestamp": "2025-05-09T08:00:00Z",
+      "status": "fixed",
+      "note": "Reinstated Application Gateway and the WAF policy in both regions. Added an Azure Firewall in front of egress so the AKS clusters can only reach a known list of partner FQDNs — closes the data-exfil path that bots were probing. WAF blocked >2.4M malicious requests in the first hour.",
+      "data": {
+        "name": "Contoso Retail · v7 (fixed)",
+        "region": "eastus",
+        "vpcs": [
+          {
+            "id": "vnet-prod",
+            "name": "vnet-prod (East US)",
+            "cidr": "10.10.0.0/16",
+            "region": "eastus",
+            "subnets": [
+              { "id": "pub-eu", "name": "Public",   "cidr": "10.10.1.0/24",  "tier": "public",  "az": "eastus-1" },
+              { "id": "aks-eu", "name": "AKS Pods", "cidr": "10.10.12.0/24", "tier": "private", "az": "eastus-1" },
+              { "id": "db-eu",  "name": "Data",     "cidr": "10.10.21.0/24", "tier": "data",    "az": "eastus-1" }
+            ],
+            "gateways": [
+              { "id": "igw-eu",     "type": "igw",     "name": "VNet Internet" },
+              { "id": "bastion-eu", "type": "bastion", "name": "Bastion East", "subnet": "pub-eu" }
+            ],
+            "resources": [
+              { "id": "dns",         "type": "azuredns",        "name": "contoso.com DNS",  "subnet": "pub-eu" },
+              { "id": "fd",          "type": "frontdoor",       "name": "Front Door",       "subnet": "pub-eu" },
+              { "id": "wafpolicy",   "type": "azurewaf",        "name": "WAF Policy",       "subnet": "pub-eu" },
+              { "id": "ingress",     "type": "appgw",           "name": "Ingress AGW E",    "subnet": "pub-eu" },
+              { "id": "azfw",        "type": "azurefirewall",   "name": "Egress Firewall",  "subnet": "pub-eu" },
+              { "id": "entra",       "type": "entra",           "name": "Entra ID",         "subnet": "pub-eu" },
+              { "id": "aks-east",    "type": "aks",             "name": "Storefront AKS E", "subnet": "aks-eu" },
+              { "id": "func-order",  "type": "function",        "name": "Order Webhook Fn", "subnet": "aks-eu" },
+              { "id": "cache-east",  "type": "redis",           "name": "Redis East",       "subnet": "aks-eu" },
+              { "id": "sqldb-w",     "type": "sql",             "name": "Orders Primary",   "subnet": "db-eu"  },
+              { "id": "pe-sql-east", "type": "privateendpoint", "name": "PE SQL East",      "subnet": "db-eu"  },
+              { "id": "cosmos",      "type": "cosmosdb",        "name": "Catalog Cosmos",   "subnet": "db-eu"  },
+              { "id": "media",       "type": "blob",            "name": "Product Media",    "subnet": "db-eu"  },
+              { "id": "pe-blob-east","type": "privateendpoint", "name": "PE Blob East",     "subnet": "db-eu"  },
+              { "id": "nsg-db-east", "type": "nsg",             "name": "nsg-data E",       "subnet": "db-eu"  }
+            ]
+          },
+          {
+            "id": "vnet-prod-wus",
+            "name": "vnet-prod (West US 3)",
+            "cidr": "10.20.0.0/16",
+            "region": "westus3",
+            "subnets": [
+              { "id": "pub-wu", "name": "Public",   "cidr": "10.20.1.0/24",  "tier": "public",  "az": "westus3-1" },
+              { "id": "aks-wu", "name": "AKS Pods", "cidr": "10.20.12.0/24", "tier": "private", "az": "westus3-1" },
+              { "id": "db-wu",  "name": "Data",     "cidr": "10.20.21.0/24", "tier": "data",    "az": "westus3-1" }
+            ],
+            "gateways": [
+              { "id": "igw-wu",     "type": "igw",     "name": "VNet Internet WUS" },
+              { "id": "bastion-wu", "type": "bastion", "name": "Bastion West", "subnet": "pub-wu" }
+            ],
+            "resources": [
+              { "id": "ingress-w",   "type": "appgw",           "name": "Ingress AGW W",   "subnet": "pub-wu" },
+              { "id": "azfw-w",      "type": "azurefirewall",   "name": "Egress Firewall W","subnet": "pub-wu" },
+              { "id": "aks-west",    "type": "aks",             "name": "Storefront AKS W","subnet": "aks-wu" },
+              { "id": "cache-west",  "type": "redis",           "name": "Redis West",      "subnet": "aks-wu" },
+              { "id": "sqldb-r",     "type": "sql",             "name": "Orders Secondary","subnet": "db-wu"  },
+              { "id": "pe-sql-west", "type": "privateendpoint", "name": "PE SQL West",     "subnet": "db-wu"  },
+              { "id": "media-w",     "type": "blob",            "name": "Media Replica",   "subnet": "db-wu"  },
+              { "id": "pe-blob-west","type": "privateendpoint", "name": "PE Blob West",    "subnet": "db-wu"  },
+              { "id": "nsg-db-west", "type": "nsg",             "name": "nsg-data W",      "subnet": "db-wu"  }
+            ]
+          }
+        ],
+        "flows": [
+          { "from": "internet",    "to": "dns",         "label": "DNS",       "kind": "internet" },
+          { "from": "internet",    "to": "fd",          "label": "HTTPS 443", "kind": "internet" },
+          { "from": "fd",          "to": "wafpolicy",   "label": "inspect" },
+          { "from": "wafpolicy",   "to": "ingress",     "label": "east origin" },
+          { "from": "wafpolicy",   "to": "ingress-w",   "label": "west origin" },
+          { "from": "internet",    "to": "entra",       "label": "OAuth",     "kind": "internet" },
+          { "from": "ingress",     "to": "aks-east",    "label": "HTTP" },
+          { "from": "ingress-w",   "to": "aks-west",    "label": "HTTP" },
+          { "from": "aks-east",    "to": "cache-east",  "label": "GET" },
+          { "from": "aks-west",    "to": "cache-west",  "label": "GET" },
+          { "from": "aks-east",    "to": "pe-sql-east", "label": "1433 write" },
+          { "from": "aks-west",    "to": "pe-sql-west", "label": "1433 read" },
+          { "from": "func-order",  "to": "pe-sql-east", "label": "1433" },
+          { "from": "pe-sql-east", "to": "sqldb-w",     "label": "private link" },
+          { "from": "pe-sql-west", "to": "sqldb-r",     "label": "private link" },
+          { "from": "sqldb-w",     "to": "sqldb-r",     "label": "geo-replicate" },
+          { "from": "aks-east",    "to": "cosmos",      "label": "catalog reads" },
+          { "from": "aks-west",    "to": "cosmos",      "label": "catalog reads" },
+          { "from": "aks-east",    "to": "pe-blob-east","label": "GET / PUT" },
+          { "from": "aks-west",    "to": "pe-blob-west","label": "GET / PUT" },
+          { "from": "pe-blob-east","to": "media",       "label": "private link" },
+          { "from": "pe-blob-west","to": "media-w",     "label": "private link" },
+          { "from": "aks-east",    "to": "azfw",        "label": "egress",    "kind": "egress" },
+          { "from": "aks-west",    "to": "azfw-w",      "label": "egress",    "kind": "egress" },
+          { "from": "azfw",        "to": "igw-eu",      "label": "0.0.0.0/0", "kind": "egress" },
+          { "from": "azfw-w",      "to": "igw-wu",      "label": "0.0.0.0/0", "kind": "egress" }
+        ]
+      }
+    }
+  ]
+}

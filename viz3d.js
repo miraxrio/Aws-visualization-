@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05q — sqli/ransomware visibility + robust modal");
+console.log("[viz3d] build 2026-05-05r — Azure types + portscan + exfil attacks");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -374,7 +374,13 @@ function addSubnet(s) {
 function addBuilding(node) {
   const p = pos3D(node);
   const slot = dim3D(node);
-  const colors = (window.AWS_COLORS && window.AWS_COLORS[node.type]) || window.AWS_COLORS.unknown;
+  // Resolve cross-cloud aliases (Azure vm → ec2 colour palette, etc.) so
+  // an Azure VM gets the compute orange even though the type string says
+  // "vm" in the imported JSON.
+  const colorType = window.AWS_COLORS && window.AWS_COLORS[node.type]
+    ? node.type
+    : resolveType(node.type);
+  const colors = (window.AWS_COLORS && window.AWS_COLORS[colorType]) || window.AWS_COLORS.unknown;
   const sz = pickSize(node.type, slot.w, slot.d);
 
   const grp = new THREE.Group();
@@ -471,7 +477,57 @@ function addBuilding(node) {
   });
 }
 
+// ---------- multi-cloud type aliases ----------
+//
+// Imported networks can use Azure (or other cloud) terminology. The
+// visualizer's shape / colour / icon / explanation maps are keyed on AWS
+// type names, so we resolve each input type to the closest equivalent
+// for those lookups. The original type name is still preserved in the
+// data (so labels and the sidebar say "Azure SQL", not "RDS").
+const TYPE_ALIASES = {
+  // Azure compute
+  vm:           "ec2",
+  vmss:         "asg",
+  appservice:   "ec2",
+  function:     "lambda",
+  containerapp: "ecs",
+  aks:          "eks",
+
+  // Azure database
+  sql:        "rds",
+  postgresql: "rds",
+  mysql:      "rds",
+  cosmosdb:   "dynamodb",
+  redis:      "endpoint",
+
+  // Azure storage
+  blob: "s3",
+
+  // Azure networking
+  vnet:            "vpc",
+  nsg:             "sg",
+  appgw:           "alb",
+  frontdoor:       "cloudfront",
+  azurewaf:        "waf",
+  vpngw:           "vpn",
+  expressroute:    "dx",
+  bastion:         "nat",
+  azuredns:        "route53",
+  apim:            "apigw",
+  privateendpoint: "endpoint",
+  publicip:        "endpoint",
+  cdn:             "cloudfront",
+
+  // Azure security / identity
+  entra:        "sg",
+  azurefirewall: "waf",
+};
+function resolveType(type) {
+  return TYPE_ALIASES[type] || type;
+}
+
 function pickSize(type, w, d) {
+  const t = resolveType(type);
   const fw = Math.max(5, Math.min(w, d) * 0.85);
   const heights = {
     ec2: 14, asg: 11, ecs: 13, eks: 17, lambda: 10,
@@ -480,7 +536,7 @@ function pickSize(type, w, d) {
     s3: 10, cloudfront: 22, route53: 17, apigw: 11,
     sg: 8, nacl: 8, vpn: 10, dx: 10, tgw: 14, endpoint: 10,
   };
-  const h = heights[type] || 11;
+  const h = heights[t] || 11;
   return { w: fw, d: fw, h };
 }
 
@@ -490,7 +546,7 @@ function pickSize(type, w, d) {
 // whose geometry doesn't fill the slot, like Aurora (cylinder, r = w*0.45)
 // or non-square boxes like WAF / ALB.
 function decalOffset(type, sz) {
-  switch (type) {
+  switch (resolveType(type)) {
     case "alb": case "nlb":
       // BoxGeometry(w * 1.4, h, d * 0.6)
       return { x: sz.w * 0.7,   z: sz.d * 0.3 };
@@ -517,7 +573,7 @@ function decalOffset(type, sz) {
 
 function pickGeometry(type, sz) {
   const { w, d, h } = sz;
-  switch (type) {
+  switch (resolveType(type)) {
     case "rds": case "aurora":
       return new THREE.CylinderGeometry(w * 0.45, w * 0.45, h, 24);
     case "dynamodb":
@@ -552,7 +608,7 @@ function pickGeometry(type, sz) {
 function positionForGeometryLocal(mesh, type, sz) {
   // Subnets sit at y=1.8 (top); buildings rest just above that.
   const BASE = 1.9;
-  switch (type) {
+  switch (resolveType(type)) {
     case "igw":
       mesh.position.set(0, BASE + 1, 0);
       mesh.rotation.x = Math.PI; // open downward (arch)
@@ -1137,12 +1193,43 @@ const ICON_SLUGS = {
   apigw:      "amazonapigateway",
   ecs:        "amazonecs",
   eks:        "amazoneks",
+
+  // Azure — fall back to the Microsoft Azure brand icon for everything
+  // we don't have a more specific slug for. simple-icons does ship a
+  // few Azure-specific service icons, used here where available.
+  vm:              "microsoftazure",
+  vmss:            "microsoftazure",
+  appservice:      "microsoftazure",
+  function:        "azurefunctions",
+  containerapp:    "microsoftazure",
+  aks:             "kubernetes",
+  sql:             "microsoftsqlserver",
+  postgresql:      "postgresql",
+  mysql:           "mysql",
+  cosmosdb:        "microsoftazure",
+  redis:           "redis",
+  blob:            "microsoftazure",
+  vnet:            "microsoftazure",
+  nsg:             "microsoftazure",
+  appgw:           "microsoftazure",
+  frontdoor:       "microsoftazure",
+  azurewaf:        "microsoftazure",
+  azurefirewall:   "microsoftazure",
+  vpngw:           "microsoftazure",
+  expressroute:    "microsoftazure",
+  bastion:         "microsoftazure",
+  azuredns:        "microsoftazure",
+  apim:            "microsoftazure",
+  privateendpoint: "microsoftazure",
+  entra:           "microsoftazure",
 };
 const ICON_CACHE = new Map(); // type -> Promise<HTMLImageElement | null>
 
 function loadIconImage(type) {
   if (ICON_CACHE.has(type)) return ICON_CACHE.get(type);
-  const slug = ICON_SLUGS[type];
+  // Prefer an icon for the exact type (lets us add Azure-specific slugs
+  // later), otherwise fall back to the resolved AWS-equivalent slug.
+  const slug = ICON_SLUGS[type] || ICON_SLUGS[resolveType(type)];
   if (!slug) {
     const p = Promise.resolve(null);
     ICON_CACHE.set(type, p);
@@ -1186,7 +1273,7 @@ function loadIconImage(type) {
 function hasFlatSides(type) {
   return ![
     "lambda", "cloudfront", "route53", "igw", "nat",
-  ].includes(type);
+  ].includes(resolveType(type));
 }
 
 // Draws an AWS service icon (or glyph fallback) onto a 256² canvas. When a
@@ -1745,6 +1832,156 @@ const ATTACK_DEFS = {
       };
     },
   },
+
+  portscan: {
+    id: "portscan",
+    name: "Reconnaissance Port Scan",
+    icon: "🔭",
+    description:
+      "An automated scanner fingerprints every reachable port on every public-facing asset. Network ACLs and security groups drop the noise; whatever replies tells the attacker what to attack next.",
+    duration: 16000,
+    phases: [
+      { t: 0,     label: "Edge probe" },
+      { t: 3500,  label: "Service fingerprint" },
+      { t: 8500,  label: "Deep probe" },
+      { t: 13000, label: "Fade" },
+    ],
+    init(state) {
+      // Aim at every non-container resource. Scanners don't care about
+      // the network topology — they hit everything reachable.
+      const targets = [];
+      registry.forEach((entry, id) => {
+        if (entry.type === "vpc" || entry.type === "subnet" || entry.type === "internet") return;
+        targets.push(id);
+      });
+      const defs = findInRegistry(["waf", "sg", "nacl", "nsg", "azurewaf", "azurefirewall"])
+        .map((e) => e.id);
+      state.cfg = {
+        source: "internet",
+        targets,
+        defenders: defs,
+        // High volume, high block rate — gives a sense of "spray".
+        bands: [
+          { tStart: 200,  tEnd: 3500,  rate: 8,  blockRate: 0.7 },
+          { tStart: 3500, tEnd: 8500,  rate: 14, blockRate: 0.65 },
+          { tStart: 8500, tEnd: 13000, rate: 20, blockRate: 0.6 },
+          { tStart: 13000, tEnd: 15500, rate: 6, blockRate: 0.85 },
+        ],
+      };
+      console.log("[viz3d/attack] portscan init —",
+        targets.length, "targets,", defs.length, "defenders");
+      pushEvent(state, "info",
+        `Scanner sweeping ${targets.length} reachable target${targets.length === 1 ? "" : "s"}`);
+    },
+    tick(state, dt, elapsed) {
+      tickBandedSpawn(state, dt, elapsed);
+    },
+    summarize(state) {
+      const total = state.stats.spawned;
+      const blocked = state.stats.blocked;
+      const arrived = state.stats.arrived;
+      const ratio = total > 0 ? arrived / total : 0;
+      return {
+        outcome: ratio < 0.1
+          ? `Surface stayed quiet. ${blocked.toLocaleString()} probes dropped at the perimeter; only ${arrived} services replied — exactly what should be public.`
+          : ratio < 0.3
+          ? `Scanner mapped some of your surface. ${arrived} services responded. Re-check what is public vs. private.`
+          : `Wide-open surface. ${arrived} services responded to fingerprinting — review which of those should not be on the public network.`,
+        outcomeStatus: ratio < 0.1 ? "ok" : ratio < 0.3 ? "warn" : "danger",
+        stats: [
+          { label: "Probes fired",       value: total.toLocaleString() },
+          { label: "Dropped by SG/NSG",  value: blocked.toLocaleString() },
+          { label: "Services responded", value: arrived.toLocaleString() },
+        ],
+      };
+    },
+  },
+
+  exfil: {
+    id: "exfil",
+    name: "Data Exfiltration",
+    icon: "📤",
+    description:
+      "An attacker who already has a foothold on a database starts streaming data outbound. Egress firewall and DLP intercept what they can.",
+    duration: 22000,
+    phases: [
+      { t: 0,     label: "Quiet recon" },
+      { t: 3000,  label: "Initial leak" },
+      { t: 8000,  label: "Bulk transfer" },
+      { t: 16000, label: "DLP alerts" },
+      { t: 20000, label: "Cleanup" },
+    ],
+    init(state) {
+      const sources = findInRegistry([
+        "aurora", "rds", "dynamodb", "sql", "postgresql", "mysql", "cosmosdb", "s3", "blob",
+      ]);
+      if (sources.length === 0) {
+        console.warn("[viz3d/attack] exfil: no data-tier resource to exfil from");
+        state.cfg = { ok: false };
+        pushEvent(state, "info", "(no data-tier resource found — nothing to exfiltrate)");
+        return;
+      }
+      const sourceId = sources[0].id;
+      const defs = findInRegistry([
+        "nat", "vpngw", "waf", "azurewaf", "azurefirewall", "tgw",
+      ]).map((e) => e.id);
+      state.cfg = {
+        ok: true,
+        sourceId,
+        defenders: defs,
+        bands: [
+          { tStart: 200,   tEnd: 3000,  rate: 0.6, blockRate: 0.10 },
+          { tStart: 3000,  tEnd: 8000,  rate: 1.8, blockRate: 0.30 },
+          { tStart: 8000,  tEnd: 16000, rate: 3.5, blockRate: 0.40 },
+          { tStart: 16000, tEnd: 20000, rate: 4,   blockRate: 0.70 },
+          { tStart: 20000, tEnd: 21500, rate: 1.2, blockRate: 0.95 },
+        ],
+      };
+      markInfected(state, sourceId);
+      console.log("[viz3d/attack] exfil init — source:", sourceId, "defenders:", defs);
+      pushEvent(state, "danger",
+        `Foothold detected on ${sourceId} — outbound transfer building`);
+    },
+    tick(state, dt, elapsed) {
+      const cfg = state.cfg;
+      if (!cfg || !cfg.ok) return;
+      cfg._spawnAccum = cfg._spawnAccum || {};
+      cfg.bands.forEach((b, i) => {
+        if (elapsed < b.tStart || elapsed >= b.tEnd) return;
+        cfg._spawnAccum[i] = (cfg._spawnAccum[i] || 0) + b.rate * dt;
+        while (cfg._spawnAccum[i] >= 1) {
+          cfg._spawnAccum[i] -= 1;
+          spawnAttacker(state, {
+            sourceId: cfg.sourceId,
+            targetId: "internet",
+            kind: "outbound",
+            blockRate: b.blockRate,
+            defenderName: "egress firewall",
+          });
+        }
+      });
+    },
+    summarize(state) {
+      const total = state.stats.spawned;
+      const blocked = state.stats.blocked;
+      const arrived = state.stats.arrived;
+      return {
+        outcome: total === 0
+          ? "No outbound exfiltration channel exists (data tier has no internet path)."
+          : arrived === 0
+          ? "Egress firewall caught everything. No data left the perimeter."
+          : arrived < total * 0.2
+          ? `${arrived} payload${arrived === 1 ? "" : "s"} reached the internet before DLP fired. Tighten egress allow-listing.`
+          : `Data leak. ${arrived} outbound transfers reached the public internet. Forensic review required.`,
+        outcomeStatus: arrived === 0 ? "ok" : arrived < total * 0.2 ? "warn" : "danger",
+        stats: [
+          { label: "Exfil attempts",     value: total.toLocaleString() },
+          { label: "Dropped at egress",  value: blocked.toLocaleString() },
+          { label: "Reached internet",   value: arrived.toLocaleString() },
+        ],
+      };
+    },
+  },
 };
 
 function findInRegistry(types) {
@@ -2035,6 +2272,32 @@ function spawnAttacker(state, opts) {
       assaultDuration: 1.7 + Math.random() * 0.5,
       assaultStart: start,
       assaultEnd: tgt.position.clone(),
+    };
+  } else if (opts.kind === "outbound") {
+    // Data exfiltration: start at the compromised internal node, arc UP
+    // and OVER the city, and exit through the internet portal. Reverse of
+    // the normal siege so the visual flow is unmistakable (data leaving).
+    const src = registry.get(opts.sourceId);
+    const start = src
+      ? new THREE.Vector3(src.position.x, Math.max(1, src.position.y), src.position.z)
+      : new THREE.Vector3(0, 1, 0);
+    const end = tgt.position.clone();
+    const liftHeight = Math.max(45, Math.max(start.y, end.y) + 22);
+    const sourceAbove = new THREE.Vector3(start.x, liftHeight, start.z);
+    const portalAbove = new THREE.Vector3(end.x, liftHeight, end.z);
+    const exitCurve = new THREE.CatmullRomCurve3([
+      start, sourceAbove, portalAbove, end,
+    ]);
+    visual.group.position.copy(start);
+    attacker = {
+      visual,
+      beam: null,
+      phase: "outbound",
+      phaseT: 0,
+      outboundDuration: 2.6 + Math.random() * 0.6,
+      outboundCurve: exitCurve,
+      assaultStart: start,
+      assaultEnd: end,
     };
   } else {
     // The portal IS the gate — every attacker emerges from it.
@@ -2410,9 +2673,39 @@ function updateAttack(now, dt) {
     attackState.def.tick(attackState, dt, elapsed);
   }
 
-  // Move attackers through their three-phase state machine.
+  // Move attackers through their state machine.
   attackState.attackers = attackState.attackers.filter((a) => {
     a.phaseT += dt;
+
+    // Outbound (data exfiltration): travels from compromised node along
+    // a curve up over the city to the internet portal. Same intercept
+    // semantics as assault, just reversed direction.
+    if (a.phase === "outbound") {
+      const t = Math.min(1, a.phaseT / a.outboundDuration);
+      if (a.blocked && a.interceptT != null && t >= a.interceptT) {
+        const p = a.outboundCurve.getPointAt(a.interceptT);
+        p.y = Math.max(p.y, 6);
+        spawnDefenseExplosion(p);
+        attackState.stats.blocked++;
+        if (a.onBlocked) a.onBlocked(attackState);
+        else pushEvent(attackState, "ok",
+          `Egress blocked${a.defenderName ? " by " + a.defenderName : ""}`);
+        disposeAttackerVisual(a.visual);
+        return false;
+      }
+      if (t >= 1) {
+        spawnImpact(a.assaultEnd);
+        attackState.stats.arrived++;
+        if (a.onArrival) a.onArrival(attackState);
+        else pushEvent(attackState, "danger",
+          `Payload exfiltrated → ${a.targetName}`);
+        disposeAttackerVisual(a.visual);
+        return false;
+      }
+      const p = a.outboundCurve.getPointAt(t);
+      a.visual.group.position.copy(p);
+      return true;
+    }
 
     if (a.phase === "descent") {
       const t = Math.min(1, a.phaseT / a.descentDuration);

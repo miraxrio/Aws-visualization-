@@ -47,6 +47,37 @@ window.AWS_COLORS = {
   // App integration — vivid magenta
   apigw:      { a: "#FF7AA8", b: "#B0084D", glow: "#F0457A" },
 
+  // ----- Azure -----
+  // Microsoft brand blue family + per-service category tints. Each gets
+  // its own colour so an imported Azure network reads as Azure-coloured
+  // (rather than every box looking the same shade of blue).
+  vm:           { a: "#7DB9F0", b: "#0F4FA8", glow: "#3F8FFF" },
+  vmss:         { a: "#7DB9F0", b: "#0F4FA8", glow: "#3F8FFF" },
+  appservice:   { a: "#83C5FF", b: "#0078D4", glow: "#3F95E0" },
+  function:     { a: "#FFC07A", b: "#A85100", glow: "#FFB330" },
+  containerapp: { a: "#7CD9FF", b: "#005A9E", glow: "#22BAEF" },
+  aks:          { a: "#92C2FF", b: "#003F8A", glow: "#0078D4" },
+  sql:          { a: "#FFB59A", b: "#A02214", glow: "#E13D2B" },
+  postgresql:   { a: "#94B7FF", b: "#1F3A93", glow: "#336791" },
+  mysql:        { a: "#F4D27A", b: "#75500F", glow: "#F29111" },
+  cosmosdb:     { a: "#9DC0FF", b: "#142A57", glow: "#3E7EE7" },
+  redis:        { a: "#FF9B8E", b: "#9A1B0A", glow: "#D82C20" },
+  blob:         { a: "#94D7E3", b: "#0F5366", glow: "#1FA3BF" },
+  vnet:         { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  nsg:          { a: "#FF8499", b: "#BD0816", glow: "#E84855" },
+  appgw:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  frontdoor:    { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  azurewaf:     { a: "#FF8499", b: "#BD0816", glow: "#E84855" },
+  azurefirewall:{ a: "#FF8499", b: "#BD0816", glow: "#E84855" },
+  vpngw:        { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  expressroute: { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  bastion:      { a: "#FFC07A", b: "#A85100", glow: "#FFB330" },
+  azuredns:     { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  apim:         { a: "#F0457A", b: "#7C0E37", glow: "#E7157B" },
+  privateendpoint: { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+  entra:        { a: "#FFB766", b: "#C8511B", glow: "#FF9900" },
+  cdn:          { a: "#A166FF", b: "#4D27A8", glow: "#8C4FFF" },
+
   unknown:    { a: "#cbd5e1", b: "#475569", glow: "#94a3b8" },
 };
 
@@ -360,6 +391,296 @@ window.AWS_EXPLAIN = {
       "Public by default; can be made private with an interface endpoint.",
       "Built-in throttling and caching.",
       "Integrates with Cognito, IAM, or Lambda authorizers.",
+    ],
+  },
+
+  // ----- Azure equivalents -----
+  // The visualizer maps these to AWS shapes/icons internally via
+  // TYPE_ALIASES, but the sidebar uses the descriptions and glyphs
+  // below so users see proper Azure terminology.
+  vm: {
+    title: "Azure Virtual Machine",
+    glyph: "VM",
+    summary:
+      "A managed virtual server in a VNet subnet. Has one or more NICs with private IPs from the subnet CIDR; outbound traffic follows the subnet's route table.",
+    bullets: [
+      "Inbound traffic is filtered by the NSG attached to the NIC or subnet.",
+      "Use Azure Bastion to RDP/SSH in without exposing a public IP.",
+      "Scale-out is typically done with a VM Scale Set rather than per-VM.",
+    ],
+  },
+  vmss: {
+    title: "VM Scale Set",
+    glyph: "VMSS",
+    summary:
+      "A managed pool of identical VMs that scales horizontally based on metrics or schedule. Replaces failed instances automatically and registers with load balancers.",
+    bullets: [
+      "Spans availability zones for resilience.",
+      "Integrates with Azure Monitor autoscale rules.",
+      "Standard or Flexible orchestration modes.",
+    ],
+  },
+  appservice: {
+    title: "App Service",
+    glyph: "APP",
+    summary:
+      "Fully-managed PaaS for hosting web apps. Slot-based deployments, built-in TLS, autoscale, and VNet integration for reaching private resources.",
+    bullets: [
+      "Runs on a shared App Service Plan (compute SKU + region).",
+      "Uses regional VNet integration to reach private endpoints.",
+      "Easy auth via Entra ID built-in identity provider.",
+    ],
+  },
+  function: {
+    title: "Azure Functions",
+    glyph: "FN",
+    summary:
+      "Serverless event-driven compute. Triggered by HTTP, queues, blobs, timers, etc. VNet integration lets functions reach private resources.",
+    bullets: [
+      "Consumption / Premium / Dedicated hosting plans.",
+      "Egress to the public internet by default; private outbound needs VNet integration.",
+      "Cold start on Consumption — Premium plan keeps instances warm.",
+    ],
+  },
+  containerapp: {
+    title: "Container Apps",
+    glyph: "CA",
+    summary:
+      "Serverless containers built on Kubernetes + KEDA. Scale-to-zero, traffic splitting, Dapr support — without managing the cluster.",
+    bullets: [
+      "Lives in a Container Apps Environment (VNet-injected).",
+      "Each app gets an FQDN and can be public or internal.",
+      "Pay per second of vCPU + memory.",
+    ],
+  },
+  aks: {
+    title: "Azure Kubernetes Service",
+    glyph: "AKS",
+    summary:
+      "Managed Kubernetes. The control plane is run by Azure; node pools (VMSS under the hood) live in your VNet.",
+    bullets: [
+      "Pod networking with Azure CNI gives each pod a VNet IP.",
+      "Use NSGs + network policies to control pod traffic.",
+      "Integrate ingress with Application Gateway via AGIC.",
+    ],
+  },
+  sql: {
+    title: "Azure SQL Database",
+    glyph: "SQL",
+    summary:
+      "Fully-managed PaaS SQL Server. Single database or elastic pool, with built-in HA, backups and geo-replication.",
+    bullets: [
+      "Default endpoint is public; lock down with a Private Endpoint.",
+      "Use Active Geo-Replication for cross-region read replicas.",
+      "Auth via SQL logins or Entra ID identities.",
+    ],
+  },
+  postgresql: {
+    title: "Azure DB for PostgreSQL",
+    glyph: "PG",
+    summary:
+      "Managed PostgreSQL service (Flexible Server). VNet-integrated or public-endpoint deployment, HA across zones, automated backups.",
+    bullets: [
+      "Flexible Server lets you choose VNet injection.",
+      "Read replicas in same or different regions.",
+      "Connection pooling via PgBouncer integration.",
+    ],
+  },
+  mysql: {
+    title: "Azure DB for MySQL",
+    glyph: "MY",
+    summary:
+      "Managed MySQL service (Flexible Server). VNet integration, HA across zones, automated backups, read replicas.",
+    bullets: [
+      "Burstable / General Purpose / Business Critical SKUs.",
+      "Same operational model as Azure DB for PostgreSQL.",
+    ],
+  },
+  cosmosdb: {
+    title: "Azure Cosmos DB",
+    glyph: "CDB",
+    summary:
+      "Globally-distributed multi-model NoSQL database. Single-digit-ms latency, multi-region writes, multiple APIs (SQL, Mongo, Cassandra, Gremlin, Table).",
+    bullets: [
+      "Reach privately via a Private Endpoint to avoid the public endpoint.",
+      "Set consistency level per request (Strong → Eventual).",
+      "Throughput billed in RUs (Provisioned, Autoscale, or Serverless).",
+    ],
+  },
+  redis: {
+    title: "Azure Cache for Redis",
+    glyph: "RED",
+    summary:
+      "Managed Redis cache. Standard / Premium / Enterprise tiers, with optional persistence, clustering, and VNet injection on Premium.",
+    bullets: [
+      "Use Private Endpoint or VNet injection to keep traffic off the public IP.",
+      "Premium supports active geo-replication.",
+      "Common patterns: session store, throttling, leaderboard, message bus.",
+    ],
+  },
+  blob: {
+    title: "Azure Blob Storage",
+    glyph: "BLB",
+    summary:
+      "Object storage for unstructured data. Hot/Cool/Archive tiers, lifecycle policies, immutable / WORM, and SAS-token signed URLs.",
+    bullets: [
+      "Reach privately from a VNet via a Private Endpoint.",
+      "Service endpoints can lock the storage account to specific subnets.",
+      "Front with Azure CDN or Front Door for public delivery.",
+    ],
+  },
+  vnet: {
+    title: "Virtual Network (VNet)",
+    glyph: "VNET",
+    summary:
+      "Azure's isolated private network. You pick the address space and divide it into subnets, each pinned to a region.",
+    bullets: [
+      "Subnets are pinned to a region (Azure spreads them across AZs internally).",
+      "Use NSGs at subnet or NIC level for filtering, UDRs for routing.",
+      "Peer VNets for low-latency interconnects (region-pair or global).",
+    ],
+  },
+  nsg: {
+    title: "Network Security Group",
+    glyph: "NSG",
+    summary:
+      "Stateful firewall attached to a subnet or NIC. Rules are evaluated in priority order; the first match wins.",
+    bullets: [
+      "Source / destination can be IP ranges, service tags or ASGs.",
+      "Default deny inbound from Internet; allow VNet traffic by default.",
+      "Pair with Azure Firewall for L7 outbound filtering.",
+    ],
+  },
+  appgw: {
+    title: "Application Gateway",
+    glyph: "AGW",
+    summary:
+      "Regional layer-7 load balancer with built-in WAF. Path / host routing, TLS termination, end-to-end TLS, and AGIC integration with AKS.",
+    bullets: [
+      "Public or private (ILB) front-end IPs.",
+      "WAF v2 includes OWASP / bot manager rule sets.",
+      "Backend pools can be VMs, VMSS, App Services, AKS via AGIC.",
+    ],
+  },
+  frontdoor: {
+    title: "Azure Front Door",
+    glyph: "FD",
+    summary:
+      "Global edge that caches, TLS-terminates and load-balances across regional origins. Built-in WAF, route-based traffic management.",
+    bullets: [
+      "Picks the closest healthy origin per user (anycast).",
+      "Rules engine for headers / routing / redirects.",
+      "Pair with Private Link to reach private origins.",
+    ],
+  },
+  azurewaf: {
+    title: "Azure WAF Policy",
+    glyph: "WAF",
+    summary:
+      "Detect / prevent rules attached to Front Door or Application Gateway. Managed rule sets (OWASP, bot) + custom rules.",
+    bullets: [
+      "Block / Log / Anomaly-score modes.",
+      "Geo-fencing, IP allow / deny, rate-limit, body / header inspection.",
+      "Centralised log to Log Analytics or storage.",
+    ],
+  },
+  azurefirewall: {
+    title: "Azure Firewall",
+    glyph: "AFW",
+    summary:
+      "Stateful firewall-as-a-service. Outbound filtering by FQDN, network rules between VNets, and built-in threat intelligence.",
+    bullets: [
+      "Centralise egress filtering for a hub VNet.",
+      "Premium SKU adds TLS inspection and IDPS.",
+      "Combine with Azure Bastion for jump-box access without public IPs.",
+    ],
+  },
+  vpngw: {
+    title: "VPN Gateway",
+    glyph: "VPN",
+    summary:
+      "IPsec VPN gateway terminating site-to-site or point-to-site connections from on-prem networks.",
+    bullets: [
+      "Active-active dual-tunnel deployment for HA.",
+      "BGP for dynamic routing.",
+      "Pairs with ExpressRoute as a fallback encrypted path.",
+    ],
+  },
+  expressroute: {
+    title: "ExpressRoute",
+    glyph: "ER",
+    summary:
+      "Private dedicated link between your on-prem network and Azure — bypasses the public internet. Lower latency, consistent throughput.",
+    bullets: [
+      "Connect via a Microsoft Peering / Private Peering circuit.",
+      "Pair with VPN Gateway for an encrypted backup tunnel.",
+      "ExpressRoute Global Reach connects on-prem sites via Azure backbone.",
+    ],
+  },
+  bastion: {
+    title: "Azure Bastion",
+    glyph: "BAS",
+    summary:
+      "Managed jump host that gives you RDP / SSH access into VNet VMs via the Azure portal — without exposing public IPs on the VMs.",
+    bullets: [
+      "Lives in its own AzureBastionSubnet inside the VNet.",
+      "Uses TLS over port 443 for the user session.",
+      "Standard SKU supports VM scale sets, IP-based connection and shareable links.",
+    ],
+  },
+  azuredns: {
+    title: "Azure DNS",
+    glyph: "DNS",
+    summary:
+      "Authoritative DNS hosting. Public DNS zones for internet records, Private DNS zones resolvable inside linked VNets only.",
+    bullets: [
+      "Alias records point directly to Azure resources (App Service, Front Door, …).",
+      "Private DNS resolver for cross-VNet / on-prem DNS.",
+      "Traffic Manager handles latency / weighted / geo routing.",
+    ],
+  },
+  apim: {
+    title: "API Management",
+    glyph: "APIM",
+    summary:
+      "Managed API gateway. Routes requests to backend APIs, applies policies (auth, rate-limit, transform), and exposes a developer portal.",
+    bullets: [
+      "Consumption / Developer / Basic / Standard / Premium tiers.",
+      "VNet-integrated deployment for private backends.",
+      "Self-hosted gateway for on-prem or other clouds.",
+    ],
+  },
+  privateendpoint: {
+    title: "Private Endpoint",
+    glyph: "PE",
+    summary:
+      "Private IP in your VNet that maps to a managed Azure service (SQL, Storage, Cosmos, …). Traffic stays inside the Microsoft backbone.",
+    bullets: [
+      "Disables public network access for the linked service.",
+      "Resolved by Private DNS zone so connection strings just work.",
+      "Pair with NSG rules to control which subnets can reach the endpoint.",
+    ],
+  },
+  entra: {
+    title: "Microsoft Entra ID",
+    glyph: "ID",
+    summary:
+      "Identity service for users, groups and applications. Powers SSO, MFA, conditional access, managed identities for Azure resources.",
+    bullets: [
+      "Managed identities let services authenticate without secrets.",
+      "Conditional Access for risk-based MFA / device compliance.",
+      "Federate with on-prem AD via Entra Connect.",
+    ],
+  },
+  cdn: {
+    title: "Azure CDN",
+    glyph: "CDN",
+    summary:
+      "Global content delivery network. Caches static assets at edge POPs and offloads origin traffic.",
+    bullets: [
+      "Standard Microsoft / Akamai / Verizon profiles.",
+      "Front Door supersedes CDN for new deployments.",
+      "Custom domains with managed TLS.",
     ],
   },
 
