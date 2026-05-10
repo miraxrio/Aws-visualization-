@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05l — attack simulation");
+console.log("[viz3d] build 2026-05-05m — siege-style attack visuals");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -1528,13 +1528,15 @@ const ATTACK_DEFS = {
         targets: cdn.concat(albs).map((e) => e.id),
         defenders: wafs.map((e) => e.id),
         source: "internet",
-        // Bands of (timeRange, spawnRate per second, blockRate)
+        // Bands of (timeRange, spawnRate per second, blockRate). Rates are
+        // tuned for the bigger / slower siege units so the field reads
+        // "army" rather than "swarm".
         bands: [
-          { tStart: 800,   tEnd: 2800,  rate: 4,   blockRate: 0.05 },
-          { tStart: 3000,  tEnd: 7800,  rate: 22,  blockRate: 0.32 },
-          { tStart: 8000,  tEnd: 13800, rate: 50,  blockRate: 0.55 },
-          { tStart: 14000, tEnd: 18800, rate: 38,  blockRate: 0.85 },
-          { tStart: 19000, tEnd: 21500, rate: 8,   blockRate: 0.55 },
+          { tStart: 800,   tEnd: 2800,  rate: 2.5, blockRate: 0.05 },
+          { tStart: 3000,  tEnd: 7800,  rate: 9,   blockRate: 0.32 },
+          { tStart: 8000,  tEnd: 13800, rate: 18,  blockRate: 0.55 },
+          { tStart: 14000, tEnd: 18800, rate: 14,  blockRate: 0.85 },
+          { tStart: 19000, tEnd: 21500, rate: 4,   blockRate: 0.55 },
         ],
       };
       if (state.cfg.targets.length === 0) {
@@ -1604,12 +1606,14 @@ const ATTACK_DEFS = {
         // Cumulative intercept chance at each hop boundary
         path,
         hopBlockChance: [0.15, 0.55, 0.25, 0.55, 0.55].slice(0, path.length),
+        // Defenders worth showing a shield on
+        defenders: [...wafs, ...dbs].map((e) => e.id),
         bands: [
-          { tStart: 600,   tEnd: 4000,  rate: 1.5, blockRate: 0 },
-          { tStart: 4000,  tEnd: 10000, rate: 3,   blockRate: 0 },
-          { tStart: 10000, tEnd: 16000, rate: 4,   blockRate: 0 },
-          { tStart: 16000, tEnd: 19500, rate: 3,   blockRate: 0 },
-          { tStart: 19500, tEnd: 21500, rate: 1,   blockRate: 0 },
+          { tStart: 600,   tEnd: 4000,  rate: 0.8, blockRate: 0 },
+          { tStart: 4000,  tEnd: 10000, rate: 1.6, blockRate: 0 },
+          { tStart: 10000, tEnd: 16000, rate: 2.2, blockRate: 0 },
+          { tStart: 16000, tEnd: 19500, rate: 1.6, blockRate: 0 },
+          { tStart: 19500, tEnd: 21500, rate: 0.6, blockRate: 0 },
         ],
       };
       pushEvent(state, "info",
@@ -1656,17 +1660,23 @@ const ATTACK_DEFS = {
       const candidates = findInRegistry(["ecs", "lambda", "ec2"]);
       if (candidates.length) {
         const seed = candidates[0].id;
+        const dbs = findInRegistry(["aurora", "rds", "dynamodb"]);
         state.cfg = {
           infected: new Set([seed]),
           spreadInterval: 1300,
           lastSpawnT: 0,
           spreadTypes: ["ecs", "lambda", "ec2", "aurora", "rds", "dynamodb", "s3"],
           source: seed,
+          // Crown-jewel data tier gets the SG dome — the malware visibly
+          // bashes into it.
+          defenders: dbs.map((e) => e.id),
         };
         markInfected(state, seed);
         pushEvent(state, "danger", `Initial foothold: ${seed} compromised`);
       } else {
-        state.cfg = { infected: new Set(), spreadInterval: 1500, lastSpawnT: 0, spreadTypes: [] };
+        state.cfg = {
+          infected: new Set(), spreadInterval: 1500, lastSpawnT: 0, spreadTypes: [], defenders: [],
+        };
       }
     },
     tick(state, dt, elapsed) {
@@ -1690,6 +1700,7 @@ const ATTACK_DEFS = {
         targetId: target.id,
         blockRate,
         defenderName: "Security Group",
+        kind: "spread",
         onArrival(s) {
           s.cfg.infected.add(target.id);
           markInfected(s, target.id);
@@ -1760,6 +1771,7 @@ function tickBandedSpawn(state, dt, elapsed) {
           targetId: target,
           blockRate: b.blockRate,
           defenderName: "WAF",
+          kind: "siege",
         });
       }
     }
@@ -1772,6 +1784,76 @@ function tickBandedSpawn(state, dt, elapsed) {
 
 function pickRandom(arr) {
   return arr.length ? arr[Math.floor(Math.random() * arr.length)] : null;
+}
+
+function makeAttackerUnit() {
+  // A red capsule "soldier" with a ground aura and a glowing halo so a
+  // single attacker reads as a unit, not just a dot. Returned as a Group
+  // so callers can move it as one object along the curve.
+  const grp = new THREE.Group();
+
+  const bodyGeo = new THREE.CapsuleGeometry(0.55, 1.6, 6, 12);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0xff2a4d,
+    emissive: 0xff4477,
+    emissiveIntensity: 0.75,
+    roughness: 0.45,
+    metalness: 0.4,
+  });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 1.4;
+  grp.add(body);
+
+  const haloGeo = new THREE.SphereGeometry(1.5, 14, 10);
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: 0xff3a5b, transparent: true, opacity: 0.45,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const halo = new THREE.Mesh(haloGeo, haloMat);
+  halo.position.y = 1.3;
+  grp.add(halo);
+
+  const aura = makeRedAuraSprite();
+  aura.position.y = 0.15;
+  aura.scale.set(4, 4, 1);
+  grp.add(aura);
+
+  return { group: grp, body, halo };
+}
+
+let _redAuraTex = null;
+function makeRedAuraSprite() {
+  if (!_redAuraTex) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const ctx = c.getContext("2d");
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0,    "rgba(255, 60, 90, 0.78)");
+    grad.addColorStop(0.45, "rgba(255, 50, 80, 0.32)");
+    grad.addColorStop(1,    "rgba(255, 40, 70, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+    _redAuraTex = new THREE.CanvasTexture(c);
+  }
+  const mat = new THREE.SpriteMaterial({
+    map: _redAuraTex,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  return new THREE.Sprite(mat);
+}
+
+function disposeAttackerVisual(visual) {
+  if (!visual) return;
+  attackerLayer.remove(visual.group);
+  visual.group.traverse((c) => {
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) {
+      const ms = Array.isArray(c.material) ? c.material : [c.material];
+      ms.forEach((m) => { if (m.map && m !== _redAuraTex) m.map.dispose && m.map.dispose(); m.dispose(); });
+    }
+  });
 }
 
 // Build a curve for an attacker travelling from source to target with a
@@ -1787,11 +1869,49 @@ function attackerCurve(sourceId, targetId) {
   return new THREE.CatmullRomCurve3([start, mid, end]);
 }
 
-// Build a multi-hop curve through a list of node ids (for SQLi).
-function attackerPathCurve(sourceId, hopIds) {
+// External-siege curve: spawn at a random angle on the city perimeter at
+// ground level and march in across the surface to the target. Used by
+// DDoS so attackers literally surround the city and pour inward instead
+// of arriving from a single portal.
+function attackerSiegeCurve(targetId) {
+  const tgt = registry.get(targetId);
+  if (!tgt) return null;
+  const angle = Math.random() * Math.PI * 2;
+  const r = Math.max(CITY.w, CITY.d) * 0.95 + 30;
+  const start = new THREE.Vector3(Math.cos(angle) * r, 0.6, Math.sin(angle) * r);
+  const end = tgt.position.clone();
+  const approach = new THREE.Vector3(end.x, 0.6, end.z);
+  // Slight jitter on approach so attackers don't all stack on one line
+  approach.x += (Math.random() - 0.5) * 4;
+  approach.z += (Math.random() - 0.5) * 4;
+  return new THREE.CatmullRomCurve3([start, approach, end]);
+}
+
+// Lateral-spread curve: travels on the ground between two city nodes.
+// Used by the ransomware worm so the malware visibly creeps across the
+// streets between buildings instead of flying overhead.
+function attackerSpreadCurve(sourceId, targetId) {
   const src = registry.get(sourceId);
-  if (!src) return null;
-  const points = [src.position.clone()];
+  const tgt = registry.get(targetId);
+  if (!src || !tgt) return null;
+  const start = new THREE.Vector3(src.position.x, 0.6, src.position.z);
+  const mid = new THREE.Vector3(
+    (src.position.x + tgt.position.x) / 2 + (Math.random() - 0.5) * 6,
+    0.6,
+    (src.position.z + tgt.position.z) / 2 + (Math.random() - 0.5) * 6,
+  );
+  const end = tgt.position.clone();
+  return new THREE.CatmullRomCurve3([start, mid, end]);
+}
+
+// Build a multi-hop curve through a list of node ids (for SQLi). Starts
+// at a random perimeter angle so the attacker reads as coming from
+// outside the network.
+function attackerPathCurve(hopIds) {
+  if (!hopIds || hopIds.length === 0) return null;
+  const angle = Math.random() * Math.PI * 2;
+  const r = Math.max(CITY.w, CITY.d) * 0.95 + 30;
+  const points = [new THREE.Vector3(Math.cos(angle) * r, 0.6, Math.sin(angle) * r)];
   for (const id of hopIds) {
     const e = registry.get(id);
     if (!e) continue;
@@ -1801,68 +1921,55 @@ function attackerPathCurve(sourceId, hopIds) {
   return new THREE.CatmullRomCurve3(points);
 }
 
-function makeAttackerSphere(color) {
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(0.7, 12, 8),
-    new THREE.MeshBasicMaterial({ color }),
-  );
-  const halo = new THREE.Mesh(
-    new THREE.SphereGeometry(2.0, 12, 8),
-    new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.5,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }),
-  );
-  return { sphere, halo };
-}
-
-function spawnAttacker(state, { sourceId, targetId, blockRate = 0, defenderName = "defender", onArrival, onBlocked }) {
-  const curve = attackerCurve(sourceId, targetId);
+function spawnAttacker(state, { sourceId, targetId, blockRate = 0, defenderName = "defender", onArrival, onBlocked, kind }) {
+  // Pick the right curve shape for the kind of attack
+  let curve;
+  if (kind === "spread") curve = attackerSpreadCurve(sourceId, targetId);
+  else if (kind === "siege") curve = attackerSiegeCurve(targetId);
+  else curve = attackerCurve(sourceId, targetId);
   if (!curve) return;
   const tgt = registry.get(targetId);
-  const { sphere, halo } = makeAttackerSphere(0xff3a5b);
-  attackerLayer.add(sphere);
-  attackerLayer.add(halo);
+  const visual = makeAttackerUnit();
+  attackerLayer.add(visual.group);
   const blocked = Math.random() < blockRate;
-  const interceptT = blocked ? 0.45 + Math.random() * 0.2 : null;
+  const interceptT = blocked ? 0.55 + Math.random() * 0.2 : null;
   state.attackers.push({
-    sphere, halo, curve,
+    visual, curve,
     t: 0,
-    speed: 0.55 + Math.random() * 0.25, // 1.4–2.2s end-to-end
+    speed: 0.28 + Math.random() * 0.12,  // ~3 s end-to-end so the siege reads
     blocked, interceptT,
     targetId, defenderName,
     targetName: (tgt && tgt.name) || targetId,
     onArrival, onBlocked,
   });
   state.stats.spawned++;
-  // Track for peak rate
   if (state._rateWindow) state._rateWindow.push(performance.now() - state.startTime);
   state.stats.peakRate = Math.max(state.stats.peakRate, state._rateWindow ? state._rateWindow.length : 0);
 }
 
 function spawnAttackerOnPath(state, path, hopBlockChance) {
   if (!path || path.length === 0) return;
-  const curve = attackerPathCurve(state.cfg.source, path);
+  const curve = attackerPathCurve(path);
   if (!curve) return;
-  // Roll for block at each hop
   let blockedHop = -1;
   for (let i = 0; i < path.length; i++) {
     if (Math.random() < (hopBlockChance[i] || 0)) { blockedHop = i; break; }
   }
-  const { sphere, halo } = makeAttackerSphere(0xff3a5b);
-  attackerLayer.add(sphere);
-  attackerLayer.add(halo);
+  const visual = makeAttackerUnit();
+  attackerLayer.add(visual.group);
   const finalTargetId = path[path.length - 1];
   const tgt = registry.get(finalTargetId);
-  // Map blockedHop to a curve t. Even spacing along the path of waypoints.
+  // The first curve point is the perimeter spawn, then one per hop, so
+  // hop i lives between control points (i+1) and (i+2). Map block to t.
+  const totalSegments = path.length;
   const interceptT = blockedHop >= 0
-    ? Math.min(0.95, (blockedHop + 0.5) / path.length)
+    ? Math.min(0.95, (blockedHop + 1.5) / (totalSegments + 1))
     : null;
   const defenderName = blockedHop >= 0 ? `at ${path[blockedHop]}` : null;
   state.attackers.push({
-    sphere, halo, curve,
+    visual, curve,
     t: 0,
-    speed: 0.45 + Math.random() * 0.2,
+    speed: 0.22 + Math.random() * 0.1,
     blocked: blockedHop >= 0,
     interceptT,
     targetId: finalTargetId, defenderName,
@@ -1871,17 +1978,79 @@ function spawnAttackerOnPath(state, path, hopBlockChance) {
   state.stats.spawned++;
 }
 
-function spawnPuff(pos, color) {
-  const mat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.9,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat);
-  mesh.position.copy(pos);
-  attackerLayer.add(mesh);
+// Blue spark when a defender stops an attacker — clearly distinct from a
+// red impact at a target.
+function spawnDefenseSpark(pos) {
+  const flash = new THREE.Mesh(
+    new THREE.SphereGeometry(1.6, 14, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0x6cd1ff, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  );
+  flash.position.copy(pos);
+  attackerLayer.add(flash);
   attackState.puffs.push({
-    mesh, life: 0.55, duration: 0.55,
-    startScale: 0.6, endScale: 4.5,
+    mesh: flash, life: 0.45, duration: 0.45,
+    startScale: 0.5, endScale: 6,
+  });
+}
+
+// Dramatic red impact at a successful target hit: a vertical light column
+// and an expanding shockwave ring on the ground.
+function spawnImpact(pos) {
+  const colGeo = new THREE.CylinderGeometry(0.6, 1.6, 28, 14, 1, true);
+  const colMat = new THREE.MeshBasicMaterial({
+    color: 0xff3a5b, transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const col = new THREE.Mesh(colGeo, colMat);
+  col.position.set(pos.x, pos.y + 13, pos.z);
+  attackerLayer.add(col);
+
+  const ringGeo = new THREE.RingGeometry(0.8, 1.6, 48);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xff3a5b, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(pos.x, 0.55, pos.z);
+  attackerLayer.add(ring);
+
+  attackState.impacts = attackState.impacts || [];
+  attackState.impacts.push({ col, ring, life: 0.95, duration: 0.95 });
+}
+
+// Translucent blue dome over each defender at attack start. Pulses while
+// the attack runs and tears down on stopAttack.
+function spawnDefenseShields(state) {
+  const defenders = state.cfg && state.cfg.defenders ? state.cfg.defenders : [];
+  state.shields = [];
+  defenders.forEach((id) => {
+    const r = registry.get(id);
+    if (!r) return;
+    const radius = Math.max(11, r.extent * 1.8);
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 36, 18, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshBasicMaterial({
+        color: 0x60c0ff, transparent: true, opacity: 0.18,
+        side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
+      }),
+    );
+    dome.position.set(r.position.x, 0.6, r.position.z);
+    attackerLayer.add(dome);
+    // Glowing ring at the dome's foot
+    const footGeo = new THREE.RingGeometry(radius - 0.6, radius, 64);
+    const footMat = new THREE.MeshBasicMaterial({
+      color: 0x6cd1ff, transparent: true, opacity: 0.55,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
+    });
+    const foot = new THREE.Mesh(footGeo, footMat);
+    foot.rotation.x = -Math.PI / 2;
+    foot.position.set(r.position.x, 0.65, r.position.z);
+    attackerLayer.add(foot);
+    state.shields.push({ dome, foot, baseRadius: radius });
   });
 }
 
@@ -1944,6 +2113,7 @@ function startAttack(id) {
   );
 
   if (def.init) def.init(attackState);
+  spawnDefenseShields(attackState);
 
   if (window.AwsAttack && typeof window.AwsAttack.onStart === "function") {
     window.AwsAttack.onStart(def);
@@ -1964,12 +2134,15 @@ function stopAttack() {
     f.mesh.material.emissive.setHex(f.originalEmissive);
     f.mesh.material.emissiveIntensity = f.originalIntensity;
   });
-  // Wipe attacker visuals
+  // Wipe attacker visuals (units, sparks, impacts, shields, etc.)
   attackerLayer.traverse((c) => {
     if (c.geometry) c.geometry.dispose();
     if (c.material) {
       const ms = Array.isArray(c.material) ? c.material : [c.material];
-      ms.forEach((m) => m.dispose());
+      ms.forEach((m) => {
+        if (m.map && m.map !== _redAuraTex) m.map.dispose && m.map.dispose();
+        m.dispose();
+      });
     }
   });
   while (attackerLayer.children.length) attackerLayer.remove(attackerLayer.children[0]);
@@ -2038,33 +2211,30 @@ function updateAttack(now, dt) {
     a.t += a.speed * dt;
     if (a.blocked && a.interceptT != null && a.t >= a.interceptT) {
       const p = a.curve.getPointAt(a.interceptT);
-      spawnPuff(p, 0xffd966);
+      spawnDefenseSpark(p);
       attackState.stats.blocked++;
       if (a.onBlocked) a.onBlocked(attackState);
       else pushEvent(attackState, "ok",
         `Blocked${a.defenderName ? " " + a.defenderName : ""} → ${a.targetName}`);
-      attackerLayer.remove(a.sphere); attackerLayer.remove(a.halo);
-      a.sphere.geometry.dispose(); a.sphere.material.dispose();
-      a.halo.geometry.dispose(); a.halo.material.dispose();
+      disposeAttackerVisual(a.visual);
       return false;
     }
     if (a.t >= 1) {
-      flashTarget(a.targetId, 0xff3a5b, 0.7);
+      const p = a.curve.getPointAt(0.999);
+      spawnImpact(p);
+      flashTarget(a.targetId, 0xff3a5b, 0.9);
       attackState.stats.arrived++;
       if (a.onArrival) a.onArrival(attackState);
       else pushEvent(attackState, "danger", `Reached ${a.targetName}`);
-      attackerLayer.remove(a.sphere); attackerLayer.remove(a.halo);
-      a.sphere.geometry.dispose(); a.sphere.material.dispose();
-      a.halo.geometry.dispose(); a.halo.material.dispose();
+      disposeAttackerVisual(a.visual);
       return false;
     }
     const p = a.curve.getPointAt(Math.min(0.9999, a.t));
-    a.sphere.position.copy(p);
-    a.halo.position.copy(p);
+    a.visual.group.position.copy(p);
     return true;
   });
 
-  // Animate puffs (yellow blocked-here markers)
+  // Animate spark puffs (defense flashes)
   attackState.puffs = attackState.puffs.filter((p) => {
     p.life -= dt;
     if (p.life <= 0) {
@@ -2075,6 +2245,23 @@ function updateAttack(now, dt) {
     const alive = p.life / p.duration;
     p.mesh.scale.setScalar(p.startScale + (p.endScale - p.startScale) * (1 - alive));
     p.mesh.material.opacity = alive;
+    return true;
+  });
+
+  // Animate impacts (vertical column + ground ring at successful hits)
+  attackState.impacts = (attackState.impacts || []).filter((im) => {
+    im.life -= dt;
+    if (im.life <= 0) {
+      attackerLayer.remove(im.col); im.col.geometry.dispose(); im.col.material.dispose();
+      attackerLayer.remove(im.ring); im.ring.geometry.dispose(); im.ring.material.dispose();
+      return false;
+    }
+    const alive = im.life / im.duration;
+    im.col.material.opacity = alive * 0.85;
+    im.col.scale.set(1 + (1 - alive) * 0.4, 1 + (1 - alive) * 0.5, 1 + (1 - alive) * 0.4);
+    const ringScale = 1 + (1 - alive) * 18;
+    im.ring.scale.setScalar(ringScale);
+    im.ring.material.opacity = alive;
     return true;
   });
 
@@ -2090,6 +2277,16 @@ function updateAttack(now, dt) {
     f.mesh.material.emissiveIntensity = f.originalIntensity + 0.7 * t;
     return true;
   });
+
+  // Pulse defense shields
+  if (attackState.shields) {
+    attackState.shields.forEach((s, i) => {
+      const v = (Math.sin(now / 320 + i * 0.7) + 1) / 2;
+      s.dome.material.opacity = 0.14 + v * 0.18;
+      s.foot.material.opacity = 0.40 + v * 0.30;
+      s.foot.scale.setScalar(1 + v * 0.04);
+    });
+  }
 
   // Notify HUD
   if (window.AwsAttack && typeof window.AwsAttack.onTick === "function") {
