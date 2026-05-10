@@ -7,7 +7,7 @@
 
   const NODE_W = 150;
   const NODE_H = 56;
-  const NODE_GAP_Y = 14;
+  const NODE_GAP_Y = 30;
   const SUBNET_PAD_X = 18;
   const SUBNET_PAD_TOP = 38;
   const SUBNET_PAD_BOTTOM = 18;

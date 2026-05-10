@@ -96,6 +96,46 @@
       window.AwsViz3D.render(data);
     }
     updateSummary(data);
+    updateBrandFor(data);
+  }
+
+  // Inspect the loaded network's resource types and pick "AWS" or "Azure"
+  // for the header / document title. Anything that uses majority Azure
+  // type names (vm, sql, aks, vnet, nsg, frontdoor, appgw, …) flips the
+  // brand to Azure. Mixed / AWS-typed data stays as AWS.
+  const AZURE_TYPES = new Set([
+    "vm", "vmss", "appservice", "function", "containerapp", "aks",
+    "sql", "postgresql", "mysql", "cosmosdb", "redis",
+    "blob", "vnet", "nsg", "appgw", "frontdoor", "azurewaf",
+    "azurefirewall", "vpngw", "expressroute", "bastion", "azuredns",
+    "apim", "privateendpoint", "publicip", "entra", "cdn",
+  ]);
+  function detectCloud(data) {
+    let azure = 0, total = 0;
+    (data.vpcs || []).forEach((vp) => {
+      (vp.resources || []).forEach((r) => {
+        total++;
+        if (AZURE_TYPES.has(r.type)) azure++;
+      });
+      (vp.gateways || []).forEach((g) => {
+        total++;
+        if (AZURE_TYPES.has(g.type)) azure++;
+      });
+    });
+    return total > 0 && azure / total >= 0.4 ? "azure" : "aws";
+  }
+  function updateBrandFor(data) {
+    const cloud = detectCloud(data);
+    const heading = document.querySelector(".brand h1");
+    if (cloud === "azure") {
+      if (heading) heading.textContent = "Azure Network Visualizer";
+      document.title = "Azure Network Visualizer";
+      document.body.classList.add("brand-azure");
+    } else {
+      if (heading) heading.textContent = "AWS Network Visualizer";
+      document.title = "AWS Network Visualizer";
+      document.body.classList.remove("brand-azure");
+    }
   }
 
   function selectVersion(id) {

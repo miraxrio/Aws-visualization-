@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05t — battle SFX + voice narration + per-attack colours");
+console.log("[viz3d] build 2026-05-05u — gun/explosion SFX + bigger spread");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -35,7 +35,7 @@ const exploreKeys = { fwd: false, back: false, left: false, right: false, up: fa
 const _moveDir = new THREE.Vector3();
 let proxEntryId = null; // id of the element currently triggering the prox HUD
 
-const SCALE_TARGET = 290; // city max dimension in 3D units
+const SCALE_TARGET = 380; // city max dimension in 3D units
 let SCALE = 0.15;
 const CITY = { cx: 0, cz: 0, w: 0, d: 0 };
 
@@ -531,7 +531,9 @@ function pickSize(type, w, d) {
   // Cap the maximum footprint so densely-packed networks (lots of
   // resources per subnet) don't end up with buildings touching each
   // other — buildings stay in proportion but leave gaps for streets.
-  const fw = Math.max(4, Math.min(Math.min(w, d) * 0.7, 13));
+  // Cap at 11 (was 13) and use 0.55 of slot (was 0.7) so dense subnets
+  // — multiple resources stacked — leave clear streets between buildings.
+  const fw = Math.max(4, Math.min(Math.min(w, d) * 0.55, 11));
   const heights = {
     ec2: 14, asg: 11, ecs: 13, eks: 17, lambda: 10,
     alb: 8, nlb: 8, waf: 12, igw: 9, nat: 7,
@@ -1612,32 +1614,55 @@ function playAttackStartSfx() {
   const ctx = ensureAudio();
   if (!ctx) return;
   const now = ctx.currentTime;
-  // Low ominous rumble swelling up
-  const rumble = ctx.createOscillator();
-  const rumbleGain = ctx.createGain();
-  rumble.type = "sawtooth";
-  rumble.frequency.setValueAtTime(70, now);
-  rumble.frequency.exponentialRampToValueAtTime(140, now + 0.7);
-  rumbleGain.gain.setValueAtTime(0.0001, now);
-  rumbleGain.gain.exponentialRampToValueAtTime(0.22, now + 0.15);
-  rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
-  rumble.connect(rumbleGain).connect(ctx.destination);
-  rumble.start(now);
-  rumble.stop(now + 0.95);
 
-  // War-horn fifth on top
-  [0.18, 0.32].forEach((t, i) => {
+  // 1. Massive kick drum (sub-thump that pitches down quickly)
+  const kick = ctx.createOscillator();
+  const kickG = ctx.createGain();
+  kick.type = "sine";
+  kick.frequency.setValueAtTime(140, now);
+  kick.frequency.exponentialRampToValueAtTime(42, now + 0.25);
+  kickG.gain.setValueAtTime(0.45, now);
+  kickG.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+  kick.connect(kickG).connect(ctx.destination);
+  kick.start(now);
+  kick.stop(now + 0.45);
+
+  // 2. Drum noise body (white noise lowpassed + envelope)
+  const noiseLen = Math.floor(ctx.sampleRate * 0.3);
+  const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+  const noiseData = noiseBuf.getChannelData(0);
+  for (let i = 0; i < noiseLen; i++) noiseData[i] = Math.random() * 2 - 1;
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuf;
+  const noiseFilt = ctx.createBiquadFilter();
+  noiseFilt.type = "lowpass";
+  noiseFilt.frequency.setValueAtTime(900, now);
+  noiseFilt.frequency.exponentialRampToValueAtTime(140, now + 0.22);
+  const noiseG = ctx.createGain();
+  noiseG.gain.setValueAtTime(0.24, now);
+  noiseG.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+  noise.connect(noiseFilt); noiseFilt.connect(noiseG); noiseG.connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + 0.3);
+
+  // 3. Distant war-horn — low sawtooth pair, lowpass-filtered for brass body
+  [
+    { f: 196, t: 0.18, d: 0.55 }, // G3
+    { f: 261, t: 0.50, d: 0.45 }, // C4
+  ].forEach(({ f, t, d }) => {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
-    o.type = "square";
-    const f = i === 0 ? 392 : 587; // G4, D5
+    o.type = "sawtooth";
     o.frequency.setValueAtTime(f, now + t);
+    const filt = ctx.createBiquadFilter();
+    filt.type = "lowpass";
+    filt.frequency.setValueAtTime(900, now + t);
     g.gain.setValueAtTime(0.0001, now + t);
-    g.gain.exponentialRampToValueAtTime(0.12, now + t + 0.04);
-    g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.32);
-    o.connect(g).connect(ctx.destination);
+    g.gain.linearRampToValueAtTime(0.18, now + t + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.001, now + t + d);
+    o.connect(filt); filt.connect(g); g.connect(ctx.destination);
     o.start(now + t);
-    o.stop(now + t + 0.35);
+    o.stop(now + t + d + 0.05);
   });
 }
 
@@ -1650,58 +1675,113 @@ function playBlockSfx() {
   const ctx = ensureAudio();
   if (!ctx) return;
   const now = ctx.currentTime;
-  // Sharp metallic "tink" from a defender shield
-  const o = ctx.createOscillator();
+
+  // Gunshot crack — short noise burst, high-passed for snap, lowpass
+  // sweep for body. Exponential decay over ~120 ms.
+  const len = Math.floor(ctx.sampleRate * 0.15);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    // Slight brown-noise tilt sounds beefier than pure white
+    data[i] = (Math.random() * 2 - 1) * (1 - i / len * 0.4);
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buf;
+
+  const hpf = ctx.createBiquadFilter();
+  hpf.type = "highpass";
+  hpf.frequency.value = 500;
+
+  const lpf = ctx.createBiquadFilter();
+  lpf.type = "lowpass";
+  lpf.frequency.setValueAtTime(3800, now);
+  lpf.frequency.exponentialRampToValueAtTime(450, now + 0.12);
+
   const g = ctx.createGain();
-  o.type = "square";
-  o.frequency.setValueAtTime(1500, now);
-  o.frequency.exponentialRampToValueAtTime(600, now + 0.06);
-  g.gain.setValueAtTime(0.08, now);
-  g.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
-  o.connect(g).connect(ctx.destination);
-  o.start(now);
-  o.stop(now + 0.1);
+  g.gain.setValueAtTime(0.42, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+
+  noise.connect(hpf); hpf.connect(lpf); lpf.connect(g); g.connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + 0.15);
+
+  // Tiny sub-thump for the percussive kick
+  const sub = ctx.createOscillator();
+  const subG = ctx.createGain();
+  sub.type = "sine";
+  sub.frequency.setValueAtTime(110, now);
+  sub.frequency.exponentialRampToValueAtTime(45, now + 0.07);
+  subG.gain.setValueAtTime(0.22, now);
+  subG.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+  sub.connect(subG).connect(ctx.destination);
+  sub.start(now);
+  sub.stop(now + 0.1);
 }
 
 let _lastImpactSfxT = 0;
 function playImpactSfx() {
   if (!audioEnabled()) return;
   const t = performance.now();
-  if (t - _lastImpactSfxT < 110) return;
+  if (t - _lastImpactSfxT < 130) return;
   _lastImpactSfxT = t;
   const ctx = ensureAudio();
   if (!ctx) return;
   const now = ctx.currentTime;
-  // Sub-bass thump
+
+  // 1. Sub-bass concussion — long sine that pitches down dramatically
   const sub = ctx.createOscillator();
   const subG = ctx.createGain();
   sub.type = "sine";
-  sub.frequency.setValueAtTime(140, now);
-  sub.frequency.exponentialRampToValueAtTime(48, now + 0.28);
-  subG.gain.setValueAtTime(0.22, now);
-  subG.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+  sub.frequency.setValueAtTime(95, now);
+  sub.frequency.exponentialRampToValueAtTime(28, now + 0.55);
+  subG.gain.setValueAtTime(0.42, now);
+  subG.gain.exponentialRampToValueAtTime(0.001, now + 0.62);
   sub.connect(subG).connect(ctx.destination);
   sub.start(now);
-  sub.stop(now + 0.34);
-  // Noise crackle on top, filtered low
-  const len = Math.floor(ctx.sampleRate * 0.18);
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-  const noise = ctx.createBufferSource();
-  const filt = ctx.createBiquadFilter();
-  const noiseG = ctx.createGain();
-  filt.type = "lowpass";
-  filt.frequency.setValueAtTime(900, now);
-  filt.frequency.exponentialRampToValueAtTime(220, now + 0.16);
-  noiseG.gain.setValueAtTime(0.08, now);
-  noiseG.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-  noise.buffer = buf;
-  noise.connect(filt);
-  filt.connect(noiseG);
-  noiseG.connect(ctx.destination);
-  noise.start(now);
-  noise.stop(now + 0.18);
+  sub.stop(now + 0.65);
+
+  // 2. Main blast — wide white-noise body, lowpass swept down so it
+  //    reads as a real explosion rather than a synth squelch
+  const blastLen = Math.floor(ctx.sampleRate * 0.7);
+  const blastBuf = ctx.createBuffer(1, blastLen, ctx.sampleRate);
+  const blastData = blastBuf.getChannelData(0);
+  for (let i = 0; i < blastLen; i++) {
+    blastData[i] = (Math.random() * 2 - 1);
+  }
+  const blast = ctx.createBufferSource();
+  blast.buffer = blastBuf;
+  const blastLpf = ctx.createBiquadFilter();
+  blastLpf.type = "lowpass";
+  blastLpf.frequency.setValueAtTime(2800, now);
+  blastLpf.frequency.exponentialRampToValueAtTime(160, now + 0.55);
+  const blastG = ctx.createGain();
+  blastG.gain.setValueAtTime(0.45, now);
+  blastG.gain.linearRampToValueAtTime(0.32, now + 0.12);
+  blastG.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+  blast.connect(blastLpf); blastLpf.connect(blastG); blastG.connect(ctx.destination);
+  blast.start(now);
+  blast.stop(now + 0.8);
+
+  // 3. Crackle / debris sparkle on top — sparse noise high-passed
+  const crLen = Math.floor(ctx.sampleRate * 0.45);
+  const crBuf = ctx.createBuffer(1, crLen, ctx.sampleRate);
+  const crData = crBuf.getChannelData(0);
+  for (let i = 0; i < crLen; i++) {
+    // Sparse — only ~30% of samples non-zero, sounds like crackle
+    crData[i] = Math.random() < 0.3 ? (Math.random() * 2 - 1) : 0;
+  }
+  const crackle = ctx.createBufferSource();
+  crackle.buffer = crBuf;
+  const crHpf = ctx.createBiquadFilter();
+  crHpf.type = "highpass";
+  crHpf.frequency.value = 1800;
+  const crG = ctx.createGain();
+  crG.gain.setValueAtTime(0, now);
+  crG.gain.linearRampToValueAtTime(0.22, now + 0.06);
+  crG.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+  crackle.connect(crHpf); crHpf.connect(crG); crG.connect(ctx.destination);
+  crackle.start(now);
+  crackle.stop(now + 0.5);
 }
 
 function playAttackEndSfx(victory) {
@@ -1709,22 +1789,61 @@ function playAttackEndSfx(victory) {
   const ctx = ensureAudio();
   if (!ctx) return;
   const now = ctx.currentTime;
-  // Major chord arpeggio for a clean defence; minor descent for a hit.
-  const notes = victory
-    ? [{ f: 523.25, t: 0 }, { f: 659.26, t: 0.16 }, { f: 783.99, t: 0.32 }] // C5 E5 G5
-    : [{ f: 392.00, t: 0 }, { f: 369.99, t: 0.18 }, { f: 311.13, t: 0.36 }]; // G4 F#4 Eb4
-  notes.forEach(({ f, t }) => {
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = "triangle";
-    o.frequency.setValueAtTime(f, now + t);
-    g.gain.setValueAtTime(0.0001, now + t);
-    g.gain.exponentialRampToValueAtTime(0.13, now + t + 0.03);
-    g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.5);
-    o.connect(g).connect(ctx.destination);
-    o.start(now + t);
-    o.stop(now + t + 0.55);
-  });
+  if (victory) {
+    // Victory: triumphant brass swell + cymbal-like noise
+    [
+      { f: 261.63, t: 0,    d: 0.65 }, // C4
+      { f: 329.63, t: 0.10, d: 0.55 }, // E4
+      { f: 392.00, t: 0.20, d: 0.55 }, // G4
+      { f: 523.25, t: 0.32, d: 0.65 }, // C5
+    ].forEach(({ f, t, d }) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sawtooth";
+      const filt = ctx.createBiquadFilter();
+      filt.type = "lowpass";
+      filt.frequency.setValueAtTime(1200, now + t);
+      o.frequency.setValueAtTime(f, now + t);
+      g.gain.setValueAtTime(0, now + t);
+      g.gain.linearRampToValueAtTime(0.13, now + t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, now + t + d);
+      o.connect(filt); filt.connect(g); g.connect(ctx.destination);
+      o.start(now + t);
+      o.stop(now + t + d + 0.05);
+    });
+  } else {
+    // Defeat: long, mournful descending tone + low rumble
+    const desc = ctx.createOscillator();
+    const descG = ctx.createGain();
+    desc.type = "sawtooth";
+    desc.frequency.setValueAtTime(440, now);
+    desc.frequency.exponentialRampToValueAtTime(165, now + 1.2);
+    const descFilt = ctx.createBiquadFilter();
+    descFilt.type = "lowpass";
+    descFilt.frequency.value = 900;
+    descG.gain.setValueAtTime(0, now);
+    descG.gain.linearRampToValueAtTime(0.17, now + 0.15);
+    descG.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+    desc.connect(descFilt); descFilt.connect(descG); descG.connect(ctx.destination);
+    desc.start(now);
+    desc.stop(now + 1.35);
+    // Low rumble underneath
+    const rumLen = Math.floor(ctx.sampleRate * 1.2);
+    const rumBuf = ctx.createBuffer(1, rumLen, ctx.sampleRate);
+    const rumData = rumBuf.getChannelData(0);
+    for (let i = 0; i < rumLen; i++) rumData[i] = Math.random() * 2 - 1;
+    const rum = ctx.createBufferSource();
+    rum.buffer = rumBuf;
+    const rumLpf = ctx.createBiquadFilter();
+    rumLpf.type = "lowpass";
+    rumLpf.frequency.value = 180;
+    const rumG = ctx.createGain();
+    rumG.gain.setValueAtTime(0.12, now);
+    rumG.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+    rum.connect(rumLpf); rumLpf.connect(rumG); rumG.connect(ctx.destination);
+    rum.start(now);
+    rum.stop(now + 1.25);
+  }
 }
 
 // Pre-defined attack scenarios. Each has its own initialise/tick logic so
