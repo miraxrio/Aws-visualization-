@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
-console.log("[viz3d] build 2026-05-05o — gate spawn + slot ring + RTS explosions");
+console.log("[viz3d] build 2026-05-05p — descent arcs over city, drop-pod beams");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -1852,23 +1852,20 @@ function makeAttackerUnit() {
   return { group: grp, body, halo };
 }
 
-// Red light beam from the sky to a landing point — drawn during the
-// descent phase so you can see attackers raining down from the internet.
-function makeDescentBeam(from, to) {
-  const dir = new THREE.Vector3().subVectors(to, from);
-  const length = dir.length();
+// Vertical "drop-pod" beam at the slot. The beam sits OUTSIDE the city
+// (the slot is already on the perimeter ring) and points straight down,
+// so it never crosses the network interior — fixing the previous portal-
+// to-slot beam that drew a red line through every building.
+function makeDescentBeam(slot) {
+  const beamHeight = 55;
   const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.6, 0.6, length, 12, 1, true),
+    new THREE.CylinderGeometry(0.55, 1.4, beamHeight, 16, 1, true),
     new THREE.MeshBasicMaterial({
-      color: 0xff3a5b, transparent: true, opacity: 0.85,
+      color: 0xff3a5b, transparent: true, opacity: 0.75,
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false,
     }),
   );
-  beam.position.copy(from).add(dir.clone().multiplyScalar(0.5));
-  beam.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0),
-    dir.clone().normalize(),
-  );
+  beam.position.set(slot.x, slot.y + beamHeight / 2, slot.z);
   return beam;
 }
 
@@ -2028,18 +2025,19 @@ function spawnAttacker(state, opts) {
     const r = Math.max(CITY.w, CITY.d) * 0.95 + 36;
     const slot = new THREE.Vector3(Math.cos(angle) * r, 1, Math.sin(angle) * r);
 
-    // Curved descent from the portal up over the edge of the city, then
-    // down to the slot. The control point is pulled outward / upward so
-    // the descent reads as a swooping arc rather than a straight dive.
-    const mid = new THREE.Vector3(
-      portalPos.x + (slot.x - portalPos.x) * 0.6,
-      Math.max(portalPos.y + 6, 26),
-      portalPos.z + (slot.z - portalPos.z) * 0.6,
-    );
-    const descentCurve = new THREE.CatmullRomCurve3([portalPos, mid, slot]);
+    // Path is 4 control points so the descent goes UP from the portal,
+    // ACROSS at altitude (well above any building), then DOWN to the
+    // slot. CatmullRom smooths the corners. Result: the attacker arcs
+    // OVER the city, never crossing buildings.
+    const liftHeight = Math.max(portalPos.y + 24, 42);
+    const portalAbove = new THREE.Vector3(portalPos.x, liftHeight, portalPos.z);
+    const slotAbove = new THREE.Vector3(slot.x, liftHeight, slot.z);
+    const descentCurve = new THREE.CatmullRomCurve3([
+      portalPos, portalAbove, slotAbove, slot,
+    ]);
 
     visual.group.position.copy(portalPos);
-    const beam = makeDescentBeam(portalPos, slot);
+    const beam = makeDescentBeam(slot);
     attackerLayer.add(beam);
 
     attacker = {
@@ -2047,7 +2045,7 @@ function spawnAttacker(state, opts) {
       beam,
       phase: "descent",
       phaseT: 0,
-      descentDuration: 1.3 + Math.random() * 0.4, // a bit longer so the swoop reads
+      descentDuration: 1.6 + Math.random() * 0.4,
       formationDuration: 1.4 + Math.random() * 0.6,
       assaultDuration: 1.9 + Math.random() * 0.4,
       descentCurve,
