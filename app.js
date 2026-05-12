@@ -93,7 +93,7 @@
     currentData = data;
     AwsViz.render(data, opts);
     if (window.AwsViz3D && window.AwsViz3D.isReady()) {
-      window.AwsViz3D.render(data);
+      window.AwsViz3D.render(data, opts);
     }
     updateSummary(data);
     updateBrandFor(data);
@@ -226,7 +226,7 @@
     const prevData = currentData;
     const diff = diffVersionData(prevData, ver.data);
     currentVersionId = id;
-    applyVersionData(ver.data, { diff });
+    applyVersionData(ver.data, { diff, status: ver.status || "ok" });
     renderTimeline();
 
     if (window.AwsSpeak && window.AwsSpeak.enabled()) {
