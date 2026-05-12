@@ -229,6 +229,9 @@ function render(data, opts) {
       });
     });
   }
+  // Track whether a city existed before so we can decide whether to re-frame
+  // the camera or preserve the user's current angle / zoom.
+  const hadPreviousCity = registry.size > 0;
   clearCity();
 
   const lay = window.AwsViz && window.AwsViz.getLayout && window.AwsViz.getLayout();
@@ -260,10 +263,14 @@ function render(data, opts) {
   // Flows
   (data.flows || []).forEach(addFlow);
 
-  // Frame the city
-  const dist = Math.max(CITY.w, CITY.d) + 80;
-  camera.position.set(dist * 0.35, dist * 0.55, dist * 0.85);
-  controls.target.set(0, 4, 0);
+  // Frame the city on the *first* render only. Version transitions keep
+  // whatever camera angle / zoom the user had set — resetting on every
+  // click is jarring and discards the user's framing of the city.
+  if (!hadPreviousCity) {
+    const dist = Math.max(CITY.w, CITY.d) + 80;
+    camera.position.set(dist * 0.35, dist * 0.55, dist * 0.85);
+    controls.target.set(0, 4, 0);
+  }
   controls.update();
 
   // Adapt fog to city size so the whole layout is always visible from
