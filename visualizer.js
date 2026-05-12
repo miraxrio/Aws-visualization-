@@ -213,8 +213,13 @@
   let lastData;
   let lastViewBox;
   let spotlight;
+  let diffCleanupTimer = null;
 
-  function render(data) {
+  function render(data, opts) {
+    const diff = opts && opts.diff;
+    // Capture the previous layout *before* we replace it, so we can position
+    // "ghost" markers for removed elements at the spots they used to occupy.
+    const prevLayout = lastLayout;
     lastData = data;
     const lay = layout(data);
     lastLayout = lay;
@@ -258,6 +263,92 @@
     drawFlows(rootG, lay, data.flows || []);
 
     bindHoverInteractions(lay);
+
+    if (diff) applyVersionDiff(diff, prevLayout);
+  }
+
+  // Highlight freshly added nodes/flows and draw fade-out "ghosts" for the
+  // elements that disappeared compared to the previous version.
+  function applyVersionDiff(diff, prevLayout) {
+    // Cancel any pending cleanup from a prior diff render so the new
+    // .v-added classes don't get wiped before their animation completes.
+    if (diffCleanupTimer) {
+      clearTimeout(diffCleanupTimer);
+      diffCleanupTimer = null;
+    }
+    const addedNodeSet = new Set(diff.addedNodes || []);
+    const removedNodeSet = new Set(diff.removedNodes || []);
+
+    // Mark added elements so CSS plays the pop-in / glow animation.
+    addedNodeSet.forEach((id) => {
+      d3.selectAll(`.node-group[data-id="${id}"]`).classed("v-added", true);
+      d3.selectAll(`.subnet-group[data-id="${id}"]`).classed("v-added", true);
+      d3.selectAll(`.vpc-group[data-id="${id}"]`).classed("v-added", true);
+    });
+
+    (diff.addedFlows || []).forEach((f) => {
+      d3.selectAll(`.flow-group[data-from="${f.from}"][data-to="${f.to}"]`)
+        .classed("v-added", true);
+    });
+
+    // Draw red dashed "tombstones" at the previous positions of removed
+    // nodes so the user can see *where* something just left the diagram.
+    if (prevLayout) {
+      const ghostLayer = rootG.append("g").attr("class", "ghost-layer");
+
+      removedNodeSet.forEach((id) => {
+        const prev = prevLayout.nodes.get(id);
+        if (!prev) return;
+        const g = ghostLayer
+          .append("g")
+          .attr("class", "ghost-removed")
+          .attr("data-id", id);
+        g.append("rect")
+          .attr("x", prev.x)
+          .attr("y", prev.y)
+          .attr("width", prev.w)
+          .attr("height", prev.h);
+        const cx = prev.x + prev.w / 2;
+        const cy = prev.y + prev.h / 2;
+        const half = Math.min(prev.w, prev.h) / 2 - 8;
+        g.append("line")
+          .attr("class", "ghost-x")
+          .attr("x1", cx - half).attr("y1", cy - half)
+          .attr("x2", cx + half).attr("y2", cy + half);
+        g.append("line")
+          .attr("class", "ghost-x")
+          .attr("x1", cx - half).attr("y1", cy + half)
+          .attr("x2", cx + half).attr("y2", cy - half);
+        g.append("text")
+          .attr("x", prev.x + prev.w / 2)
+          .attr("y", prev.y - 6)
+          .attr("text-anchor", "middle")
+          .text(`removed: ${truncate(prev.name || prev.id, 22)}`);
+      });
+
+      (diff.removedFlows || []).forEach((f) => {
+        const a = prevLayout.nodes.get(f.from);
+        const b = prevLayout.nodes.get(f.to);
+        if (!a || !b) return;
+        const p = curvePath(a, b);
+        ghostLayer
+          .append("path")
+          .attr("class", "ghost-flow-removed")
+          .attr("d", p.d);
+      });
+
+      // Self-clean once the fade animation finishes (animations are ~2.6s).
+      setTimeout(() => {
+        ghostLayer.remove();
+      }, 3000);
+    }
+
+    // Remove the v-added class after the animation completes so subsequent
+    // interactions (hover, tour) don't fight it.
+    diffCleanupTimer = setTimeout(() => {
+      diffCleanupTimer = null;
+      d3.selectAll(".v-added").classed("v-added", false);
+    }, 3200);
   }
 
   // Build per-type gradients, drop-shadow and glow filters once per render.

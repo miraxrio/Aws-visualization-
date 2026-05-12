@@ -89,14 +89,92 @@
     fadeHint();
   }
 
-  function applyVersionData(data) {
+  function applyVersionData(data, opts) {
     currentData = data;
-    AwsViz.render(data);
+    AwsViz.render(data, opts);
     if (window.AwsViz3D && window.AwsViz3D.isReady()) {
       window.AwsViz3D.render(data);
     }
     updateSummary(data);
     updateBrandFor(data);
+  }
+
+  // Compute the set of nodes (resources, gateways, subnets, vpcs) and flows
+  // that were added or removed going from `oldData` to `newData`. Used by the
+  // timeline so the diagram can animate what changed when a version is clicked.
+  function diffVersionData(oldData, newData) {
+    if (!oldData || !newData) return null;
+    const collectIds = (d) => {
+      const out = new Set();
+      (d.vpcs || []).forEach((v) => {
+        if (v.id) out.add(v.id);
+        (v.subnets || []).forEach((s) => s.id && out.add(s.id));
+        (v.resources || []).forEach((r) => r.id && out.add(r.id));
+        (v.gateways || []).forEach((g) => g.id && out.add(g.id));
+      });
+      return out;
+    };
+    const oldIds = collectIds(oldData);
+    const newIds = collectIds(newData);
+    const addedNodes = [...newIds].filter((id) => !oldIds.has(id));
+    const removedNodes = [...oldIds].filter((id) => !newIds.has(id));
+
+    const flowKey = (f) => `${f.from}|${f.to}|${f.label || ""}`;
+    const oldFlowKeys = new Set((oldData.flows || []).map(flowKey));
+    const newFlowKeys = new Set((newData.flows || []).map(flowKey));
+    const addedFlows = (newData.flows || []).filter((f) => !oldFlowKeys.has(flowKey(f)));
+    const removedFlows = (oldData.flows || []).filter((f) => !newFlowKeys.has(flowKey(f)));
+
+    return { addedNodes, removedNodes, addedFlows, removedFlows };
+  }
+
+  // Build the spoken narration for a version click. Broken versions explain
+  // why things are failing; fixed versions explain how the issue was resolved.
+  // Calls out which elements were added or removed compared to the previous
+  // version so the listener can track the visual changes.
+  function buildVersionNarration(ver, prevData, diff) {
+    const status = ver.status || "ok";
+    const lines = [];
+    if (status === "broken") {
+      lines.push("This version is broken.");
+    } else if (status === "fixed") {
+      lines.push("This version fixes the issue.");
+    } else {
+      lines.push(ver.name || `Version ${ver.id}.`);
+    }
+
+    if (diff) {
+      const addedNames = (diff.addedNodes || []).map((id) => {
+        const n = findNodeInData(ver.data, id);
+        return n ? n.name || n.id : id;
+      });
+      const removedNames = (diff.removedNodes || []).map((id) => {
+        const n = findNodeInData(prevData, id);
+        return n ? n.name || n.id : id;
+      });
+      if (addedNames.length) lines.push(`Added ${joinList(addedNames)}.`);
+      if (removedNames.length) lines.push(`Removed ${joinList(removedNames)}.`);
+    }
+
+    if (ver.note) lines.push(ver.note);
+    return lines.join(" ");
+  }
+
+  function findNodeInData(data, id) {
+    if (!data) return null;
+    for (const v of data.vpcs || []) {
+      if (v.id === id) return v;
+      for (const s of v.subnets || []) if (s.id === id) return s;
+      for (const r of v.resources || []) if (r.id === id) return r;
+      for (const g of v.gateways || []) if (g.id === id) return g;
+    }
+    return null;
+  }
+
+  function joinList(items) {
+    if (items.length <= 1) return items.join("");
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
   }
 
   // Inspect the loaded network's resource types and pick "AWS" or "Azure"
@@ -142,9 +220,19 @@
     if (!currentVersions) return;
     const ver = currentVersions.find((v) => v.id === id);
     if (!ver) return;
+    // Re-clicking the active version still re-narrates (intentional) but
+    // there's no diff to show — pass the same data on both sides so the
+    // diff comes out empty and only the voice plays.
+    const prevData = currentData;
+    const diff = diffVersionData(prevData, ver.data);
     currentVersionId = id;
-    applyVersionData(ver.data);
+    applyVersionData(ver.data, { diff });
     renderTimeline();
+
+    if (window.AwsSpeak && window.AwsSpeak.enabled()) {
+      const narration = buildVersionNarration(ver, prevData, diff);
+      if (narration) window.AwsSpeak.speak(narration);
+    }
   }
 
   function renderTimeline() {
