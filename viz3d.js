@@ -35,6 +35,17 @@ const exploreKeys = { fwd: false, back: false, left: false, right: false, up: fa
 const _moveDir = new THREE.Vector3();
 let proxEntryId = null; // id of the element currently triggering the prox HUD
 
+// Pointer hover (orbit mode). Raycaster picks the topmost registered mesh
+// under the cursor so the sidebar + tooltip update like in the 2D view.
+const _raycaster = new THREE.Raycaster();
+const _pointer = new THREE.Vector2();
+let _pointerInside = false;
+let hoveredId = null;
+// Transient flourish state — broken/fixed flash + ghosts of removed elements.
+let ghostLayer = null;
+let ghostUntil = 0;
+let statusFlourish = null; // { kind: "broken"|"fixed", until }
+
 const SCALE_TARGET = 380; // city max dimension in 3D units
 let SCALE = 0.15;
 const CITY = { cx: 0, cz: 0, w: 0, d: 0 };
@@ -156,6 +167,10 @@ function init(container) {
   window.addEventListener("keydown", onExploreKeyDown);
   window.addEventListener("keyup", onExploreKeyUp);
 
+  // Pointer hover for orbit mode — sidebar/tooltip parity with 2D view.
+  renderer.domElement.addEventListener("pointermove", onCanvasPointerMove);
+  renderer.domElement.addEventListener("pointerleave", onCanvasPointerLeave);
+
   resize(container);
   const ro = new ResizeObserver(() => resize(container));
   ro.observe(container);
@@ -196,8 +211,27 @@ function clearCity() {
   particleSystems = [];
 }
 
-function render(data) {
+function render(data, opts) {
   if (!initialized) return;
+  // Snapshot positions/extents of the OLD city so we can place ghost markers
+  // for removed elements at the spots they used to occupy. clearCity() wipes
+  // the live registry, so we copy what we need first.
+  const diff = opts && opts.diff;
+  const status = opts && opts.status;
+  const prevPositions = new Map();
+  if (diff) {
+    registry.forEach((entry, id) => {
+      prevPositions.set(id, {
+        position: entry.position.clone(),
+        extent: entry.extent || 4,
+        height: entry.height || 4,
+        type: entry.type,
+      });
+    });
+  }
+  // Track whether a city existed before so we can decide whether to re-frame
+  // the camera or preserve the user's current angle / zoom.
+  const hadPreviousCity = registry.size > 0;
   clearCity();
 
   const lay = window.AwsViz && window.AwsViz.getLayout && window.AwsViz.getLayout();
@@ -229,10 +263,14 @@ function render(data) {
   // Flows
   (data.flows || []).forEach(addFlow);
 
-  // Frame the city
-  const dist = Math.max(CITY.w, CITY.d) + 80;
-  camera.position.set(dist * 0.35, dist * 0.55, dist * 0.85);
-  controls.target.set(0, 4, 0);
+  // Frame the city on the *first* render only. Version transitions keep
+  // whatever camera angle / zoom the user had set — resetting on every
+  // click is jarring and discards the user's framing of the city.
+  if (!hadPreviousCity) {
+    const dist = Math.max(CITY.w, CITY.d) + 80;
+    camera.position.set(dist * 0.35, dist * 0.55, dist * 0.85);
+    controls.target.set(0, 4, 0);
+  }
   controls.update();
 
   // Adapt fog to city size so the whole layout is always visible from
@@ -242,6 +280,9 @@ function render(data) {
     scene.fog.near = cd * 1.2;
     scene.fog.far = cd * 4.0;
   }
+
+  if (diff) applyVersionDiff3D(diff, prevPositions);
+  if (status === "broken" || status === "fixed") triggerStatusFlourish(status);
 }
 
 function pos3D(node) {
@@ -292,6 +333,7 @@ function addVpc(vpc) {
   mesh.receiveShadow = true;
   // Tag so setTheme can swap the texture later
   mesh.userData.vpcTopMat = topMat;
+  mesh.userData.registryId = vpc.id;
   grp.add(mesh);
 
   const edges = new THREE.EdgesGeometry(geo);
@@ -344,6 +386,7 @@ function addSubnet(s) {
   mesh.position.set(p.x, 1.1, p.z);
   mesh.receiveShadow = true;
   mesh.castShadow = true;
+  mesh.userData.registryId = s.id;
   grp.add(mesh);
 
   const edges = new THREE.EdgesGeometry(geo);
@@ -412,6 +455,7 @@ function addBuilding(node) {
   positionForGeometryLocal(mesh, node.type, sz);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  mesh.userData.registryId = node.id;
   spinner.add(mesh);
 
   // Ground halo glow — does NOT rotate (sits on the floor like a footprint)
@@ -646,6 +690,7 @@ function addInternetPortal(node) {
   );
   ring.position.set(p.x, 16, p.z);
   ring.userData.spin = true;
+  ring.userData.registryId = "internet";
   grp.add(ring);
 
   const disk = new THREE.Mesh(
@@ -3249,6 +3294,98 @@ function updateExplore(dt) {
   updateProximity();
 }
 
+// ---------- pointer hover (orbit mode) ----------
+//
+// Mirrors the 2D view's hover affordance: under the cursor, find the topmost
+// registered mesh and route it through AwsViz.onSelect so the sidebar shows
+// the same details. Also drives the global #tooltip element. Disabled while
+// explore mode is active — that mode owns the pointer.
+
+function onCanvasPointerMove(evt) {
+  _pointerInside = true;
+  if (exploreActive || !renderer || !camera || !cityGroup) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  _pointer.x = ((evt.clientX - rect.left) / rect.width) * 2 - 1;
+  _pointer.y = -((evt.clientY - rect.top) / rect.height) * 2 + 1;
+  _raycaster.setFromCamera(_pointer, camera);
+
+  // Build the candidate list lazily — meshes change on every render() call.
+  const targets = [];
+  registry.forEach((entry) => { if (entry.mesh) targets.push(entry.mesh); });
+  const hits = _raycaster.intersectObjects(targets, false);
+  // intersectObjects returns hits sorted near→far, but flat platforms (VPC /
+  // subnet) sit below buildings; if both are hit we want the building (the
+  // smallest one) so users can hover individual services. The default sort
+  // already does this: buildings on top of subnets are closer to the camera.
+  const hit = hits[0];
+  const id = hit ? hit.object.userData.registryId : null;
+
+  const tooltip = document.getElementById("tooltip");
+  if (id !== hoveredId) {
+    hoveredId = id;
+    if (id) {
+      // Look up the original node in the 2D layout so we get name/cidr/az etc.
+      const lay = window.AwsViz && window.AwsViz.getLayout && window.AwsViz.getLayout();
+      const node = lay && lay.nodes.get(id);
+      if (window.AwsViz && typeof window.AwsViz.onSelect === "function") {
+        window.AwsViz.onSelect(node || { id, type: registry.get(id).type });
+      }
+      if (tooltip) {
+        const entry = registry.get(id);
+        const type = (node && node.type) || (entry && entry.type) || "unknown";
+        const meta =
+          type === "subnet"
+            ? (window.AWS_TIER_EXPLAIN || {})[node && node.tier] ||
+              (window.AWS_EXPLAIN || {}).subnet
+            : (window.AWS_EXPLAIN || {})[type] || (window.AWS_EXPLAIN || {}).unknown;
+        const title = (node && (node.name || node.id)) || id;
+        tooltip.innerHTML =
+          `<strong>${escapeHtml(title)}</strong>${escapeHtml((meta && meta.title) || type)}`;
+        tooltip.classList.add("show");
+        tooltip.setAttribute("aria-hidden", "false");
+      }
+    } else if (tooltip) {
+      tooltip.classList.remove("show");
+      tooltip.setAttribute("aria-hidden", "true");
+      if (window.AwsViz && typeof window.AwsViz.onSelect === "function") {
+        window.AwsViz.onSelect(null);
+      }
+    }
+  }
+  if (tooltip && tooltip.classList.contains("show")) {
+    const pad = 14;
+    const w = tooltip.offsetWidth || 200;
+    const h = tooltip.offsetHeight || 40;
+    let x = evt.clientX + pad;
+    let y = evt.clientY + pad;
+    if (x + w > window.innerWidth - 10) x = evt.clientX - w - pad;
+    if (y + h > window.innerHeight - 10) y = evt.clientY - h - pad;
+    tooltip.style.left = `${x}px`;
+    tooltip.style.top = `${y}px`;
+  }
+}
+
+function onCanvasPointerLeave() {
+  _pointerInside = false;
+  hoveredId = null;
+  const tooltip = document.getElementById("tooltip");
+  if (tooltip) {
+    tooltip.classList.remove("show");
+    tooltip.setAttribute("aria-hidden", "true");
+  }
+  if (window.AwsViz && typeof window.AwsViz.onSelect === "function") {
+    window.AwsViz.onSelect(null);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 // ---------- proximity HUD ----------
 
 function updateProximity() {
@@ -3384,6 +3521,198 @@ function setFocusEffect(id) {
   }
 
   focusEffect = { group: grp, targetMesh: r.mesh, baseEmissive, targetEntry: r };
+}
+
+// ---------- version diff animation ----------
+//
+// When a timeline version is clicked, app.js passes a diff describing which
+// node IDs (and flows) appeared or disappeared. We tag freshly-added meshes
+// with userData.addedAt so the animate loop can play a green emissive pulse
+// and a brief scale-pop, and we build a ghost layer of red dashed boxes at
+// the previous positions of removed elements.
+
+function applyVersionDiff3D(diff, prevPositions) {
+  const now = performance.now();
+
+  // Mark added meshes for the in-loop pulse.
+  (diff.addedNodes || []).forEach((id) => {
+    const entry = registry.get(id);
+    if (!entry || !entry.mesh) return;
+    entry.mesh.userData.addedAt = now;
+    entry.mesh.userData.addedBaseEmissiveIntensity =
+      entry.mesh.material && entry.mesh.material.emissiveIntensity;
+    entry.mesh.userData.addedBaseEmissiveHex =
+      entry.mesh.material && entry.mesh.material.emissive
+        ? entry.mesh.material.emissive.getHex()
+        : null;
+  });
+
+  // Flow add/remove glow — the tube is the last cityGroup child added for a
+  // flow but we don't track them by id. We tag the matching particleSystem
+  // and the animate loop pulses every packet's halo.
+  const flowKey = (f) => `${f.from}|${f.to}`;
+  const addedFlowSet = new Set((diff.addedFlows || []).map(flowKey));
+  particleSystems.forEach((ps) => {
+    if (addedFlowSet.has(`${ps.fromId}|${ps.toId}`)) {
+      ps.addedAt = now;
+    }
+  });
+
+  // Tear down any previous ghost layer, then build a fresh one.
+  if (ghostLayer) {
+    cityGroup.remove(ghostLayer);
+    ghostLayer.traverse((c) => {
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) {
+        const ms = Array.isArray(c.material) ? c.material : [c.material];
+        ms.forEach((m) => m.dispose());
+      }
+    });
+    ghostLayer = null;
+  }
+  const removedNodes = (diff.removedNodes || []).filter((id) => prevPositions.has(id));
+  const removedFlows = (diff.removedFlows || []).filter(
+    (f) => prevPositions.has(f.from) && prevPositions.has(f.to),
+  );
+  if (removedNodes.length || removedFlows.length) {
+    ghostLayer = new THREE.Group();
+    removedNodes.forEach((id) => {
+      const prev = prevPositions.get(id);
+      const r = Math.max(3, prev.extent);
+      const h = Math.max(3, prev.height);
+      const geo = new THREE.BoxGeometry(r * 2, h + 2, r * 2);
+      const edges = new THREE.EdgesGeometry(geo);
+      const line = new THREE.LineSegments(
+        edges,
+        new THREE.LineBasicMaterial({
+          color: 0xef4444,
+          transparent: true,
+          opacity: 0.95,
+        }),
+      );
+      line.position.copy(prev.position);
+      line.position.y = h / 2 + 1;
+      ghostLayer.add(line);
+
+      // Skull-cap glow sprite so the ghost reads even from far away.
+      const halo = makeGlowSprite(0xef4444, r * 5);
+      halo.position.copy(prev.position);
+      halo.position.y = 3;
+      ghostLayer.add(halo);
+    });
+
+    removedFlows.forEach((f) => {
+      const a = prevPositions.get(f.from);
+      const b = prevPositions.get(f.to);
+      const start = a.position.clone();
+      const end = b.position.clone();
+      const mid = start.clone().lerp(end, 0.5);
+      mid.y += Math.min(28, Math.max(6, start.distanceTo(end) * 0.32));
+      const curve = new THREE.CatmullRomCurve3([start, mid, end]);
+      const tube = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, 48, 0.5, 8, false),
+        new THREE.MeshBasicMaterial({
+          color: 0xef4444,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      );
+      ghostLayer.add(tube);
+    });
+
+    cityGroup.add(ghostLayer);
+    ghostUntil = now + 2800;
+  }
+}
+
+// Big "this version is broken / fixed" overhead flourish. Broken = red
+// strobe + low rumble of red light; fixed = expanding green ring on the
+// ground + green sparkle dome. Lasts ~2.4s, self-cleans in animate().
+function triggerStatusFlourish(kind) {
+  // Tear down any prior flourish.
+  if (statusFlourish && statusFlourish.group) {
+    cityGroup.remove(statusFlourish.group);
+    statusFlourish.group.traverse((c) => {
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) {
+        const ms = Array.isArray(c.material) ? c.material : [c.material];
+        ms.forEach((m) => m.dispose());
+      }
+    });
+  }
+  const now = performance.now();
+  const grp = new THREE.Group();
+  const color = kind === "broken" ? 0xef4444 : 0x4ade80;
+  const radius = Math.max(CITY.w, CITY.d) * 0.55 + 30;
+
+  // Ground ring sweep — both flavours get one, scaled in animate().
+  const ringGeo = new THREE.RingGeometry(radius - 1.5, radius, 96);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(0, 0.6, 0);
+  ring.userData.flourishRing = true;
+  grp.add(ring);
+
+  // Dome of sparkle points — green for fixed (gentle), red shower for broken.
+  const count = kind === "broken" ? 240 : 180;
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const rr = Math.random() * radius * 0.95;
+    const yy = kind === "broken"
+      ? 4 + Math.random() * 60
+      : 2 + Math.pow(Math.random(), 0.6) * 60;
+    pos[i * 3 + 0] = Math.cos(a) * rr;
+    pos[i * 3 + 1] = yy;
+    pos[i * 3 + 2] = Math.sin(a) * rr;
+  }
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const sparkMat = new THREE.PointsMaterial({
+    color,
+    size: kind === "broken" ? 2.2 : 1.8,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+  const sparks = new THREE.Points(sparkGeo, sparkMat);
+  sparks.userData.flourishSparks = true;
+  sparks.userData.dirSign = kind === "broken" ? -1 : 1; // broken: rain down; fixed: rise
+  grp.add(sparks);
+
+  cityGroup.add(grp);
+
+  statusFlourish = {
+    kind,
+    group: grp,
+    ring,
+    sparks,
+    startedAt: now,
+    until: now + (kind === "broken" ? 2600 : 2400),
+  };
+
+  // For broken versions, also flash every building's emissive red briefly.
+  if (kind === "broken") {
+    registry.forEach((entry) => {
+      if (!entry.mesh || !entry.mesh.material || !entry.mesh.material.emissive) return;
+      if (entry.type === "vpc" || entry.type === "subnet") return;
+      entry.mesh.userData.brokenFlashAt = now;
+      entry.mesh.userData.brokenFlashBaseHex = entry.mesh.material.emissive.getHex();
+      entry.mesh.userData.brokenFlashBaseI = entry.mesh.material.emissiveIntensity;
+    });
+  }
 }
 
 // Toggle visibility of every label/badge/roof tile in the scene based on
@@ -3560,7 +3889,120 @@ function animate() {
       c.material.color.setRGB(1, 0.9, 0.5 + 0.5 * v);
       c.scale.setScalar(0.6 + v * 0.6);
     }
+    // Version-diff: pop-in + green emissive pulse on freshly added meshes.
+    if (c.userData.addedAt) {
+      const elapsed = now - c.userData.addedAt;
+      const duration = 2400;
+      if (elapsed > duration) {
+        // Restore baseline.
+        if (c.material && c.material.emissive && c.userData.addedBaseEmissiveHex != null) {
+          c.material.emissive.setHex(c.userData.addedBaseEmissiveHex);
+        }
+        if (c.material && c.userData.addedBaseEmissiveIntensity != null) {
+          c.material.emissiveIntensity = c.userData.addedBaseEmissiveIntensity;
+        }
+        c.scale.setScalar(1);
+        delete c.userData.addedAt;
+        delete c.userData.addedBaseEmissiveHex;
+        delete c.userData.addedBaseEmissiveIntensity;
+      } else {
+        // Scale: pop-up to 1.12 in first 350ms, settle to 1.0.
+        const pop = elapsed < 350
+          ? 0.35 + (elapsed / 350) * 0.77
+          : elapsed < 700
+            ? 1.12 - ((elapsed - 350) / 350) * 0.12
+            : 1.0;
+        c.scale.setScalar(pop);
+        // Emissive pulse — green for ~2.4s, fades out.
+        if (c.material && c.material.emissive) {
+          const phase = (Math.sin(elapsed / 140) + 1) / 2; // 0..1
+          const k = Math.max(0, 1 - elapsed / duration);
+          c.material.emissive.setRGB(0.29 + phase * 0.3 * k, 0.88, 0.5);
+          c.material.emissiveIntensity =
+            (c.userData.addedBaseEmissiveIntensity || 0.45) + 0.8 * k * phase;
+        }
+      }
+    }
+    // Version-status flourish: "broken" flashes every building emissive red.
+    if (c.userData.brokenFlashAt) {
+      const elapsed = now - c.userData.brokenFlashAt;
+      const duration = 1800;
+      if (elapsed > duration) {
+        if (c.material && c.material.emissive && c.userData.brokenFlashBaseHex != null) {
+          c.material.emissive.setHex(c.userData.brokenFlashBaseHex);
+        }
+        if (c.material && c.userData.brokenFlashBaseI != null) {
+          c.material.emissiveIntensity = c.userData.brokenFlashBaseI;
+        }
+        delete c.userData.brokenFlashAt;
+        delete c.userData.brokenFlashBaseHex;
+        delete c.userData.brokenFlashBaseI;
+      } else if (c.material && c.material.emissive) {
+        const k = Math.max(0, 1 - elapsed / duration);
+        const flicker = 0.4 + 0.6 * ((Math.sin(elapsed / 55) + 1) / 2);
+        c.material.emissive.setRGB(0.94, 0.27 * flicker, 0.27 * flicker);
+        c.material.emissiveIntensity =
+          (c.userData.brokenFlashBaseI || 0.45) + 1.0 * k * flicker;
+      }
+    }
   });
+
+  // Ghost-layer cleanup + fade-out for removed elements.
+  if (ghostLayer) {
+    const remain = ghostUntil - now;
+    if (remain <= 0) {
+      cityGroup.remove(ghostLayer);
+      ghostLayer.traverse((c) => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) {
+          const ms = Array.isArray(c.material) ? c.material : [c.material];
+          ms.forEach((m) => m.dispose());
+        }
+      });
+      ghostLayer = null;
+    } else {
+      const t = Math.max(0, Math.min(1, remain / 2800));
+      const flicker = 0.55 + 0.45 * ((Math.sin(now / 95) + 1) / 2);
+      ghostLayer.traverse((c) => {
+        if (c.material && "opacity" in c.material) {
+          c.material.opacity = t * flicker;
+          c.material.transparent = true;
+        }
+      });
+    }
+  }
+
+  // Status flourish (red broken / green fixed) — expanding ground ring + sparks.
+  if (statusFlourish) {
+    const elapsed = now - statusFlourish.startedAt;
+    const total = statusFlourish.until - statusFlourish.startedAt;
+    const u = Math.min(1, elapsed / total);
+    if (u >= 1) {
+      cityGroup.remove(statusFlourish.group);
+      statusFlourish.group.traverse((c) => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) {
+          const ms = Array.isArray(c.material) ? c.material : [c.material];
+          ms.forEach((m) => m.dispose());
+        }
+      });
+      statusFlourish = null;
+    } else {
+      const ringScale = 0.05 + u * 1.4; // expand outward
+      statusFlourish.ring.scale.setScalar(ringScale);
+      statusFlourish.ring.material.opacity = 0.9 * (1 - u);
+      // Sparks drift up (fixed) or fall (broken).
+      const sparks = statusFlourish.sparks;
+      const dirSign = sparks.userData.dirSign || 1;
+      const speed = (statusFlourish.kind === "broken" ? 40 : 24) * dt * dirSign;
+      const posAttr = sparks.geometry.attributes.position;
+      for (let i = 0; i < posAttr.count; i++) {
+        posAttr.array[i * 3 + 1] += speed;
+      }
+      posAttr.needsUpdate = true;
+      sparks.material.opacity = 0.95 * (1 - u * u);
+    }
+  }
 
   // Tour spotlight animation
   if (focusEffect) {

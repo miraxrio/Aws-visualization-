@@ -850,6 +850,89 @@ body.theme-day .version-note.status-ok {
 }
 .version-note strong { color: inherit; }
 
+/* ============ Version-diff animations ============
+   When the user clicks a version in the timeline we mark the freshly-added
+   elements with .v-added (pop-in + green halo) and draw red dashed "ghost"
+   markers at the previous positions of removed elements. Both classes
+   self-clean after the animation completes. */
+
+@keyframes v-enter-fade {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes v-added-glow {
+  0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+  30%, 70% { filter: drop-shadow(0 0 14px rgba(74, 222, 128, 0.9)); }
+}
+
+.node-group.v-added,
+.subnet-group.v-added,
+.vpc-group.v-added {
+  animation: v-enter-fade 0.55s ease-out, v-added-glow 2.4s ease-in-out 0.4s 1;
+}
+.subnet-group.v-added > .subnet {
+  stroke: #4ade80 !important;
+  stroke-width: 2.4 !important;
+  transition: stroke 0.4s ease;
+}
+.vpc-group.v-added > .vpc-bg {
+  stroke: #4ade80 !important;
+  stroke-width: 2.2 !important;
+}
+.flow-group.v-added .flow-path {
+  stroke: #4ade80;
+  stroke-width: 3;
+  animation: v-added-glow 2.4s ease-in-out 1;
+}
+.flow-group.v-added .flow-anim {
+  stroke: #4ade80;
+  stroke-width: 2.6;
+}
+
+/* Ghost markers for removed elements — red dashed outline with an X. */
+.ghost-layer { pointer-events: none; }
+
+@keyframes v-ghost {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.ghost-removed {
+  animation: v-ghost 2.6s ease-out forwards;
+}
+.ghost-removed > rect {
+  fill: rgba(239, 68, 68, 0.16);
+  stroke: #ef4444;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+  rx: 10; ry: 10;
+}
+.ghost-removed .ghost-x {
+  stroke: #ef4444;
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.ghost-removed > text {
+  fill: #ef4444;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.ghost-flow-removed {
+  stroke: #ef4444;
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
+  fill: none;
+  filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.55));
+  animation: v-ghost 2.6s ease-out forwards;
+}
+
 details summary {
   cursor: pointer;
   color: var(--accent-2);
