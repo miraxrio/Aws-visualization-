@@ -718,6 +718,283 @@ body.theme-day .attack-summary-outcome.status-danger { color: #7f1d1d; }
 .explainer ul { padding-left: 18px; margin: 8px 0 0; }
 .explainer li { margin-bottom: 4px; }
 
+/* ============ Security system state (timestamp slider) ============ */
+
+.boundary-title {
+  margin: 4px 0 6px;
+  font-size: 15px;
+}
+.boundary-title time {
+  color: var(--accent-2);
+  font-variant-numeric: tabular-nums;
+}
+.boundary-sub {
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+
+.boundary-slider-wrap {
+  position: relative;
+  margin: 4px 0 6px;
+  height: 42px;
+}
+.boundary-ticks {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  right: 6px;
+  height: 14px;
+  pointer-events: none;
+  z-index: 2;
+}
+.boundary-ticks .tick {
+  position: absolute;
+  top: 1px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  border: 2px solid var(--muted);
+  box-sizing: border-box;
+  opacity: 0.9;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.boundary-ticks .tick.status-broken { border-color: #ef4444; background: #ef4444; }
+.boundary-ticks .tick.status-fixed  { border-color: #22c55e; background: #22c55e; }
+.boundary-ticks .tick.status-ok     { border-color: #4ade80; }
+.boundary-ticks .tick.is-active     { box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.22); opacity: 1; }
+
+#boundary-slider {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  height: 30px;
+}
+#boundary-slider:focus { outline: none; }
+#boundary-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--border), var(--accent-2) var(--boundary-fill, 0%), var(--border) var(--boundary-fill, 0%));
+}
+#boundary-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+#boundary-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent-2);
+}
+#boundary-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--accent-2);
+  margin-top: -7px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+#boundary-slider:active::-webkit-slider-thumb { cursor: grabbing; }
+#boundary-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--accent-2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+
+.boundary-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin: 0 4px 10px;
+}
+
+.boundary-toggle {
+  font-size: 12.5px;
+  margin: 4px 0 10px;
+}
+.boundary-toggle .switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.boundary-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.18s ease;
+  flex: none;
+}
+.boundary-toggle input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 0.18s ease;
+}
+.boundary-toggle input[type="checkbox"]:checked { background: var(--accent-2); }
+.boundary-toggle input[type="checkbox"]:checked::after { transform: translateX(14px); }
+
+.boundary-diff {
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+.boundary-diff .diff-section {
+  margin-top: 8px;
+}
+.boundary-diff .diff-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.boundary-diff .diff-eyebrow.added   { color: #22c55e; }
+.boundary-diff .diff-eyebrow.removed { color: #ef4444; }
+.boundary-diff .diff-eyebrow .count {
+  color: var(--muted);
+  font-weight: 600;
+}
+.boundary-diff .diff-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.boundary-diff .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.boundary-diff .pill.added {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.45);
+}
+.boundary-diff .pill.removed {
+  color: #fda4af;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.45);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+body.theme-day .boundary-diff .pill.added {
+  color: #14532d;
+  background: rgba(34, 197, 94, 0.18);
+}
+body.theme-day .boundary-diff .pill.removed {
+  color: #7f1d1d;
+  background: rgba(239, 68, 68, 0.14);
+}
+.boundary-diff .pill .pill-type {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.boundary-diff .diff-empty {
+  font-style: italic;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* ============ Persistent baseline-diff highlights (2D) ============
+   Marks elements that are *currently* in the network but were not in the
+   first recorded state (green ring) and draws persistent red ghost
+   markers where elements present in the baseline are missing today. */
+
+.node-group.boundary-added > .node,
+.node-group.boundary-added > rect {
+  stroke: #22c55e !important;
+  stroke-width: 2.4 !important;
+  filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.55));
+}
+.subnet-group.boundary-added > .subnet {
+  stroke: #22c55e !important;
+  stroke-width: 2.2 !important;
+  stroke-dasharray: 4 3;
+}
+.vpc-group.boundary-added > .vpc-bg {
+  stroke: #22c55e !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: 6 4;
+}
+.flow-group.boundary-added .flow-path {
+  stroke: #22c55e;
+}
+.flow-group.boundary-added .flow-anim {
+  stroke: #22c55e;
+}
+
+.boundary-ghost-layer { pointer-events: none; }
+.boundary-ghost {
+  opacity: 0.85;
+}
+.boundary-ghost > rect {
+  fill: rgba(239, 68, 68, 0.10);
+  stroke: #ef4444;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  rx: 10; ry: 10;
+}
+.boundary-ghost .ghost-x {
+  stroke: #ef4444;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.boundary-ghost > text {
+  fill: #ef4444;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
 /* ============ Versions / changelog timeline ============ */
 
 .timeline {
