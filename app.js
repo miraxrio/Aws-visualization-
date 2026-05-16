@@ -41,6 +41,15 @@
     netMeta: document.getElementById("net-meta"),
     timelinePanel: document.getElementById("timeline-panel"),
     timelineList: document.getElementById("timeline-list"),
+    boundaryPanel: document.getElementById("boundary-panel"),
+    boundarySlider: document.getElementById("boundary-slider"),
+    boundaryTicks: document.getElementById("boundary-ticks"),
+    boundaryTime: document.getElementById("boundary-time"),
+    boundarySub: document.getElementById("boundary-sub"),
+    boundaryStart: document.getElementById("boundary-start"),
+    boundaryEnd: document.getElementById("boundary-end"),
+    boundaryHighlight: document.getElementById("boundary-highlight"),
+    boundaryDiff: document.getElementById("boundary-diff"),
     detailTitle: document.getElementById("detail-title"),
     detailSummary: document.getElementById("detail-summary"),
     detailProps: document.getElementById("detail-props"),
@@ -70,8 +79,13 @@
       const latest = currentVersions[currentVersions.length - 1];
       currentVersionId = latest.id;
       renderTimeline();
+      renderBoundaryPanel();
       els.timelinePanel.hidden = false;
-      applyVersionData(latest.data);
+      els.boundaryPanel.hidden = false;
+      // Show the latest snapshot with persistent baseline-diff highlights
+      // so the user immediately sees what's changed since the first state.
+      applyVersionData(latest.data, { baselineDiff: computeBaselineDiff(latest.data) });
+      updateBoundaryPanelForVersion(latest.id);
       fadeHint();
       return;
     }
@@ -85,13 +99,24 @@
     currentVersionId = null;
     networkName = data.name || null;
     els.timelinePanel.hidden = true;
+    els.boundaryPanel.hidden = true;
     applyVersionData(data);
     fadeHint();
   }
 
   function applyVersionData(data, opts) {
     currentData = data;
-    AwsViz.render(data, opts);
+    // When the user has enabled baseline-diff highlighting, attach a
+    // pre-computed baseline layout so visualizer.js can position ghost
+    // markers for elements that have been removed since the initial state.
+    const enriched = opts ? { ...opts } : {};
+    if (enriched.baselineDiff && currentVersions && currentVersions.length) {
+      const baseline = currentVersions[0].data;
+      if (baseline && window.AwsViz && AwsViz.layout) {
+        enriched.baselineLayout = AwsViz.layout(baseline);
+      }
+    }
+    AwsViz.render(data, enriched);
     if (window.AwsViz3D && window.AwsViz3D.isReady()) {
       window.AwsViz3D.render(data, opts);
     }
@@ -216,7 +241,7 @@
     }
   }
 
-  function selectVersion(id) {
+  function selectVersion(id, opts) {
     if (!currentVersions) return;
     const ver = currentVersions.find((v) => v.id === id);
     if (!ver) return;
@@ -226,13 +251,149 @@
     const prevData = currentData;
     const diff = diffVersionData(prevData, ver.data);
     currentVersionId = id;
-    applyVersionData(ver.data, { diff, status: ver.status || "ok" });
+    const renderOpts = { diff, status: ver.status || "ok" };
+    if (els.boundaryHighlight && els.boundaryHighlight.checked) {
+      renderOpts.baselineDiff = computeBaselineDiff(ver.data);
+    }
+    applyVersionData(ver.data, renderOpts);
     renderTimeline();
+    updateBoundaryPanelForVersion(id);
 
-    if (window.AwsSpeak && window.AwsSpeak.enabled()) {
+    const silent = opts && opts.silent;
+    if (!silent && window.AwsSpeak && window.AwsSpeak.enabled()) {
       const narration = buildVersionNarration(ver, prevData, diff);
       if (narration) window.AwsSpeak.speak(narration);
     }
+  }
+
+  // ---- Security system state panel (timestamp slider + baseline diff) ----
+
+  function computeBaselineDiff(currentVersionData) {
+    if (!currentVersions || !currentVersions.length) return null;
+    const baseline = currentVersions[0].data;
+    if (!baseline || baseline === currentVersionData) return null;
+    return diffVersionData(baseline, currentVersionData);
+  }
+
+  function renderBoundaryPanel() {
+    if (!currentVersions || !currentVersions.length) return;
+    const max = currentVersions.length - 1;
+    els.boundarySlider.min = 0;
+    els.boundarySlider.max = String(max);
+    els.boundarySlider.step = "1";
+    els.boundarySlider.value = String(max);
+    updateSliderFill(max, max);
+
+    // Render evenly-spaced dots that line up with each snapshot.
+    els.boundaryTicks.innerHTML = currentVersions
+      .map((v, i) => {
+        const pct = max === 0 ? 0 : (i / max) * 100;
+        const status = v.status || "ok";
+        return `<span class="tick status-${escapeHtml(status)}" data-i="${i}" style="left:${pct}%"
+          title="${escapeHtml(v.name || v.id)} — ${escapeHtml(v.timestamp ? formatVersionDate(v.timestamp) : "")}"></span>`;
+      })
+      .join("");
+    els.boundaryTicks.querySelectorAll(".tick").forEach((tickEl) => {
+      tickEl.addEventListener("click", () => {
+        const i = Number(tickEl.getAttribute("data-i"));
+        const v = currentVersions[i];
+        if (v) selectVersion(v.id, { silent: true });
+      });
+    });
+
+    els.boundaryStart.textContent = currentVersions[0].timestamp
+      ? formatVersionDate(currentVersions[0].timestamp) : "—";
+    els.boundaryEnd.textContent = currentVersions[max].timestamp
+      ? formatVersionDate(currentVersions[max].timestamp) : "—";
+  }
+
+  function updateSliderFill(idx, max) {
+    const pct = max === 0 ? 100 : (idx / max) * 100;
+    els.boundarySlider.style.setProperty("--boundary-fill", `${pct}%`);
+  }
+
+  function updateBoundaryPanelForVersion(id) {
+    if (!currentVersions) return;
+    const idx = currentVersions.findIndex((v) => v.id === id);
+    if (idx < 0) return;
+    const max = currentVersions.length - 1;
+    const ver = currentVersions[idx];
+
+    els.boundarySlider.value = String(idx);
+    updateSliderFill(idx, max);
+    els.boundaryTime.textContent = ver.timestamp ? formatVersionDate(ver.timestamp) : (ver.name || ver.id);
+
+    const isBaseline = idx === 0;
+    els.boundarySub.textContent = isBaseline
+      ? "This is the first recorded state — drag the slider forward to see what's changed."
+      : `Showing the boundary at ${ver.name || ver.id}. Green = added since initial, red = removed since initial.`;
+
+    els.boundaryTicks.querySelectorAll(".tick").forEach((t, i) => {
+      t.classList.toggle("is-active", i === idx);
+    });
+
+    renderBoundaryDiff(ver, isBaseline);
+  }
+
+  function renderBoundaryDiff(ver, isBaseline) {
+    if (isBaseline) {
+      els.boundaryDiff.innerHTML =
+        `<div class="diff-empty">No changes — this is the baseline state.</div>`;
+      return;
+    }
+    const diff = computeBaselineDiff(ver.data);
+    if (!diff) {
+      els.boundaryDiff.innerHTML = "";
+      return;
+    }
+    const baselineData = currentVersions[0].data;
+    const addedItems = diff.addedNodes.map((id) => describeNode(ver.data, id));
+    const removedItems = diff.removedNodes.map((id) => describeNode(baselineData, id));
+    const same = !addedItems.length && !removedItems.length;
+
+    if (same) {
+      els.boundaryDiff.innerHTML =
+        `<div class="diff-empty">Same set of services as the initial state (flows may differ).</div>`;
+      return;
+    }
+
+    const renderPills = (items, kind) => {
+      if (!items.length) return "";
+      return `
+        <div class="diff-section">
+          <div class="diff-eyebrow ${kind}">
+            ${kind === "added" ? "+ Added since initial" : "− Removed since initial"}
+            <span class="count">· ${items.length}</span>
+          </div>
+          <div class="diff-pills">
+            ${items.map((it) => `
+              <span class="pill ${kind}" title="${escapeHtml(it.id)}">
+                <span class="pill-name">${escapeHtml(it.label)}</span>
+                <span class="pill-type">${escapeHtml(it.type)}</span>
+              </span>`).join("")}
+          </div>
+        </div>`;
+    };
+
+    els.boundaryDiff.innerHTML = renderPills(addedItems, "added") + renderPills(removedItems, "removed");
+  }
+
+  function describeNode(data, id) {
+    const n = findNodeInData(data, id);
+    if (!n) return { id, label: id, type: "node" };
+    const type = (n.type || nodeKindFromData(data, id) || "node").toString();
+    return { id, label: n.name || n.id, type };
+  }
+
+  // Walk the data once to figure out whether `id` is a vpc, subnet,
+  // gateway, or resource — used when the node itself doesn't carry a
+  // `type` (vpcs and subnets typically don't in this schema).
+  function nodeKindFromData(data, id) {
+    for (const v of data.vpcs || []) {
+      if (v.id === id) return "vpc";
+      for (const s of v.subnets || []) if (s.id === id) return s.tier ? `${s.tier} subnet` : "subnet";
+    }
+    return null;
   }
 
   function renderTimeline() {
@@ -331,6 +492,32 @@
 
   els.mode2d.addEventListener("click", () => setMode("2d"));
   els.mode3d.addEventListener("click", () => setMode("3d"));
+
+  // ---- Boundary slider + highlight toggle ----
+  // The slider snaps to each snapshot index. Each scrub silently swaps the
+  // active version (no voice narration) so users can drag-explore without
+  // the synth babbling on every tick.
+  els.boundarySlider.addEventListener("input", () => {
+    if (!currentVersions) return;
+    const idx = Math.max(0, Math.min(currentVersions.length - 1, Number(els.boundarySlider.value)));
+    const ver = currentVersions[idx];
+    if (!ver || ver.id === currentVersionId) {
+      updateSliderFill(idx, currentVersions.length - 1);
+      return;
+    }
+    selectVersion(ver.id, { silent: true });
+  });
+  els.boundaryHighlight.addEventListener("change", () => {
+    if (!currentVersions || !currentVersionId) return;
+    // Re-render the current version with or without baseline highlights.
+    const ver = currentVersions.find((v) => v.id === currentVersionId);
+    if (!ver) return;
+    const renderOpts = {};
+    if (els.boundaryHighlight.checked) {
+      renderOpts.baselineDiff = computeBaselineDiff(ver.data);
+    }
+    applyVersionData(ver.data, renderOpts);
+  });
 
   // ---- Day / night theme ----
 
@@ -898,6 +1085,78 @@
       { from: "nat-1c",   to: "igw-prod",label: "0.0.0.0/0", kind: "egress" },
     ],
   };
+  // V4: Add search-svc + cache + opensearch
+  const V4 = {
+    name: "Three-Tier Web App · v4", region: "us-east-1",
+    vpcs: [{
+      id: "vpc-prod", name: "Production", cidr: "10.0.0.0/16", region: "us-east-1",
+      subnets: [...SHARED_SUBNETS_AB, ...SUBNETS_C],
+      gateways: V3.vpcs[0].gateways,
+      resources: [
+        ...V3.vpcs[0].resources,
+        { id: "search-svc", type: "ecs",   name: "Search Svc",  subnet: "prv-1a" },
+        { id: "cache",      type: "redis", name: "Redis Cache", subnet: "prv-1b" },
+        { id: "search-db",  type: "rds",   name: "OpenSearch",  subnet: "db-1a"  },
+      ],
+    }],
+    flows: [
+      ...V3.flows,
+      { from: "app-a",      to: "cache",      label: "GET (cache)" },
+      { from: "app-b",      to: "cache",      label: "GET (cache)" },
+      { from: "app-c",      to: "cache",      label: "GET (cache)" },
+      { from: "app-a",      to: "search-svc", label: "search" },
+      { from: "search-svc", to: "search-db",  label: "index" },
+      { from: "search-svc", to: "rds-w",      label: "scan" },
+    ],
+  };
+  // V5: Retire `fn`, add CDN + API gateway
+  const V5 = {
+    name: "Three-Tier Web App · v5", region: "us-east-1",
+    vpcs: [{
+      id: "vpc-prod", name: "Production", cidr: "10.0.0.0/16", region: "us-east-1",
+      subnets: V4.vpcs[0].subnets,
+      gateways: V4.vpcs[0].gateways,
+      resources: V4.vpcs[0].resources
+        .filter((r) => r.id !== "fn")
+        .concat([
+          { id: "cdn",    type: "cloudfront", name: "Edge CDN",    subnet: "pub-1a" },
+          { id: "api-gw", type: "apigw",      name: "Partner API", subnet: "pub-1b" },
+        ]),
+    }],
+    flows: V4.flows
+      .filter((f) => f.from !== "fn" && f.to !== "fn")
+      .concat([
+        { from: "internet", to: "cdn",    label: "HTTPS 443",      kind: "internet" },
+        { from: "cdn",      to: "alb",    label: "HTTPS origin" },
+        { from: "internet", to: "api-gw", label: "webhook POST",   kind: "internet" },
+        { from: "api-gw",   to: "app-b",  label: "/ingest" },
+      ]),
+  };
+  // V6: Add audit S3 + sessions DynamoDB, remove WAF
+  const V6 = {
+    name: "Three-Tier Web App · v6", region: "us-east-1",
+    vpcs: [{
+      id: "vpc-prod", name: "Production", cidr: "10.0.0.0/16", region: "us-east-1",
+      subnets: V5.vpcs[0].subnets,
+      gateways: V5.vpcs[0].gateways,
+      resources: V5.vpcs[0].resources
+        .filter((r) => r.id !== "waf")
+        .concat([
+          { id: "sessions", type: "dynamodb", name: "Session Store", subnet: "db-1b" },
+          { id: "audit",    type: "s3",       name: "Audit Logs",    subnet: "db-1c" },
+        ]),
+    }],
+    flows: V5.flows
+      .filter((f) => f.from !== "waf" && f.to !== "waf")
+      .concat([
+        { from: "app-a", to: "sessions", label: "session R/W" },
+        { from: "app-b", to: "sessions", label: "session R/W" },
+        { from: "app-c", to: "sessions", label: "session R/W" },
+        { from: "app-a", to: "audit",    label: "audit event" },
+        { from: "app-b", to: "audit",    label: "audit event" },
+        { from: "app-c", to: "audit",    label: "audit event" },
+      ]),
+  };
   const EMBEDDED_SAMPLE = {
     name: "Three-Tier Web App",
     region: "us-east-1",
@@ -913,6 +1172,18 @@
         timestamp: "2025-02-04T09:15:00Z", status: "fixed",
         note: "Provisioned nat-1c in pub-1c (its own Elastic IP) and updated prv-1c's route table to send 0.0.0.0/0 to nat-1c. App tasks in 1c now egress through the local NAT — webhooks succeed, cross-AZ data-transfer cost is gone, and an outage in 1a no longer takes 1c offline.",
         data: V3 },
+      { id: "v4", name: "Add search + cache services", author: "carol@example.com",
+        timestamp: "2025-03-12T11:20:00Z", status: "ok",
+        note: "New product-search service backed by OpenSearch and a Redis cache. App tasks now hit the cache first and fall back to Aurora.",
+        data: V4 },
+      { id: "v5", name: "Retire webhook Lambda; add API gateway + CDN", author: "bob@example.com",
+        timestamp: "2025-04-05T09:45:00Z", status: "ok",
+        note: "Webhook Lambda decommissioned. Public traffic now lands on a CloudFront edge, and a separate API Gateway terminates partner-facing webhook ingest.",
+        data: V5 },
+      { id: "v6", name: "Audit storage + session store; WAF in maintenance", author: "carol@example.com",
+        timestamp: "2025-05-01T16:10:00Z", status: "ok",
+        note: "Added an S3 audit bucket for SOC2 evidence and a DynamoDB session store. WAF is temporarily out of the boundary while the rule set is being rewritten.",
+        data: V6 },
     ],
   };
 
