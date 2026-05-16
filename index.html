@@ -87,6 +87,31 @@
         <p id="net-meta" class="muted">Load a topology to begin.</p>
       </div>
 
+      <div class="panel" id="boundary-panel" hidden>
+        <div class="panel-eyebrow">Security system state</div>
+        <h3 class="boundary-title">
+          State at <time id="boundary-time">—</time>
+        </h3>
+        <p class="muted boundary-sub" id="boundary-sub">
+          Scrub the timeline to see what the network boundary looked like at any past moment.
+        </p>
+        <div class="boundary-slider-wrap">
+          <div class="boundary-ticks" id="boundary-ticks"></div>
+          <input type="range" id="boundary-slider" min="0" max="0" step="1" value="0" aria-label="Boundary timestamp" />
+        </div>
+        <div class="boundary-ends">
+          <span id="boundary-start">—</span>
+          <span id="boundary-end">—</span>
+        </div>
+        <div class="boundary-toggle">
+          <label class="switch">
+            <input type="checkbox" id="boundary-highlight" checked />
+            <span>Highlight diff vs initial state</span>
+          </label>
+        </div>
+        <div class="boundary-diff" id="boundary-diff"></div>
+      </div>
+
       <div class="panel" id="timeline-panel" hidden>
         <div class="panel-eyebrow">Versions</div>
         <div class="timeline" id="timeline-list"></div>

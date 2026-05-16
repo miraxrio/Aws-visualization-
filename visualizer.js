@@ -217,6 +217,8 @@
 
   function render(data, opts) {
     const diff = opts && opts.diff;
+    const baselineDiff = opts && opts.baselineDiff;
+    const baselineLayout = opts && opts.baselineLayout;
     // Capture the previous layout *before* we replace it, so we can position
     // "ghost" markers for removed elements at the spots they used to occupy.
     const prevLayout = lastLayout;
@@ -265,6 +267,59 @@
     bindHoverInteractions(lay);
 
     if (diff) applyVersionDiff(diff, prevLayout);
+    if (baselineDiff) applyBaselineDiff(baselineDiff, baselineLayout);
+  }
+
+  // Persistent "vs initial state" highlight. Unlike applyVersionDiff, this
+  // does NOT animate or self-clean — it stays on every node that's been
+  // added since the first recorded version. Removed-since-baseline elements
+  // get a red ghost at the position they occupied in the baseline layout.
+  function applyBaselineDiff(diff, baselineLayout) {
+    const addedNodeSet = new Set(diff.addedNodes || []);
+    addedNodeSet.forEach((id) => {
+      d3.selectAll(`.node-group[data-id="${id}"]`).classed("boundary-added", true);
+      d3.selectAll(`.subnet-group[data-id="${id}"]`).classed("boundary-added", true);
+      d3.selectAll(`.vpc-group[data-id="${id}"]`).classed("boundary-added", true);
+    });
+    (diff.addedFlows || []).forEach((f) => {
+      d3.selectAll(`.flow-group[data-from="${f.from}"][data-to="${f.to}"]`)
+        .classed("boundary-added", true);
+    });
+
+    if (!baselineLayout) return;
+    const removedNodes = (diff.removedNodes || []).filter((id) => baselineLayout.nodes.has(id));
+    if (!removedNodes.length) return;
+
+    const ghostLayer = rootG.append("g").attr("class", "boundary-ghost-layer");
+    removedNodes.forEach((id) => {
+      const prev = baselineLayout.nodes.get(id);
+      if (!prev) return;
+      const g = ghostLayer
+        .append("g")
+        .attr("class", "boundary-ghost")
+        .attr("data-id", id);
+      g.append("rect")
+        .attr("x", prev.x)
+        .attr("y", prev.y)
+        .attr("width", prev.w)
+        .attr("height", prev.h);
+      const cx = prev.x + prev.w / 2;
+      const cy = prev.y + prev.h / 2;
+      const half = Math.min(prev.w, prev.h) / 2 - 8;
+      g.append("line")
+        .attr("class", "ghost-x")
+        .attr("x1", cx - half).attr("y1", cy - half)
+        .attr("x2", cx + half).attr("y2", cy + half);
+      g.append("line")
+        .attr("class", "ghost-x")
+        .attr("x1", cx - half).attr("y1", cy + half)
+        .attr("x2", cx + half).attr("y2", cy - half);
+      g.append("text")
+        .attr("x", prev.x + prev.w / 2)
+        .attr("y", prev.y - 6)
+        .attr("text-anchor", "middle")
+        .text(`since-initial: ${truncate(prev.name || prev.id, 22)}`);
+    });
   }
 
   // Highlight freshly added nodes/flows and draw fade-out "ghosts" for the
@@ -965,6 +1020,7 @@
     clearHighlight,
     getLayout,
     getData,
+    layout,
     onSelect: null,
     onSelectFlow: null,
   };
