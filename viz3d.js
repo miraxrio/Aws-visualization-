@@ -4264,8 +4264,27 @@ function holoAnimate() {
   holo.group.rotation.x = holo.drag.rotX;
   holo.group.rotation.y = holo.drag.rotY;
   if (holo.pulseMesh) {
-    const s = 1.0 + 0.075 * Math.sin(now / 380);
+    const t = (Math.sin(now / 380) + 1) / 2;
+    const s = 1.0 + 0.12 * t;
     holo.pulseMesh.scale.setScalar(s);
+    // Pulse the additive glow sprite alongside the core so the selected
+    // holon reads as a beacon rather than just a sphere with a wobble.
+    const glow = holo.pulseMesh.userData && holo.pulseMesh.userData.glowSprite;
+    const baseScale = holo.pulseMesh.userData && holo.pulseMesh.userData.baseGlowScale;
+    if (glow && baseScale) {
+      const pulseScale = baseScale * (1.6 + 0.35 * t);
+      glow.scale.set(pulseScale, pulseScale, 1);
+      glow.material.opacity = 0.9 + 0.1 * t;
+    }
+    // Billboard the selection ring to the camera and pulse its scale so
+    // it reads as a "target lock" reticle.
+    holo.group.traverse((c) => {
+      if (!c.userData || !c.userData.holoPulseRing) return;
+      c.lookAt(holo.camera.position);
+      const rs = 1.0 + 0.18 * t;
+      c.scale.setScalar(rs);
+      c.material.opacity = 0.65 + 0.3 * t;
+    });
   }
   if (holo.starfield) holo.starfield.rotation.y += 0.0003;
   updateHoloLabels();
@@ -4398,6 +4417,33 @@ function renderHoloLevel0(boundaryData) {
  * @param {string} holonicId
  * @param {object} boundaryData
  */
+let holoGlowTexture = null;
+
+/**
+ * Build (once) a soft radial-gradient sprite texture used as the additive
+ * halo behind every holon. Cached on the module so we don't re-create the
+ * canvas + GPU texture on every render.
+ * @returns {THREE.CanvasTexture}
+ */
+function ensureHoloGlowTexture() {
+  if (holoGlowTexture) return holoGlowTexture;
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0.0, "rgba(255,255,255,1.0)");
+  grad.addColorStop(0.18, "rgba(255,255,255,0.75)");
+  grad.addColorStop(0.45, "rgba(255,255,255,0.30)");
+  grad.addColorStop(0.75, "rgba(255,255,255,0.08)");
+  grad.addColorStop(1.0, "rgba(255,255,255,0.0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  holoGlowTexture = new THREE.CanvasTexture(canvas);
+  holoGlowTexture.needsUpdate = true;
+  return holoGlowTexture;
+}
+
 function renderHoloLevel1(holonicId, boundaryData) {
   holo.state = { level: 1, holonicId, holonId: null };
   holo.boundary = boundaryData;
@@ -4407,35 +4453,40 @@ function renderHoloLevel1(holonicId, boundaryData) {
   const boundaryR = 10;
   const boundaryColor = HOLO_STATUS_COLOR[hc.aggregateStatus] || HOLO_STATUS_COLOR.unknown;
 
-  // Faint translucent fill — MeshBasicMaterial so it doesn't pick up the
-  // scene lights and turn into a solid orange ball that hides the holons
-  // inside. FrontSide-only avoids the DoubleSide double-overdraw too.
-  const shellGeom = new THREE.SphereGeometry(boundaryR, 48, 32);
+  // Whisper-faint solid fill — gives "there's a boundary here" without
+  // hiding what's inside. Additive blending so the shell BRIGHTENS the
+  // pixels behind it rather than tinting them dim.
+  const shellGeom = new THREE.SphereGeometry(boundaryR, 32, 20);
   const shellMat = new THREE.MeshBasicMaterial({
     color: boundaryColor,
     transparent: true,
-    opacity: 0.05,
-    side: THREE.FrontSide,
+    opacity: 0.04,
+    side: THREE.BackSide,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,
   });
   const shell = new THREE.Mesh(shellGeom, shellMat);
   shell.renderOrder = 0;
   shell.userData = { holoKind: "shell" };
   holo.group.add(shell);
 
-  // Wireframe outline gives the boundary a clear silhouette without
-  // tinting whatever sits inside it.
-  const wireGeom = new THREE.SphereGeometry(boundaryR, 18, 12);
-  const wireMat = new THREE.MeshBasicMaterial({
-    color: boundaryColor,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.35,
-  });
-  const wire = new THREE.Mesh(wireGeom, wireMat);
-  wire.renderOrder = 1;
-  wire.userData = { holoKind: "shell" };
-  holo.group.add(wire);
+  // Three orbiting rings (XY, XZ, YZ) make the boundary instantly
+  // readable as a sphere without the busy wire-mesh look — and they
+  // never occlude what's inside.
+  for (let axis = 0; axis < 3; axis++) {
+    const torusGeom = new THREE.TorusGeometry(boundaryR, 0.07, 8, 96);
+    const torusMat = new THREE.MeshBasicMaterial({
+      color: boundaryColor,
+      transparent: true,
+      opacity: 0.65,
+    });
+    const torus = new THREE.Mesh(torusGeom, torusMat);
+    if (axis === 1) torus.rotation.x = Math.PI / 2;
+    if (axis === 2) torus.rotation.y = Math.PI / 2;
+    torus.renderOrder = 1;
+    torus.userData = { holoKind: "shell" };
+    holo.group.add(torus);
+  }
 
   addHoloLabel(`${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`,
     new THREE.Vector3(0, boundaryR + 2, 0));
@@ -4479,14 +4530,33 @@ function fibSphere(n, r) {
 function addHoloHolon(holon, pos) {
   const radius = HOLO_SEVERITY_RADIUS[holon.severity] || 0.6;
   const color = HOLO_STATUS_COLOR[holon.status] || HOLO_STATUS_COLOR.unknown;
-  // White outer halo so the holon's silhouette stays distinct from
-  // whatever colour the surrounding boundary shell happens to be —
-  // red-on-orange and green-on-orange would otherwise wash out.
-  const haloGeom = new THREE.SphereGeometry(radius * 1.45, 18, 14);
+
+  // Big additive glow sprite — billboard quad behind the sphere with a
+  // soft radial gradient. Additive blending means the glow BRIGHTENS the
+  // pixels under it instead of tinting them dim, so the holon reads as a
+  // luminous star even against the boundary shell's colour.
+  const glowMat = new THREE.SpriteMaterial({
+    map: ensureHoloGlowTexture(),
+    color,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const glow = new THREE.Sprite(glowMat);
+  const glowScale = Math.max(2.4, radius * 5.5);
+  glow.scale.set(glowScale, glowScale, 1);
+  glow.position.copy(pos);
+  glow.userData = { holoId: holon.id, holoKind: "holon-glow" };
+  glow.renderOrder = 4;
+  holo.group.add(glow);
+
+  // White rim halo gives the holon a crisp silhouette inside the glow.
+  const haloGeom = new THREE.SphereGeometry(radius * 1.35, 18, 14);
   const haloMat = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
-    opacity: 0.18,
+    opacity: 0.22,
     depthWrite: false,
   });
   const halo = new THREE.Mesh(haloGeom, haloMat);
@@ -4495,19 +4565,18 @@ function addHoloHolon(holon, pos) {
   halo.renderOrder = 5;
   holo.group.add(halo);
 
-  // Solid bright core. High emissive intensity so it reads as luminous
-  // regardless of the boundary shell's colour.
+  // Solid luminous core.
   const geom = new THREE.SphereGeometry(radius, 28, 20);
   const mat = new THREE.MeshStandardMaterial({
     color,
     emissive: color,
-    emissiveIntensity: 1.4,
+    emissiveIntensity: 1.6,
     roughness: 0.3,
     metalness: 0.1,
   });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.position.copy(pos);
-  mesh.userData = { holoId: holon.id, holoKind: "holon" };
+  mesh.userData = { holoId: holon.id, holoKind: "holon", glowSprite: glow, baseGlowScale: glowScale };
   mesh.renderOrder = 6;
   holo.group.add(mesh);
   holo.clickables.set(holon.id, { mesh });
@@ -4597,20 +4666,58 @@ function renderHoloLevel2(holonId, boundaryData) {
   }
   if (holo.state.holonicId) renderHoloLevel1(holo.state.holonicId, boundaryData);
   holo.state = { level: 2, holonicId: holo.state.holonicId, holonId };
+  let targetPos = null;
+  let targetRadius = 0.6;
+  let targetColor = HOLO_STATUS_COLOR.unknown;
   holo.group.traverse((c) => {
-    if (!c.isMesh) return;
     // Skip the boundary shell + wireframe — overriding their opacity to
     // 0.4 would make the shell appear solid and hide the holons inside.
     if (c.userData && c.userData.holoKind === "shell") return;
     const isTarget = c.userData && c.userData.holoId === holonId;
+    if (!c.isMesh && !c.isSprite) return;
     if (c.material && "opacity" in c.material) {
       c.material.transparent = true;
-      // Keep background context visible — 0.1 made it invisible against
-      // the dark sky. 0.4 keeps the dim relationship without hiding it.
-      c.material.opacity = isTarget ? 1.0 : 0.4;
+      // Glow sprites: keep the selected one bright (handled by the
+      // pulse loop) and dim the others to a faint hint.
+      if (c.userData && c.userData.holoKind === "holon-glow") {
+        c.material.opacity = isTarget ? 0.95 : 0.2;
+      } else {
+        c.material.opacity = isTarget ? 1.0 : 0.4;
+      }
     }
-    if (isTarget) holo.pulseMesh = c;
+    if (isTarget && c.isMesh && c.userData && c.userData.holoKind === "holon") {
+      holo.pulseMesh = c;
+      targetPos = c.position.clone();
+      const g = c.geometry && c.geometry.parameters;
+      if (g && g.radius) targetRadius = g.radius;
+      if (c.material && c.material.color) targetColor = c.material.color.getHex();
+    }
   });
+  if (targetPos) addHoloReticle(targetPos, targetRadius, targetColor);
+}
+
+/**
+ * Draw a billboarded pulsing ring around the currently selected holon.
+ * The ring is a flat Torus tagged with userData.holoPulseRing so the
+ * animate loop can re-orient and scale it every frame.
+ * @param {THREE.Vector3} pos
+ * @param {number} radius
+ * @param {number} color
+ */
+function addHoloReticle(pos, radius, color) {
+  // Torus oriented to face the camera (billboarded in the animate loop).
+  const ringGeom = new THREE.TorusGeometry(radius * 2.1, 0.09, 10, 60);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeom, ringMat);
+  ring.position.copy(pos);
+  ring.userData = { holoPulseRing: true, holoBaseRadius: radius * 2.1, holoColor: color };
+  ring.renderOrder = 7;
+  holo.group.add(ring);
 }
 
 /**
