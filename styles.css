@@ -1716,7 +1716,11 @@ body.sidebar-open .layout {
   z-index: 1;
 }
 .stage-holo[hidden] { display: none; }
-.stage-holo canvas { display: block; }
+.stage-holo canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
 
 .holo-watermark {
   position: absolute;

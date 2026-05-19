@@ -4112,10 +4112,11 @@ function holoInit(container) {
   holo.scene = new THREE.Scene();
   holo.scene.background = new THREE.Color(0x0a0a0f);
   holo.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
-  // Slight bird's-eye angle so the ring of spheres sits in the middle of
-  // the viewport rather than dropping to the bottom edge.
-  holo.camera.position.set(0, 14, 26);
-  holo.camera.lookAt(0, 0, 0);
+  // Bird's-eye angle so the ring sits in the middle of the viewport
+  // instead of slumping to the bottom. lookAt is re-applied every frame
+  // (in holoAnimate) so wheel zoom and drag don't drift the framing.
+  holo.camera.position.set(0, 18, 24);
+  holo.camera.lookAt(0, 1.5, 0);
   holo.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   holo.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
   container.appendChild(holo.renderer.domElement);
@@ -4217,7 +4218,7 @@ function attachHoloPointer() {
     const z = holo.camera.position.length();
     const next = Math.max(10, Math.min(120, z + e.deltaY * 0.05));
     holo.camera.position.setLength(next);
-    holo.camera.lookAt(0, 0, 0);
+    holo.camera.lookAt(0, 1.5, 0);
   }, { passive: false });
   dom.addEventListener("mouseenter", () => { holo.hoverPause = true; });
   dom.addEventListener("mouseleave", () => { holo.hoverPause = false; });
@@ -4257,7 +4258,9 @@ function holoAnimate() {
     holo.drag.rotY += 0.0025;
   }
   // Keep the ring framed in the viewport even after wheel-zoom or drag.
-  holo.camera.lookAt(0, 0, 0);
+  // Looking slightly above origin pushes the ring upward in the frame so
+  // it doesn't sit at the bottom edge.
+  holo.camera.lookAt(0, 1.5, 0);
   holo.group.rotation.x = holo.drag.rotX;
   holo.group.rotation.y = holo.drag.rotY;
   if (holo.pulseMesh) {
@@ -4494,18 +4497,44 @@ function drawHoloTargetEdges(holons, positions) {
     if (arr.length < 2) return;
     for (let i = 0; i < arr.length; i++) {
       for (let j = i + 1; j < arr.length; j++) {
-        const geom = new THREE.BufferGeometry().setFromPoints([
-          positions[arr[i]], positions[arr[j]],
-        ]);
-        const mat = new THREE.LineBasicMaterial({
-          color: 0x58a6ff,
-          transparent: true,
-          opacity: 0.55,
-        });
-        holo.group.add(new THREE.Line(geom, mat));
+        holo.group.add(makeGlowTube(positions[arr[i]], positions[arr[j]], 0.12, 0x7bc4ff));
       }
     }
   });
+}
+
+/**
+ * Build a thin glowing cylinder between two points. Using geometry rather
+ * than THREE.Line because WebGL ignores LineBasicMaterial.linewidth on
+ * most platforms, leaving lines stuck at 1px which is invisible in 3D.
+ * @param {THREE.Vector3} a
+ * @param {THREE.Vector3} b
+ * @param {number} radius
+ * @param {number} color
+ * @returns {THREE.Mesh}
+ */
+function makeGlowTube(a, b, radius, color) {
+  const dir = b.clone().sub(a);
+  const length = dir.length();
+  const geom = new THREE.CylinderGeometry(radius, radius, length, 12, 1);
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.9,
+    transparent: true,
+    opacity: 0.85,
+    roughness: 0.4,
+    metalness: 0.0,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  mesh.position.copy(mid);
+  // CylinderGeometry's axis is +Y; rotate it to align with the direction
+  // vector so the tube spans from a to b.
+  const up = new THREE.Vector3(0, 1, 0);
+  const quat = new THREE.Quaternion().setFromUnitVectors(up, dir.clone().normalize());
+  mesh.quaternion.copy(quat);
+  return mesh;
 }
 
 /**
@@ -4537,7 +4566,9 @@ function renderHoloLevel2(holonId, boundaryData) {
     const isTarget = c.userData && c.userData.holoId === holonId;
     if (c.material && "opacity" in c.material) {
       c.material.transparent = true;
-      c.material.opacity = isTarget ? 1.0 : 0.1;
+      // Keep background context visible — 0.1 made it invisible against
+      // the dark sky. 0.4 keeps the dim relationship without hiding it.
+      c.material.opacity = isTarget ? 1.0 : 0.4;
     }
     if (isTarget) holo.pulseMesh = c;
   });

@@ -1221,7 +1221,7 @@
         .attr("class", "holonic-hex holo-dim")
         .attr("data-id", hc.id)
         .style("cursor", "pointer")
-        .style("opacity", 0.3);
+        .style("opacity", 0.55);
       g.append("polygon")
         .attr("points", hexagonPoints(p.x, p.y, r * 0.8))
         .attr("fill", fill).attr("fill-opacity", 0.18)
@@ -1302,14 +1302,15 @@
           const aA = (2 * Math.PI * a.i) / Math.max(1, holons.length) - Math.PI / 2;
           const bA = (2 * Math.PI * b.i) / Math.max(1, holons.length) - Math.PI / 2;
           rootG.append("line")
+            .attr("class", "holo-target-edge")
             .attr("x1", cx + Math.cos(aA) * boundaryR * 0.75)
             .attr("y1", cy + Math.sin(aA) * boundaryR * 0.75)
             .attr("x2", cx + Math.cos(bA) * boundaryR * 0.75)
             .attr("y2", cy + Math.sin(bA) * boundaryR * 0.75)
-            .attr("stroke", "#58a6ff")
-            .attr("stroke-opacity", 0.35)
-            .attr("stroke-width", 1.5)
-            .attr("stroke-dasharray", "3 3");
+            .attr("stroke", "#7bc4ff")
+            .attr("stroke-opacity", 0.85)
+            .attr("stroke-width", 4)
+            .attr("stroke-linecap", "round");
         }
       }
     });
@@ -1362,9 +1363,9 @@
     state.holonId = holonId;
 
     rootG.selectAll(".holon-node").style("opacity", function () {
-      return this.getAttribute("data-id") === holonId ? 1 : 0.2;
+      return this.getAttribute("data-id") === holonId ? 1 : 0.55;
     });
-    rootG.selectAll(".holonic-hex").style("opacity", 0.15);
+    rootG.selectAll(".holonic-hex").style("opacity", 0.45);
 
     const lookup = indexHolons(boundaryData);
     const holon = lookup.get(holonId);
