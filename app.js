@@ -1287,11 +1287,20 @@
    */
   function exitBoundaryMode() {
     currentBoundary = null;
+    ZoomLevel = 0;
+    currentHolonicId = null;
+    currentHolonId = null;
     document.body.classList.remove("mode-holographic");
     if (els.holoBreadcrumb) els.holoBreadcrumb.hidden = true;
     if (els.holoWatermark) els.holoWatermark.hidden = true;
     if (els.holoStarfield) els.holoStarfield.hidden = true;
     if (els.holoDetail) els.holoDetail.hidden = true;
+    // Hide the holographic 3D stage and restore the legacy stage(s) for
+    // the current viewing mode, otherwise the boundary spheres linger on
+    // top of the AWS view after the user clicks "Exit boundary".
+    if (els.stageHolo) els.stageHolo.hidden = true;
+    els.diagram.style.display = mode === "2d" ? "" : "none";
+    if (els.stage3d) els.stage3d.hidden = mode !== "3d";
   }
 
   /**

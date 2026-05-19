@@ -4090,7 +4090,7 @@ const holo = {
   container: null,
   raf: null,
   rotate: true,
-  drag: { active: false, x: 0, y: 0, rotX: 0.45, rotY: 0.0 },
+  drag: { active: false, x: 0, y: 0, rotX: 0.0, rotY: 0.0 },
   state: { level: 0, holonicId: null, holonId: null },
   boundary: null,
   pulseMesh: null,
@@ -4112,7 +4112,10 @@ function holoInit(container) {
   holo.scene = new THREE.Scene();
   holo.scene.background = new THREE.Color(0x0a0a0f);
   holo.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
-  holo.camera.position.set(0, 8, 32);
+  // Slight bird's-eye angle so the ring of spheres sits in the middle of
+  // the viewport rather than dropping to the bottom edge.
+  holo.camera.position.set(0, 14, 26);
+  holo.camera.lookAt(0, 0, 0);
   holo.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   holo.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
   container.appendChild(holo.renderer.domElement);
@@ -4120,14 +4123,17 @@ function holoInit(container) {
   holo.group = new THREE.Group();
   holo.scene.add(holo.group);
 
-  const ambient = new THREE.AmbientLight(0x99aaff, 0.6);
+  const ambient = new THREE.AmbientLight(0xb6c8ff, 1.0);
   holo.scene.add(ambient);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-  dir.position.set(10, 18, 12);
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(10, 22, 12);
   holo.scene.add(dir);
-  const rim = new THREE.PointLight(0x8888ff, 1.2, 200);
-  rim.position.set(-12, 8, -10);
+  const rim = new THREE.PointLight(0x88aaff, 1.6, 220);
+  rim.position.set(-12, 10, -10);
   holo.scene.add(rim);
+  const fill = new THREE.PointLight(0xffd6a3, 0.8, 200);
+  fill.position.set(14, -2, 14);
+  holo.scene.add(fill);
 
   holo.starfield = makeStarfield(2000);
   holo.scene.add(holo.starfield);
@@ -4211,6 +4217,7 @@ function attachHoloPointer() {
     const z = holo.camera.position.length();
     const next = Math.max(10, Math.min(120, z + e.deltaY * 0.05));
     holo.camera.position.setLength(next);
+    holo.camera.lookAt(0, 0, 0);
   }, { passive: false });
   dom.addEventListener("mouseenter", () => { holo.hoverPause = true; });
   dom.addEventListener("mouseleave", () => { holo.hoverPause = false; });
@@ -4249,6 +4256,8 @@ function holoAnimate() {
   if (holo.rotate && !holo.hoverPause && holo.state.level === 0) {
     holo.drag.rotY += 0.0025;
   }
+  // Keep the ring framed in the viewport even after wheel-zoom or drag.
+  holo.camera.lookAt(0, 0, 0);
   holo.group.rotation.x = holo.drag.rotX;
   holo.group.rotation.y = holo.drag.rotY;
   if (holo.pulseMesh) {
@@ -4335,31 +4344,47 @@ function renderHoloLevel0(boundaryData) {
   holoClear();
   const holonics = boundaryData.holonics || [];
   const n = Math.max(1, holonics.length);
-  const ringR = Math.max(8, 4 + n * 1.2);
+  const ringR = Math.max(9, 5 + n * 1.6);
   holonics.forEach((hc, i) => {
-    const a = (2 * Math.PI * i) / n;
+    const a = (2 * Math.PI * i) / n - Math.PI / 2;
     const x = Math.cos(a) * ringR;
     const z = Math.sin(a) * ringR;
-    const radius = 3.2;
+    const radius = 3.6;
     const color = HOLO_STATUS_COLOR[hc.aggregateStatus] || HOLO_STATUS_COLOR.unknown;
-    const sphereGeom = new THREE.SphereGeometry(radius, 32, 24);
-    const sphereMat = new THREE.MeshStandardMaterial({
+    // Solid core gives the sphere a clear silhouette against the dark sky.
+    const coreGeom = new THREE.SphereGeometry(radius * 0.78, 32, 24);
+    const coreMat = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.9,
+      roughness: 0.35,
+      metalness: 0.1,
+    });
+    const core = new THREE.Mesh(coreGeom, coreMat);
+    core.position.set(x, 0, z);
+    core.userData = { holoId: hc.id, holoKind: "holonic" };
+    holo.group.add(core);
+    // Halo shell adds the "translucent boundary" feel without losing the
+    // core's contrast.
+    const haloGeom = new THREE.SphereGeometry(radius, 32, 24);
+    const haloMat = new THREE.MeshStandardMaterial({
       color,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.32,
       emissive: color,
-      emissiveIntensity: 0.45,
-      roughness: 0.4,
-      metalness: 0.05,
+      emissiveIntensity: 0.55,
+      roughness: 0.5,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
     });
-    const sphere = new THREE.Mesh(sphereGeom, sphereMat);
-    sphere.position.set(x, 0, z);
-    sphere.userData = { holoId: hc.id, holoKind: "holonic" };
-    holo.group.add(sphere);
-    holo.clickables.set(hc.id, { mesh: sphere });
+    const halo = new THREE.Mesh(haloGeom, haloMat);
+    halo.position.set(x, 0, z);
+    halo.userData = { holoId: hc.id, holoKind: "holonic" };
+    holo.group.add(halo);
+    holo.clickables.set(hc.id, { mesh: core });
     addHoloLabel(
       `${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`,
-      new THREE.Vector3(x, radius + 2, z),
+      new THREE.Vector3(x, radius + 2.4, z),
     );
   });
 }
