@@ -16,26 +16,30 @@
   <script src="https://d3js.org/d3.v7.min.js" defer></script>
   <script src="explanations.js" defer></script>
   <script src="visualizer.js" defer></script>
+  <script src="catalog.js" defer></script>
   <script src="app.js" defer></script>
   <script type="module" src="viz3d.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
+      <button id="sidebar-toggle" class="btn ghost icon-only" title="Toggle Guild Catalog" aria-label="Toggle Guild Catalog">☰</button>
       <span class="brand-mark"></span>
       <h1>AWS Network Visualizer</h1>
     </div>
     <div class="controls">
       <div class="seg" role="group" aria-label="View mode">
         <button id="mode-2d" class="seg-btn is-active" aria-pressed="true">2D</button>
-        <button id="mode-3d" class="seg-btn" aria-pressed="false">3D</button>
+        <button id="mode-3d" class="seg-btn" aria-pressed="false">Holographic View</button>
       </div>
       <label class="btn" for="file-input">
         <span>Import network</span>
         <input id="file-input" type="file" accept="application/json,.json" hidden />
       </label>
+      <a class="btn primary" href="wizard.html" id="new-integration-btn">New Integration</a>
       <button id="load-sample" class="btn ghost">Load sample</button>
-      <button id="start-tour" class="btn primary">Start tour</button>
+      <button id="load-boundary" class="btn ghost">Load boundary</button>
+      <button id="start-tour" class="btn ghost">Start tour</button>
       <button id="explore-btn" class="btn ghost mode-3d-only" hidden>Explore</button>
       <button id="attack-btn" class="btn ghost mode-3d-only" hidden>Simulate attack</button>
       <button id="toggle-flow" class="btn ghost">Pause traffic</button>
@@ -48,9 +52,56 @@
   </header>
 
   <main class="layout">
+    <aside class="catalog-sidebar" id="catalog-sidebar" hidden aria-label="Guild Catalog">
+      <div class="catalog-head">
+        <h2>Guild Catalog</h2>
+        <button class="tour-btn" id="catalog-close" title="Hide catalog" aria-label="Hide catalog">×</button>
+      </div>
+      <div class="catalog-search">
+        <input id="catalog-search-input" type="search" placeholder="Search name or tag…" aria-label="Search catalog" />
+        <select id="catalog-filter">
+          <option value="ALL">All types</option>
+          <option value="STIG">STIG</option>
+          <option value="CVE">CVE</option>
+          <option value="CIS">CIS</option>
+          <option value="NIST">NIST</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="catalog-list" id="catalog-list"></div>
+      <div class="catalog-drafts">
+        <h3>My Drafts</h3>
+        <div class="catalog-drafts-list" id="catalog-drafts-list">
+          <p class="muted small">No drafts yet — build one from the New Integration wizard.</p>
+        </div>
+      </div>
+      <div class="catalog-global">
+        <a href="#" id="catalog-global-link">Global Catalog →</a>
+      </div>
+    </aside>
+
     <section class="stage" id="stage">
+      <div class="holo-breadcrumb" id="holo-breadcrumb" hidden>
+        <button class="holo-crumb" data-level="0">Boundary</button>
+        <span class="holo-crumb-sep">›</span>
+        <button class="holo-crumb" id="holo-crumb-holonic" data-level="1" hidden></button>
+        <span class="holo-crumb-sep" id="holo-crumb-sep-2" hidden>›</span>
+        <button class="holo-crumb" id="holo-crumb-holon" data-level="2" hidden></button>
+        <button class="holo-back" id="holo-back" hidden>← Back</button>
+      </div>
       <svg id="diagram" role="img" aria-label="AWS network diagram"></svg>
       <div class="stage-3d" id="stage-3d" hidden aria-label="AWS network city (3D)"></div>
+      <div class="stage-holo" id="stage-holo" hidden aria-label="Holographic assessment view (3D)"></div>
+      <div class="holo-watermark" id="holo-watermark" hidden>Holographic Assessment Principle</div>
+      <div class="holo-starfield" id="holo-starfield" hidden></div>
+      <div class="holo-detail" id="holo-detail" hidden>
+        <div class="holo-detail-head">
+          <h3 id="holo-detail-title">Holon</h3>
+          <button class="tour-btn" id="holo-detail-close" aria-label="Close detail">×</button>
+        </div>
+        <div class="holo-detail-body" id="holo-detail-body"></div>
+      </div>
+      <div class="holo-toast" id="holo-toast" hidden></div>
       <div class="legend">
         <div><span class="dot internet"></span> Internet</div>
         <div><span class="dot public"></span> Public subnet</div>

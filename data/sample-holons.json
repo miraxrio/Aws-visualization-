@@ -1,0 +1,280 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Sample holon dataset — mix of STIG, CVE, and CIS items aggregated into two holonics. Used by the visualizer and the wizard preview.",
+  "holons": [
+    {
+      "id": "stig-container-nginx-base",
+      "entityType": "holon",
+      "assessmentType": "STIG",
+      "subtype": "container",
+      "label": "STIG · nginx base image hardening",
+      "target": "nginx:1.25-alpine",
+      "status": "pass",
+      "severity": "medium",
+      "score": 92,
+      "timestamp": "2026-05-12T08:14:00Z",
+      "hash": "9f4a1c2e7b5d6f803a1bc92d4e7f0a13b58e3c1f4a9d7b8c6e5f201938abcdef",
+      "source": "0bias",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-12T08:14:00Z",
+        "collectedBy": "0bias-scanner@v3.2",
+        "verifiedAt": "2026-05-12T11:02:00Z",
+        "chain": ["scan-job-44812"]
+      },
+      "meta": {
+        "description": "DISA STIG V-72081 container base image hardening — verifies non-root user, dropped capabilities, and pinned digest.",
+        "remediation": null,
+        "references": [
+          "https://public.cyber.mil/stigs/"
+        ]
+      },
+      "projection": "both"
+    },
+    {
+      "id": "stig-container-nginx-tls",
+      "entityType": "holon",
+      "assessmentType": "STIG",
+      "subtype": "container",
+      "label": "STIG · TLS configuration",
+      "target": "nginx:1.25-alpine",
+      "status": "fail",
+      "severity": "critical",
+      "score": 18,
+      "timestamp": "2026-05-12T08:14:00Z",
+      "hash": "ab12cd34ef56789012345678901234567890aabbccddeeff112233445566778899",
+      "source": "0bias",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-12T08:14:00Z",
+        "collectedBy": "0bias-scanner@v3.2",
+        "verifiedAt": null,
+        "chain": ["scan-job-44812"]
+      },
+      "meta": {
+        "description": "Server still negotiates TLS 1.0 and exposes weak CBC ciphers. Fails DISA STIG cryptographic requirements.",
+        "remediation": "Set ssl_protocols TLSv1.2 TLSv1.3; restrict ssl_ciphers to ECDHE-AEAD suites.",
+        "references": [
+          "https://ssl-config.mozilla.org/"
+        ]
+      },
+      "projection": "both"
+    },
+    {
+      "id": "cve-container-openssl-2025-9999",
+      "entityType": "holon",
+      "assessmentType": "CVE",
+      "subtype": "container",
+      "label": "CVE-2025-9999 · OpenSSL heap overflow",
+      "target": "nginx:1.25-alpine",
+      "status": "fail",
+      "severity": "high",
+      "score": 32,
+      "timestamp": "2026-05-12T08:14:01Z",
+      "hash": "00aa11bb22cc33dd44ee55ff66001122334455667788990011223344556677ee",
+      "source": "0bias",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-12T08:14:01Z",
+        "collectedBy": "0bias-scanner@v3.2",
+        "verifiedAt": "2026-05-13T09:00:00Z",
+        "chain": ["scan-job-44812", "nvd-feed-2026-05-10"]
+      },
+      "meta": {
+        "description": "OpenSSL 3.x heap overflow in X.509 verification. Bundled version still <3.3.1.",
+        "remediation": "Rebuild image against openssl 3.3.2 or later.",
+        "references": [
+          "https://nvd.nist.gov/vuln/detail/CVE-2025-9999"
+        ]
+      },
+      "projection": "both"
+    },
+    {
+      "id": "cve-vm-kernel-2026-0142",
+      "entityType": "holon",
+      "assessmentType": "CVE",
+      "subtype": "vm",
+      "label": "CVE-2026-0142 · Linux kernel use-after-free",
+      "target": "ip-10-0-12-44.ec2.internal",
+      "status": "pending",
+      "severity": "high",
+      "score": 50,
+      "timestamp": "2026-05-15T12:01:00Z",
+      "hash": "deadbeefcafebabe0001020304050607deadbeefcafebabe08090a0b0c0d0e0f",
+      "source": "automated",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-15T12:01:00Z",
+        "collectedBy": "tenable-agent@10.0.12.44",
+        "verifiedAt": null,
+        "chain": ["tenable-scan-77123"]
+      },
+      "meta": {
+        "description": "Use-after-free in io_uring path. Patched kernel awaiting maintenance window.",
+        "remediation": "Apply kernel 6.8.11 and reboot during the next change window.",
+        "references": [
+          "https://nvd.nist.gov/vuln/detail/CVE-2026-0142"
+        ]
+      },
+      "projection": "both"
+    },
+    {
+      "id": "cis-vm-baseline-1-1-1",
+      "entityType": "holon",
+      "assessmentType": "CIS",
+      "subtype": "vm",
+      "label": "CIS 1.1.1 · /tmp on separate partition",
+      "target": "ip-10-0-12-44.ec2.internal",
+      "status": "pass",
+      "severity": "low",
+      "score": 100,
+      "timestamp": "2026-05-15T12:02:00Z",
+      "hash": "1122334455667788990011223344556677889900aabbccddeeff00112233aaff",
+      "source": "automated",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-15T12:02:00Z",
+        "collectedBy": "cis-cat-pro@4.18",
+        "verifiedAt": "2026-05-15T13:30:00Z",
+        "chain": ["cis-scan-2026-05-15"]
+      },
+      "meta": {
+        "description": "/tmp mounted on its own partition with nodev,nosuid,noexec options set.",
+        "remediation": null,
+        "references": [
+          "https://www.cisecurity.org/benchmark/ubuntu_linux"
+        ]
+      },
+      "projection": "both"
+    },
+    {
+      "id": "nist-service-ac-2",
+      "entityType": "holon",
+      "assessmentType": "NIST",
+      "subtype": "service",
+      "label": "NIST AC-2 · Account management",
+      "target": "iam-role:checkout-svc",
+      "status": "pass",
+      "severity": "info",
+      "score": 88,
+      "timestamp": "2026-05-10T16:45:00Z",
+      "hash": "55667788990011223344aabbccddeeff0011223344556677889900aabbccdd00",
+      "source": "manual",
+      "immutable": false,
+      "provenance": {
+        "collectedAt": "2026-05-10T16:45:00Z",
+        "collectedBy": "auditor@maria.h",
+        "verifiedAt": null,
+        "chain": []
+      },
+      "meta": {
+        "description": "Service account lifecycle is reviewed quarterly. Last review attestation on file from Q1 2026.",
+        "remediation": null,
+        "references": [
+          "https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final"
+        ]
+      },
+      "projection": "both"
+    },
+    {
+      "id": "cis-repo-secrets-scan",
+      "entityType": "holon",
+      "assessmentType": "CIS",
+      "subtype": "repo",
+      "label": "CIS · No committed secrets",
+      "target": "github.com/acme/checkout-svc",
+      "status": "fail",
+      "severity": "medium",
+      "score": 40,
+      "timestamp": "2026-05-18T07:20:00Z",
+      "hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "source": "automated",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-18T07:20:00Z",
+        "collectedBy": "gitleaks-action@v2",
+        "verifiedAt": null,
+        "chain": ["github-actions-run-87401"]
+      },
+      "meta": {
+        "description": "Gitleaks detected an AWS_SECRET_ACCESS_KEY pattern in commit 7d3a91b on branch feature/quick-fix.",
+        "remediation": "Rotate the exposed key, rewrite history with git-filter-repo, and add a pre-commit gitleaks hook.",
+        "references": [
+          "https://github.com/gitleaks/gitleaks"
+        ]
+      },
+      "projection": "both"
+    },
+    {
+      "id": "stig-network-sg-ingress",
+      "entityType": "holon",
+      "assessmentType": "STIG",
+      "subtype": "network",
+      "label": "STIG · No 0.0.0.0/0 SSH ingress",
+      "target": "sg-0a1b2c3d4e5f6789a",
+      "status": "unknown",
+      "severity": "high",
+      "score": 0,
+      "timestamp": "2026-05-19T06:00:00Z",
+      "hash": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "source": "automated",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-19T06:00:00Z",
+        "collectedBy": "aws-config@us-east-1",
+        "verifiedAt": null,
+        "chain": ["config-rule-eval-99921"]
+      },
+      "meta": {
+        "description": "Could not evaluate because the AWS Config recorder is paused for sg-0a1b2c3d4e5f6789a.",
+        "remediation": "Resume AWS Config recording for VPC sg-0a1b2c3d4e5f6789a and re-run the eligibility evaluator.",
+        "references": []
+      },
+      "projection": "both"
+    }
+  ],
+  "holonics": [
+    {
+      "id": "holonic-container-stigs",
+      "entityType": "holonic",
+      "label": "Container STIGs",
+      "holonType": "control",
+      "holons": [
+        "stig-container-nginx-base",
+        "stig-container-nginx-tls",
+        "cve-container-openssl-2025-9999"
+      ],
+      "childHolonics": [],
+      "aggregateStatus": "partial-fail",
+      "aggregateScore": 47,
+      "boundary": {
+        "shape": "cluster",
+        "color": "#f97316"
+      },
+      "timestamp": "2026-05-12T08:14:00Z",
+      "projection": "both"
+    },
+    {
+      "id": "holonic-checkout-service",
+      "entityType": "holonic",
+      "label": "Checkout service boundary",
+      "holonType": "boundary",
+      "holons": [
+        "cve-vm-kernel-2026-0142",
+        "cis-vm-baseline-1-1-1",
+        "nist-service-ac-2",
+        "cis-repo-secrets-scan",
+        "stig-network-sg-ingress"
+      ],
+      "childHolonics": [],
+      "aggregateStatus": "fail",
+      "aggregateScore": 55,
+      "boundary": {
+        "shape": "ring",
+        "color": "#ef4444"
+      },
+      "timestamp": "2026-05-19T06:00:00Z",
+      "projection": "both"
+    }
+  ]
+}
