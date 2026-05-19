@@ -4407,19 +4407,36 @@ function renderHoloLevel1(holonicId, boundaryData) {
   const boundaryR = 10;
   const boundaryColor = HOLO_STATUS_COLOR[hc.aggregateStatus] || HOLO_STATUS_COLOR.unknown;
 
+  // Faint translucent fill — MeshBasicMaterial so it doesn't pick up the
+  // scene lights and turn into a solid orange ball that hides the holons
+  // inside. FrontSide-only avoids the DoubleSide double-overdraw too.
   const shellGeom = new THREE.SphereGeometry(boundaryR, 48, 32);
-  const shellMat = new THREE.MeshStandardMaterial({
+  const shellMat = new THREE.MeshBasicMaterial({
     color: boundaryColor,
     transparent: true,
-    opacity: 0.08,
-    emissive: boundaryColor,
-    emissiveIntensity: 0.15,
-    side: THREE.DoubleSide,
-    roughness: 0.3,
-    metalness: 0.0,
+    opacity: 0.05,
+    side: THREE.FrontSide,
+    depthWrite: false,
   });
   const shell = new THREE.Mesh(shellGeom, shellMat);
+  shell.renderOrder = 0;
+  shell.userData = { holoKind: "shell" };
   holo.group.add(shell);
+
+  // Wireframe outline gives the boundary a clear silhouette without
+  // tinting whatever sits inside it.
+  const wireGeom = new THREE.SphereGeometry(boundaryR, 18, 12);
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: boundaryColor,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.35,
+  });
+  const wire = new THREE.Mesh(wireGeom, wireMat);
+  wire.renderOrder = 1;
+  wire.userData = { holoKind: "shell" };
+  holo.group.add(wire);
+
   addHoloLabel(`${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`,
     new THREE.Vector3(0, boundaryR + 2, 0));
 
@@ -4462,21 +4479,40 @@ function fibSphere(n, r) {
 function addHoloHolon(holon, pos) {
   const radius = HOLO_SEVERITY_RADIUS[holon.severity] || 0.6;
   const color = HOLO_STATUS_COLOR[holon.status] || HOLO_STATUS_COLOR.unknown;
-  const geom = new THREE.SphereGeometry(radius, 24, 18);
+  // White outer halo so the holon's silhouette stays distinct from
+  // whatever colour the surrounding boundary shell happens to be —
+  // red-on-orange and green-on-orange would otherwise wash out.
+  const haloGeom = new THREE.SphereGeometry(radius * 1.45, 18, 14);
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false,
+  });
+  const halo = new THREE.Mesh(haloGeom, haloMat);
+  halo.position.copy(pos);
+  halo.userData = { holoId: holon.id, holoKind: "holon" };
+  halo.renderOrder = 5;
+  holo.group.add(halo);
+
+  // Solid bright core. High emissive intensity so it reads as luminous
+  // regardless of the boundary shell's colour.
+  const geom = new THREE.SphereGeometry(radius, 28, 20);
   const mat = new THREE.MeshStandardMaterial({
     color,
     emissive: color,
-    emissiveIntensity: 0.6,
-    roughness: 0.35,
+    emissiveIntensity: 1.4,
+    roughness: 0.3,
     metalness: 0.1,
   });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.position.copy(pos);
   mesh.userData = { holoId: holon.id, holoKind: "holon" };
+  mesh.renderOrder = 6;
   holo.group.add(mesh);
   holo.clickables.set(holon.id, { mesh });
   if (holon.label) {
-    addHoloLabel(holon.label, pos.clone().add(new THREE.Vector3(0, radius + 0.6, 0)));
+    addHoloLabel(holon.label, pos.clone().add(new THREE.Vector3(0, radius + 0.8, 0)));
   }
 }
 
@@ -4563,6 +4599,9 @@ function renderHoloLevel2(holonId, boundaryData) {
   holo.state = { level: 2, holonicId: holo.state.holonicId, holonId };
   holo.group.traverse((c) => {
     if (!c.isMesh) return;
+    // Skip the boundary shell + wireframe — overriding their opacity to
+    // 0.4 would make the shell appear solid and hide the holons inside.
+    if (c.userData && c.userData.holoKind === "shell") return;
     const isTarget = c.userData && c.userData.holoId === holonId;
     if (c.material && "opacity" in c.material) {
       c.material.transparent = true;
