@@ -1694,6 +1694,19 @@ body.sidebar-open .layout {
   font: inherit;
 }
 .holo-back:hover { border-color: var(--accent-2); }
+.holo-exit {
+  margin-left: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.holo-exit:hover { background: rgba(239, 68, 68, 0.22); color: #fff; }
 
 /* Holographic stage — dark background + starfield overlay (Feature 5). */
 .stage-holo {
@@ -1752,6 +1765,13 @@ body.mode-holographic .legend { display: none; }
 body.mode-holographic .hint { display: none; }
 body.mode-holographic .stage {
   background: #0a0a0f;
+}
+/* Hide AWS-specific panels in boundary mode — they describe topology
+   concepts that don't apply to a holographic assessment view. */
+body.mode-holographic #detail-panel,
+body.mode-holographic #schema-doc,
+body.mode-holographic .sidebar > .panel:last-child {
+  display: none;
 }
 
 /* Holon/holonic nodes inside SVG */
@@ -1888,6 +1908,11 @@ body.mode-holographic .stage {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Grid children default to min-height:auto which breaks overflow:auto.
+     Setting min-height:0 lets the sidebar shrink to its grid row and
+     scroll internally so cards + drafts + global-link stay reachable. */
+  min-height: 0;
+  max-height: 100%;
 }
 .catalog-sidebar[hidden] { display: none; }
 .catalog-head {

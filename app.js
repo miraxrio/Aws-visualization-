@@ -71,10 +71,12 @@
   };
 
   function loadData(data) {
-    // Boundary (holographic) schema: an entityType:"boundary" object that
-    // contains holonics + loose_holons. Routes to the holographic renderer.
-    if (window.AwsHoloViz && window.AwsHoloViz.isBoundary(data)) {
-      loadBoundary(data);
+    // Boundary (holographic) schema, or any holons-shaped payload that we
+    // can wrap into one (e.g. data/sample-holons.json which only declares
+    // "holons" + "holonics" at the top level).
+    const wrapped = tryWrapAsBoundary(data);
+    if (wrapped) {
+      loadBoundary(wrapped);
       return;
     }
 
@@ -1215,6 +1217,34 @@
   };
 
   /**
+   * Try to normalise an arbitrary payload into a boundary object so the
+   * holographic renderer can display it. Returns null when the data
+   * doesn't look holographic at all.
+   * @param {*} data
+   * @returns {object|null}
+   */
+  function tryWrapAsBoundary(data) {
+    if (!data || typeof data !== "object") return null;
+    if (data.entityType === "boundary") return data;
+    const hasHolons = Array.isArray(data.holons);
+    const hasHolonics = Array.isArray(data.holonics);
+    const hasLoose = Array.isArray(data.loose_holons);
+    if (!hasHolons && !hasHolonics && !hasLoose) return null;
+    return {
+      id: data.id || "boundary-imported",
+      entityType: "boundary",
+      label: data.label || data.name || "Imported holons",
+      environment: data.environment || "dev",
+      role: data.role || "supplier",
+      snapshotAt: data.snapshotAt || new Date().toISOString(),
+      schemaVersion: data.schemaVersion || "1.0.0",
+      holonics: data.holonics || [],
+      loose_holons: data.loose_holons || data.holons || [],
+      meta: data.meta || {},
+    };
+  }
+
+  /**
    * Render a boundary (holographic) snapshot. Switches the stage from the
    * legacy AWS diagram to the holographic 2D/3D pipeline.
    * @param {object} data
@@ -1445,6 +1475,16 @@
     if (back) back.addEventListener("click", () => {
       if (ZoomLevel === 2) holoNavigate(1, currentHolonicId, null);
       else if (ZoomLevel === 1) holoNavigate(0, null, null);
+    });
+    const exit = document.getElementById("holo-exit");
+    if (exit) exit.addEventListener("click", async () => {
+      exitBoundaryMode();
+      try {
+        const res = await fetch("sample-network.json");
+        if (res.ok) { loadData(await res.json()); return; }
+      } catch (_) { /* offline / file:// */ }
+      if (typeof EMBEDDED_SAMPLE !== "undefined") loadData(EMBEDDED_SAMPLE);
+      showHoloToast("Returned to network view");
     });
   }
   if (els.holoDetail) {
