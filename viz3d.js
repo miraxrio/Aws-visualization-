@@ -4079,6 +4079,9 @@ const HOLO_SEVERITY_RADIUS = {
   low: 0.6,
   info: 0.4,
 };
+// Target camera distances per zoom level — dollying between them on
+// navigation gives the "zoom into the element" feel.
+const HOLO_LEVEL_DISTANCE = { 0: 32, 1: 26, 2: 18 };
 
 const holo = {
   initialized: false,
@@ -4086,6 +4089,7 @@ const holo = {
   camera: null,
   renderer: null,
   group: null,
+  orbitGroup: null,
   labels: [],
   container: null,
   raf: null,
@@ -4099,6 +4103,8 @@ const holo = {
   raycaster: null,
   pointer: null,
   clickables: new Map(),
+  camTween: null,
+  orbitAngle: 0,
 };
 
 /**
@@ -4170,11 +4176,14 @@ function makeStarfield(count) {
   }
   geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.PointsMaterial({
-    color: 0xddddff,
-    size: 0.6,
+    color: 0xcfe0ff,
+    map: ensureHoloGlowTexture(),
+    size: 6,
     transparent: true,
-    opacity: 0.75,
+    opacity: 0.85,
     sizeAttenuation: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
   });
   return new THREE.Points(geom, mat);
 }
@@ -4257,6 +4266,21 @@ function holoAnimate() {
   if (holo.rotate && !holo.hoverPause && holo.state.level === 0) {
     holo.drag.rotY += 0.0025;
   }
+  // Smooth camera dolly when navigating between levels.
+  if (holo.camTween) {
+    const e = Math.min(1, (now - holo.camTween.start) / holo.camTween.dur);
+    const k = e < 0.5 ? 4 * e * e * e : 1 - Math.pow(-2 * e + 2, 3) / 2; // easeInOutCubic
+    const len = holo.camTween.fromLen + (holo.camTween.toLen - holo.camTween.fromLen) * k;
+    holo.camera.position.setLength(len);
+    if (e >= 1) holo.camTween = null;
+  }
+  // Child holons orbit the boundary centre like electrons while the cursor
+  // is outside the canvas (paused on hover, same as the Level 0 spin).
+  if (holo.orbitGroup && holo.state.level === 1 && !holo.hoverPause) {
+    holo.orbitAngle += 0.004;
+    holo.orbitGroup.rotation.y = holo.orbitAngle;
+    holo.orbitGroup.rotation.x = Math.sin(holo.orbitAngle * 0.5) * 0.25;
+  }
   // Keep the ring framed in the viewport even after wheel-zoom or drag.
   // Looking slightly above origin pushes the ring upward in the frame so
   // it doesn't sit at the bottom edge.
@@ -4287,6 +4311,9 @@ function holoAnimate() {
     });
   }
   if (holo.starfield) holo.starfield.rotation.y += 0.0003;
+  // Refresh world matrices so floating labels/badges track the orbiting
+  // holons this frame rather than lagging one frame behind.
+  holo.group.updateMatrixWorld(true);
   updateHoloLabels();
   holo.renderer.render(holo.scene, holo.camera);
   holo.raf = requestAnimationFrame(holoAnimate);
@@ -4302,7 +4329,8 @@ function updateHoloLabels() {
   const w = rect.width;
   const h = rect.height;
   holo.labels.forEach((entry) => {
-    const v = entry.position.clone().applyMatrix4(holo.group.matrixWorld);
+    const parent = entry.parent || holo.group;
+    const v = entry.position.clone().applyMatrix4(parent.matrixWorld);
     v.project(holo.camera);
     const inFront = v.z < 1;
     if (!inFront) {
@@ -4336,6 +4364,7 @@ function holoClear() {
   holo.labels.forEach((l) => l.el.remove());
   holo.labels = [];
   holo.pulseMesh = null;
+  holo.orbitGroup = null;
 }
 
 /**
@@ -4345,14 +4374,14 @@ function holoClear() {
  * @param {THREE.Vector3} position
  * @returns {HTMLElement}
  */
-function addHoloLabel(text, position) {
+function addHoloLabel(text, position, parent) {
   const el = document.createElement("div");
   el.className = "holo-label";
   el.textContent = text;
   el.style.position = "absolute";
   el.style.pointerEvents = "none";
   holo.container.appendChild(el);
-  holo.labels.push({ el, position: position.clone() });
+  holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
   return el;
 }
 
@@ -4411,6 +4440,7 @@ function renderHoloLevel0(boundaryData) {
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
       new THREE.Vector3(x + radius * 0.9, radius + 1.0, z));
   });
+  holoZoomTo(HOLO_LEVEL_DISTANCE[0]);
 }
 
 /**
@@ -4419,7 +4449,7 @@ function renderHoloLevel0(boundaryData) {
  * @param {number} level
  * @param {THREE.Vector3} position
  */
-function addHoloAssemblyBadge(level, position) {
+function addHoloAssemblyBadge(level, position, parent) {
   const icons = ["⬥", "◈", "◉", "⬡", "⊕"];
   const el = document.createElement("div");
   el.className = `asm-badge-3d asm-${level}`;
@@ -4427,7 +4457,7 @@ function addHoloAssemblyBadge(level, position) {
   el.style.position = "absolute";
   el.style.pointerEvents = "none";
   holo.container.appendChild(el);
-  holo.labels.push({ el, position: position.clone() });
+  holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
 }
 
 /**
@@ -4510,11 +4540,19 @@ function renderHoloLevel1(holonicId, boundaryData) {
   addHoloLabel(`${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`,
     new THREE.Vector3(0, boundaryR + 2, 0));
 
+  // Child holons + their edges live in a dedicated orbit group so they can
+  // revolve around the boundary centre like electrons while the shell +
+  // rings stay put. The orbit group is rotated in the animate loop.
+  holo.orbitGroup = new THREE.Group();
+  holo.group.add(holo.orbitGroup);
+  holo.orbitAngle = 0;
+
   const lookup = buildHoloLookup(boundaryData);
   const holons = (hc.holons || []).map((id) => lookup.get(id)).filter(Boolean);
   const positions = fibSphere(holons.length, boundaryR * 0.65);
-  holons.forEach((holon, i) => addHoloHolon(holon, positions[i]));
-  drawHoloTargetEdges(holons, positions);
+  holons.forEach((holon, i) => addHoloHolon(holon, positions[i], holo.orbitGroup));
+  drawHoloTargetEdges(holons, positions, holo.orbitGroup);
+  holoZoomTo(HOLO_LEVEL_DISTANCE[1]);
 }
 
 /**
@@ -4542,11 +4580,14 @@ function fibSphere(n, r) {
 
 /**
  * Add a solid sphere for a single holon, sized by severity and coloured by
- * status, with a floating label.
+ * status, with a floating label. Added to `parent` (the orbit group) so it
+ * can revolve around the boundary centre.
  * @param {object} holon
  * @param {THREE.Vector3} pos
+ * @param {THREE.Object3D} parent
  */
-function addHoloHolon(holon, pos) {
+function addHoloHolon(holon, pos, parent) {
+  const target = parent || holo.group;
   const radius = HOLO_SEVERITY_RADIUS[holon.severity] || 0.6;
   const color = HOLO_STATUS_COLOR[holon.status] || HOLO_STATUS_COLOR.unknown;
 
@@ -4568,7 +4609,7 @@ function addHoloHolon(holon, pos) {
   glow.position.copy(pos);
   glow.userData = { holoId: holon.id, holoKind: "holon-glow" };
   glow.renderOrder = 4;
-  holo.group.add(glow);
+  target.add(glow);
 
   // White rim halo gives the holon a crisp silhouette inside the glow.
   const haloGeom = new THREE.SphereGeometry(radius * 1.35, 18, 14);
@@ -4582,7 +4623,7 @@ function addHoloHolon(holon, pos) {
   halo.position.copy(pos);
   halo.userData = { holoId: holon.id, holoKind: "holon" };
   halo.renderOrder = 5;
-  holo.group.add(halo);
+  target.add(halo);
 
   // Solid luminous core.
   const geom = new THREE.SphereGeometry(radius, 28, 20);
@@ -4597,21 +4638,24 @@ function addHoloHolon(holon, pos) {
   mesh.position.copy(pos);
   mesh.userData = { holoId: holon.id, holoKind: "holon", glowSprite: glow, baseGlowScale: glowScale };
   mesh.renderOrder = 6;
-  holo.group.add(mesh);
+  target.add(mesh);
   holo.clickables.set(holon.id, { mesh });
   if (holon.label) {
-    addHoloLabel(holon.label, pos.clone().add(new THREE.Vector3(0, radius + 0.8, 0)));
+    addHoloLabel(holon.label, pos.clone().add(new THREE.Vector3(0, radius + 0.8, 0)), target);
   }
   addHoloAssemblyBadge(holon.assemblyLevel != null ? holon.assemblyLevel : 0,
-    pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)));
+    pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)), target);
 }
 
 /**
  * Draw glowing emissive lines between holons that share the same `target`.
+ * Added to `parent` (the orbit group) so edges revolve with their holons.
  * @param {Array<object>} holons
  * @param {THREE.Vector3[]} positions
+ * @param {THREE.Object3D} parent
  */
-function drawHoloTargetEdges(holons, positions) {
+function drawHoloTargetEdges(holons, positions, parent) {
+  const target = parent || holo.group;
   const byTarget = new Map();
   holons.forEach((h, i) => {
     if (!h.target) return;
@@ -4623,7 +4667,7 @@ function drawHoloTargetEdges(holons, positions) {
     if (arr.length < 2) return;
     for (let i = 0; i < arr.length; i++) {
       for (let j = i + 1; j < arr.length; j++) {
-        holo.group.add(makeGlowTube(positions[arr[i]], positions[arr[j]], 0.12, 0x7bc4ff));
+        target.add(makeGlowTube(positions[arr[i]], positions[arr[j]], 0.12, 0x7bc4ff));
       }
     }
   });
@@ -4715,6 +4759,7 @@ function renderHoloLevel2(holonId, boundaryData) {
     }
   });
   if (targetPos) addHoloReticle(targetPos, targetRadius, targetColor);
+  holoZoomTo(HOLO_LEVEL_DISTANCE[2]);
 }
 
 /**
@@ -4738,7 +4783,22 @@ function addHoloReticle(pos, radius, color) {
   ring.position.copy(pos);
   ring.userData = { holoPulseRing: true, holoBaseRadius: radius * 2.1, holoColor: color };
   ring.renderOrder = 7;
-  holo.group.add(ring);
+  // Attach to the orbit group so the reticle stays locked to its holon.
+  (holo.orbitGroup || holo.group).add(ring);
+}
+
+/**
+ * Start a smooth camera dolly to a target distance from the origin.
+ * @param {number} targetLen
+ * @param {number} [dur] tween duration in ms
+ */
+function holoZoomTo(targetLen, dur) {
+  holo.camTween = {
+    fromLen: holo.camera.position.length(),
+    toLen: targetLen,
+    start: performance.now(),
+    dur: dur || 650,
+  };
 }
 
 /**
