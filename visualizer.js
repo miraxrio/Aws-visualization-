@@ -1077,6 +1077,68 @@
     return map;
   }
 
+  const ASM_BADGE = {
+    0: { icon: "⬥", cls: "asm-0" },
+    1: { icon: "◈", cls: "asm-1" },
+    2: { icon: "◉", cls: "asm-2" },
+    3: { icon: "⬡", cls: "asm-3" },
+    4: { icon: "⊕", cls: "asm-4" },
+  };
+  // Assembly-level filter state (set of visible levels, or null = all).
+  let asmFilter = null;
+
+  /**
+   * Resolve ontology render properties for an entity, with a safe fallback
+   * when the ontology module hasn't loaded.
+   * @param {object} entity
+   * @returns {{icon:string, shape:string, baseColor:string, category:string}}
+   */
+  function ontProps(entity) {
+    const r = window.OntologyRenderer;
+    if (r && entity && entity.entityClass) return r.getRenderProps(entity.entityClass);
+    return { icon: "◯", shape: "circle", baseColor: "#6b7280", category: "UNKNOWN" };
+  }
+
+  /**
+   * Gather every entity in the active boundary (holonics + loose_holons +
+   * the boundary itself) into a flat array for assembly-chain walking.
+   * @returns {object[]}
+   */
+  function allEntities() {
+    if (!boundary) return [];
+    return [...(boundary.loose_holons || []), ...(boundary.holonics || []), boundary];
+  }
+
+  /**
+   * Append an assembly-level badge pill to a node group.
+   * @param {object} g d3 selection of the node group
+   * @param {number} x badge anchor x
+   * @param {number} y badge anchor y
+   * @param {number} level assembly level 0-4
+   */
+  function drawAssemblyBadge(g, x, y, level) {
+    const b = ASM_BADGE[level] || ASM_BADGE[0];
+    const grp = g.append("g")
+      .attr("class", `asm-badge ${b.cls}`)
+      .attr("transform", `translate(${x}, ${y})`);
+    grp.append("rect")
+      .attr("x", -13).attr("y", -10).attr("width", 26).attr("height", 18).attr("rx", 9);
+    grp.append("text")
+      .attr("text-anchor", "middle").attr("dy", "0.32em")
+      .text(`${b.icon} ${level}`);
+    grp.append("title").text(asmLabel(level));
+  }
+
+  /**
+   * Human-readable label for an assembly level via the ontology module.
+   * @param {number} level
+   * @returns {string}
+   */
+  function asmLabel(level) {
+    const a = window.OntologyAssembly;
+    return a ? a.getAssemblyLabel(level) : `Level ${level}`;
+  }
+
   /**
    * Initialise the SVG canvas. Called on each render so re-renders don't
    * accumulate stale layers.
@@ -1134,6 +1196,7 @@
       const g = rootG.append("g")
         .attr("class", `holonic-hex status-${hc.aggregateStatus}`)
         .attr("data-id", hc.id)
+        .attr("data-asm", hc.assemblyLevel != null ? hc.assemblyLevel : 1)
         .style("cursor", "pointer");
       g.append("polygon")
         .attr("points", hexagonPoints(p.x, p.y, r))
@@ -1162,8 +1225,12 @@
         .style("font-size", "10px")
         .style("opacity", 0.65)
         .text(`${(hc.holons || []).length} holons`);
+      drawAssemblyBadge(g, p.x + r * 0.7, p.y - r * 0.78, hc.assemblyLevel != null ? hc.assemblyLevel : 1);
       g.on("click", () => navigate(1, hc.id, null));
+      g.on("mouseenter", () => highlightChain(hc.id));
+      g.on("mouseleave", () => clearChainHighlight());
     });
+    applyAssemblyFilter(asmFilter);
   }
 
   /**
@@ -1203,6 +1270,7 @@
     const idx = holonics.indexOf(selected);
     drawBackgroundHolonics(holonics, positions, r, idx);
     drawExpandedHolons(selected, boundaryData, positions[idx], r, w, h);
+    applyAssemblyFilter(asmFilter);
   }
 
   /**
@@ -1220,6 +1288,7 @@
       const g = rootG.append("g")
         .attr("class", "holonic-hex holo-dim")
         .attr("data-id", hc.id)
+        .attr("data-asm", hc.assemblyLevel != null ? hc.assemblyLevel : 1)
         .style("cursor", "pointer")
         .style("opacity", 0.55);
       g.append("polygon")
@@ -1325,14 +1394,21 @@
   function drawHolonNode(holon, x, y) {
     const radius = SEVERITY_RADIUS[holon.severity] || 14;
     const fill = STATUS_COLOR[holon.status] || STATUS_COLOR.unknown;
+    const props = ontProps(holon);
     const g = rootG.append("g")
       .attr("class", `holon-node status-${holon.status} sev-${holon.severity}`)
       .attr("data-id", holon.id)
+      .attr("data-asm", holon.assemblyLevel != null ? holon.assemblyLevel : 0)
       .style("cursor", "pointer");
-    g.append("circle")
-      .attr("cx", x).attr("cy", y).attr("r", radius)
-      .attr("fill", fill).attr("fill-opacity", 0.75)
-      .attr("stroke", fill).attr("stroke-width", 2);
+    // Shape comes from the ontology entityClass; fill stays status-coloured
+    // (the assessment signal) with the entityClass colour as the stroke.
+    drawShape(g, props.shape, x, y, radius, fill, props.baseColor);
+    g.append("text")
+      .attr("x", x).attr("y", y).attr("dy", "0.32em")
+      .attr("text-anchor", "middle")
+      .style("font-size", `${Math.max(10, radius * 0.7)}px`)
+      .style("pointer-events", "none")
+      .text(props.icon);
     g.append("text")
       .attr("x", x).attr("y", y + radius + 14)
       .attr("text-anchor", "middle")
@@ -1340,7 +1416,117 @@
       .style("font-size", "11px")
       .style("pointer-events", "none")
       .text(truncate(holon.label || holon.id, 22));
+    drawAssemblyBadge(g, x + radius + 4, y - radius - 2, holon.assemblyLevel != null ? holon.assemblyLevel : 0);
     g.on("click", () => navigate(2, state.holonicId, holon.id));
+    g.on("mouseenter", () => highlightChain(holon.id));
+    g.on("mouseleave", () => clearChainHighlight());
+  }
+
+  /**
+   * Draw the ontology shape for a node. Falls back to a circle for shapes
+   * that don't have a distinct 2D form here.
+   * @param {object} g d3 group
+   * @param {string} shape
+   * @param {number} x
+   * @param {number} y
+   * @param {number} r
+   * @param {string} fill
+   * @param {string} stroke
+   */
+  function drawShape(g, shape, x, y, r, fill, stroke) {
+    const common = (el) => el.attr("fill", fill).attr("fill-opacity", 0.78)
+      .attr("stroke", stroke).attr("stroke-width", 3);
+    if (shape === "square" || shape === "rect") {
+      const w = shape === "rect" ? r * 2.4 : r * 1.8;
+      common(g.append("rect").attr("x", x - w / 2).attr("y", y - r).attr("width", w).attr("height", r * 2).attr("rx", 3));
+    } else if (shape === "diamond") {
+      common(g.append("polygon").attr("points", `${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}`));
+    } else if (shape === "triangle") {
+      common(g.append("polygon").attr("points", `${x},${y - r} ${x + r},${y + r} ${x - r},${y + r}`));
+    } else if (shape === "hexagon") {
+      common(g.append("polygon").attr("points", hexagonPoints(x, y, r)));
+    } else {
+      common(g.append("circle").attr("cx", x).attr("cy", y).attr("r", r));
+    }
+  }
+
+  /**
+   * Highlight the full assembly chain (ancestors + descendants) of a node
+   * on hover: parent gold, children green, distant kin partial, rest dimmed.
+   * @param {string} id
+   */
+  function highlightChain(id) {
+    const ents = allEntities();
+    const map = Object.fromEntries(ents.map((e) => [e.id, e]));
+    const node = map[id];
+    if (!node) return;
+    const parents = ancestors(id, map);     // [direct, grandparent, ...]
+    const children = descendants(id, map);  // [direct[], deeper[]]
+    rootG.selectAll(".holon-node, .holonic-hex").each(function () {
+      const nid = this.getAttribute("data-id");
+      const sel = d3.select(this);
+      sel.classed("asm-chain-dim asm-chain-self asm-chain-parent asm-chain-child asm-chain-far", false);
+      if (nid === id) sel.classed("asm-chain-self", true);
+      else if (parents[0] === nid) sel.classed("asm-chain-parent", true);
+      else if (children.direct.includes(nid)) sel.classed("asm-chain-child", true);
+      else if (parents.slice(1).includes(nid) || children.deeper.includes(nid)) sel.classed("asm-chain-far", true);
+      else sel.classed("asm-chain-dim", true);
+    });
+  }
+
+  /**
+   * Walk the assembledInto chain upward, returning ancestor ids nearest-first.
+   * @param {string} id
+   * @param {Object<string,object>} map
+   * @returns {string[]}
+   */
+  function ancestors(id, map) {
+    const out = [];
+    let cur = map[id];
+    while (cur && cur.assembledInto && map[cur.assembledInto]) {
+      out.push(cur.assembledInto);
+      cur = map[cur.assembledInto];
+    }
+    return out;
+  }
+
+  /**
+   * Collect descendant ids split into direct children and deeper kin.
+   * @param {string} id
+   * @param {Object<string,object>} map
+   * @returns {{direct:string[], deeper:string[]}}
+   */
+  function descendants(id, map) {
+    const node = map[id];
+    const direct = (node && node.atomicChildren) || [];
+    const deeper = [];
+    direct.forEach((cid) => {
+      ((map[cid] && map[cid].atomicChildren) || []).forEach((g) => deeper.push(g));
+    });
+    return { direct: [...direct], deeper };
+  }
+
+  /**
+   * Clear any chain-highlight classes applied during hover.
+   */
+  function clearChainHighlight() {
+    rootG.selectAll(".holon-node, .holonic-hex")
+      .classed("asm-chain-dim asm-chain-self asm-chain-parent asm-chain-child asm-chain-far", false);
+  }
+
+  /**
+   * Apply the assembly-level filter: dim all nodes whose assemblyLevel is
+   * not in the selected set. Pass null to clear.
+   * @param {Set<number>|null} levels
+   */
+  function applyAssemblyFilter(levels) {
+    asmFilter = levels && levels.size ? levels : null;
+    if (!rootG) return;
+    rootG.selectAll(".holon-node, .holonic-hex").each(function () {
+      const lvl = Number(this.getAttribute("data-asm"));
+      const dim = asmFilter && !asmFilter.has(lvl);
+      d3.select(this).classed("asm-filtered-out", !!dim);
+    });
   }
 
   /**
@@ -1461,6 +1647,8 @@
     getState,
     findHolon,
     findHolonic,
+    applyAssemblyFilter,
+    allEntities,
     onLevelChange: null,
     onSelectHolon: null,
     STATUS_COLOR,

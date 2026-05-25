@@ -4,6 +4,7 @@
 (function () {
   let catalogEntries = [];
   let filterType = "ALL";
+  let filterProvider = "ALL";
   let searchTerm = "";
   let handlers = { onLoad: null, onToast: null };
 
@@ -39,11 +40,13 @@
   }
 
   /**
-   * Bind real-time filtering on the search input and type dropdown.
+   * Bind real-time filtering on the search input, type dropdown, and
+   * provider dropdown.
    */
   function bindSearchAndFilter() {
     const search = document.getElementById("catalog-search-input");
     const filter = document.getElementById("catalog-filter");
+    const provider = document.getElementById("catalog-provider-filter");
     if (search) search.addEventListener("input", () => {
       searchTerm = search.value.trim().toLowerCase();
       renderList();
@@ -52,18 +55,53 @@
       filterType = filter.value;
       renderList();
     });
+    if (provider) provider.addEventListener("change", () => {
+      filterProvider = provider.value;
+      renderList();
+    });
   }
 
   /**
-   * Decide whether an entry matches the active search + filter combination.
+   * Decide whether an entry matches the active search + type + provider filter.
    * @param {object} e
    * @returns {boolean}
    */
   function matches(e) {
     if (filterType !== "ALL" && e.assessmentType !== filterType) return false;
+    if (filterProvider !== "ALL" && e.provider !== filterProvider) return false;
     if (!searchTerm) return true;
     const hay = `${e.name || ""} ${(e.tags || []).join(" ")}`.toLowerCase();
     return hay.includes(searchTerm);
+  }
+
+  /**
+   * Filter a flat array of entities by their ontology entityClass.
+   * @param {object[]} entities
+   * @param {string} entityClass
+   * @returns {object[]}
+   */
+  function filterByEntityClass(entities, entityClass) {
+    return (entities || []).filter((e) => e.entityClass === entityClass);
+  }
+
+  /**
+   * Filter entities by entityCategory (e.g. all NETWORK entities).
+   * @param {object[]} entities
+   * @param {string} entityCategory
+   * @returns {object[]}
+   */
+  function filterByCategory(entities, entityCategory) {
+    return (entities || []).filter((e) => e.entityCategory === entityCategory);
+  }
+
+  /**
+   * Filter entities by provider. "agnostic" returns provider-agnostic entities.
+   * @param {object[]} entities
+   * @param {string} provider
+   * @returns {object[]}
+   */
+  function filterByProvider(entities, provider) {
+    return (entities || []).filter((e) => e.provider === provider);
   }
 
   /**
@@ -98,6 +136,7 @@
           <h4>${esc(e.name)}</h4>
           <span class="type-badge type-${esc(e.assessmentType)}">${esc(e.assessmentType)}</span>
         </div>
+        <div class="ont-provider-row"><span class="ont-provider-chip prov-${esc(e.provider || "agnostic")}">${esc((e.provider || "agnostic").toUpperCase())}</span></div>
         <p class="muted small">${esc(e.description || "")}</p>
         <div class="catalog-card-meta">
           <span>${esc(e.author || "")}</span>
@@ -208,5 +247,11 @@
       .replace(/"/g, "&quot;");
   }
 
-  window.AwsCatalog = { mount, refreshDrafts };
+  window.AwsCatalog = {
+    mount,
+    refreshDrafts,
+    filterByEntityClass,
+    filterByCategory,
+    filterByProvider,
+  };
 })();

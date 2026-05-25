@@ -1261,6 +1261,7 @@
     if (els.holoBreadcrumb) els.holoBreadcrumb.hidden = false;
     if (els.holoWatermark) els.holoWatermark.hidden = false;
     if (els.holoStarfield) els.holoStarfield.hidden = false;
+    if (els.asmFilterBar) els.asmFilterBar.hidden = false;
     if (window.AwsHoloViz) window.AwsHoloViz.reset();
     ZoomLevel = 0;
     currentHolonicId = null;
@@ -1295,6 +1296,7 @@
     if (els.holoWatermark) els.holoWatermark.hidden = true;
     if (els.holoStarfield) els.holoStarfield.hidden = true;
     if (els.holoDetail) els.holoDetail.hidden = true;
+    if (els.asmFilterBar) els.asmFilterBar.hidden = true;
     // Hide the holographic 3D stage and restore the legacy stage(s) for
     // the current viewing mode, otherwise the boundary spheres linger on
     // top of the AWS view after the user clicks "Exit boundary".
@@ -1407,6 +1409,7 @@
     const body = document.getElementById("holo-detail-body");
     body.innerHTML = `
       <dl class="holo-dl">
+        ${ontologyRow(holon)}
         <dt>Assessment</dt><dd>${esc(holon.assessmentType)} · ${esc(holon.subtype)}</dd>
         <dt>Target</dt><dd>${esc(holon.target || "—")}</dd>
         <dt>Status</dt><dd><span class="status-pill status-${esc(holon.status)}">${esc(holon.status)}</span></dd>
@@ -1423,6 +1426,7 @@
         <dt>Verified at</dt><dd>${esc(holon.provenance && holon.provenance.verifiedAt || "unverified")}</dd>
         ${chain.length ? `<dt>Chain</dt><dd>${chain.map((c) => `<code>${esc(c)}</code>`).join(" → ")}</dd>` : ""}
       </dl>
+      ${assemblySection(holon)}
       <div class="holo-desc">
         <h4>Description</h4>
         <p>${esc(holon.meta && holon.meta.description || "—")}</p>
@@ -1436,6 +1440,83 @@
         const fullHash = btn.getAttribute("data-hash") || "";
         navigator.clipboard.writeText(fullHash).then(() => showHoloToast("Hash copied to clipboard"));
       });
+    }
+    body.querySelectorAll("[data-nav-entity]").forEach((el) => {
+      el.addEventListener("click", () => navigateToEntity(el.getAttribute("data-nav-entity")));
+    });
+  }
+
+  /**
+   * Build the ontology row (entityClass + provider badge) for the detail panel.
+   * @param {object} entity
+   * @returns {string}
+   */
+  function ontologyRow(entity) {
+    if (!entity.entityClass) return "";
+    const r = window.OntologyRenderer;
+    const badge = r ? r.getProviderBadge(entity.provider, entity.providerType) : entity.provider;
+    const icon = r ? r.getRenderProps(entity.entityClass).icon : "◯";
+    return `<dt>Class</dt><dd>${esc(icon)} ${esc(entity.entityClass)} <span class="ont-cat">${esc(entity.entityCategory || "")}</span></dd>
+      <dt>Provider</dt><dd><span class="ont-provider-chip prov-${esc(entity.provider || "agnostic")}">${esc(badge)}</span></dd>`;
+  }
+
+  /**
+   * Build the ASSEMBLY section: level badge, context, clickable children,
+   * and a clickable parent link.
+   * @param {object} entity
+   * @returns {string}
+   */
+  function assemblySection(entity) {
+    if (entity.assemblyLevel == null) return "";
+    const a = window.OntologyAssembly;
+    const label = a ? a.getAssemblyLabel(entity.assemblyLevel) : `Level ${entity.assemblyLevel}`;
+    const icon = ["⬥", "◈", "◉", "⬡", "⊕"][entity.assemblyLevel] || "⬥";
+    const kids = entity.atomicChildren || [];
+    const childLinks = kids.length
+      ? kids.map((id) => `<button class="asm-link" data-nav-entity="${esc(id)}">${esc(entityLabel(id))}</button>`).join(" ")
+      : '<span class="muted small">none (atomic)</span>';
+    const parent = entity.assembledInto
+      ? `<button class="asm-link" data-nav-entity="${esc(entity.assembledInto)}">${esc(entityLabel(entity.assembledInto))}</button>`
+      : '<span class="muted small">none (top level)</span>';
+    return `
+      <div class="holo-desc asm-section">
+        <h4>Assembly</h4>
+        <dl class="holo-dl">
+          <dt>Level</dt><dd><span class="asm-badge-pill asm-${entity.assemblyLevel}">${icon} ${entity.assemblyLevel}</span> ${esc(label)}</dd>
+          <dt>Context</dt><dd>${esc(entity.assemblyContext || "—")}</dd>
+          <dt>Children</dt><dd class="asm-link-list">${childLinks}</dd>
+          <dt>Part of</dt><dd>${parent}</dd>
+        </dl>
+      </div>`;
+  }
+
+  /**
+   * Resolve an entity id to a display label from the active boundary.
+   * @param {string} id
+   * @returns {string}
+   */
+  function entityLabel(id) {
+    if (!currentBoundary || !window.AwsHoloViz) return id;
+    const all = window.AwsHoloViz.allEntities ? window.AwsHoloViz.allEntities() : [];
+    const e = all.find((x) => x.id === id);
+    return (e && e.label) || id;
+  }
+
+  /**
+   * Navigate the visualizer to a given entity id, choosing the right zoom
+   * level based on whether it is a holonic or a holon.
+   * @param {string} id
+   */
+  function navigateToEntity(id) {
+    if (!currentBoundary) return;
+    const hc = (currentBoundary.holonics || []).find((x) => x.id === id);
+    if (hc) { holoNavigate(1, id, null); return; }
+    const holon = (currentBoundary.loose_holons || []).find((x) => x.id === id);
+    if (holon) {
+      const owning = (currentBoundary.holonics || []).find((x) => (x.holons || []).includes(id));
+      holoNavigate(2, owning ? owning.id : currentHolonicId, id);
+    } else {
+      showHoloToast(`${entityLabel(id)} is an assembly node (not directly rendered).`);
     }
   }
 
@@ -1469,6 +1550,30 @@
   els.catalogSidebar = document.getElementById("catalog-sidebar");
   els.sidebarToggle = document.getElementById("sidebar-toggle");
   els.loadBoundary = document.getElementById("load-boundary");
+  els.asmFilterBar = document.getElementById("asm-filter-bar");
+
+  // Assembly-level filter toolbar (multi-select pills).
+  const asmSelected = new Set();
+  if (els.asmFilterBar) {
+    els.asmFilterBar.addEventListener("click", (e) => {
+      const pill = e.target.closest(".asm-pill");
+      if (!pill) return;
+      const v = pill.getAttribute("data-asm");
+      if (v === "all") {
+        asmSelected.clear();
+        els.asmFilterBar.querySelectorAll(".asm-pill").forEach((p) => p.classList.remove("is-active"));
+        pill.classList.add("is-active");
+      } else {
+        const lvl = Number(v);
+        if (asmSelected.has(lvl)) asmSelected.delete(lvl);
+        else asmSelected.add(lvl);
+        pill.classList.toggle("is-active", asmSelected.has(lvl));
+        const allPill = els.asmFilterBar.querySelector('[data-asm="all"]');
+        if (allPill) allPill.classList.toggle("is-active", asmSelected.size === 0);
+      }
+      if (window.AwsHoloViz) window.AwsHoloViz.applyAssemblyFilter(asmSelected.size ? asmSelected : null);
+    });
+  }
 
   // Wire up breadcrumb navigation.
   if (els.holoBreadcrumb) {

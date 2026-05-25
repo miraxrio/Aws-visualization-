@@ -3,138 +3,203 @@
   "$id": "https://miraxrio.github.io/aws-visualization/schema/holon.schema.json",
   "title": "Holon",
   "description": "An individual assessment item (STIG check, CVE finding, compliance control, etc.) within the Holographic Assessment Principle. Holons are the atomic unit; multiple holons aggregate into a holonic.",
-  "type": "object",
-  "required": [
-    "id",
-    "entityType",
-    "assessmentType",
-    "subtype",
-    "label",
-    "target",
-    "status",
-    "severity",
-    "score",
-    "timestamp",
-    "hash",
-    "source",
-    "immutable",
-    "provenance",
-    "meta",
-    "projection"
-  ],
-  "additionalProperties": true,
-  "properties": {
-    "id": {
-      "type": "string",
-      "description": "Unique kebab-case identifier across the whole boundary.",
-      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+  "allOf": [
+    {
+      "$ref": "../ontology/entity-classes.schema.json"
     },
-    "entityType": {
-      "type": "string",
-      "const": "holon",
-      "description": "Discriminator — always 'holon' for this schema."
-    },
-    "assessmentType": {
-      "type": "string",
-      "enum": ["STIG", "CVE", "CIS", "NIST", "custom"],
-      "description": "Family of assessment this holon belongs to."
-    },
-    "subtype": {
-      "type": "string",
-      "enum": ["container", "vm", "service", "repo", "network", "custom"],
-      "description": "Class of asset being assessed."
-    },
-    "label": {
-      "type": "string",
-      "description": "Human-readable name for the holon (shown on nodes)."
-    },
-    "target": {
-      "type": "string",
-      "description": "What is being assessed — e.g. 'nginx:latest', '10.0.1.4', 'repo:org/svc'."
-    },
-    "status": {
-      "type": "string",
-      "enum": ["pass", "fail", "pending", "unknown"],
-      "description": "Outcome of the assessment."
-    },
-    "severity": {
-      "type": "string",
-      "enum": ["critical", "high", "medium", "low", "info"],
-      "description": "Severity if the holon fails (or informational level if it passes)."
-    },
-    "score": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 100,
-      "description": "Normalised numeric score (0 worst, 100 best)."
-    },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time",
-      "description": "ISO 8601 timestamp for when this holon snapshot was captured."
-    },
-    "hash": {
-      "type": "string",
-      "description": "SHA-256 of the canonicalised source data — proves immutability.",
-      "pattern": "^[a-f0-9]{64}$"
-    },
-    "source": {
-      "type": "string",
-      "description": "Where this holon came from. Examples: '0bias', 'manual', 'automated', 'tenable', 'wiz'."
-    },
-    "immutable": {
-      "type": "boolean",
-      "description": "True if the source record is cryptographically frozen and cannot be re-written."
-    },
-    "provenance": {
+    {
       "type": "object",
-      "required": ["collectedAt", "collectedBy", "verifiedAt", "chain"],
+      "required": [
+        "id",
+        "entityType",
+        "assessmentType",
+        "subtype",
+        "label",
+        "target",
+        "status",
+        "severity",
+        "score",
+        "timestamp",
+        "hash",
+        "source",
+        "immutable",
+        "provenance",
+        "meta",
+        "projection",
+        "entityClass",
+        "entityCategory",
+        "provider",
+        "ontologyVersion",
+        "assemblyLevel"
+      ],
       "additionalProperties": true,
       "properties": {
-        "collectedAt": {
+        "id": {
           "type": "string",
-          "format": "date-time"
+          "description": "Unique kebab-case identifier across the whole boundary.",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
         },
-        "collectedBy": {
+        "entityType": {
           "type": "string",
-          "description": "Agent, scanner, or human who collected the evidence."
+          "const": "holon",
+          "description": "Discriminator — always 'holon' for this schema."
         },
-        "verifiedAt": {
-          "anyOf": [
-            { "type": "string", "format": "date-time" },
-            { "type": "null" }
+        "assessmentType": {
+          "type": "string",
+          "enum": [
+            "STIG",
+            "CVE",
+            "CIS",
+            "NIST",
+            "custom"
           ],
-          "description": "When an independent assessor verified the holon, or null if unverified."
+          "description": "Family of assessment this holon belongs to."
         },
-        "chain": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Ordered list of prior source ids — the provenance chain back to origin."
+        "subtype": {
+          "type": "string",
+          "enum": [
+            "container",
+            "vm",
+            "service",
+            "repo",
+            "network",
+            "custom"
+          ],
+          "description": "Class of asset being assessed."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable name for the holon (shown on nodes)."
+        },
+        "target": {
+          "type": "string",
+          "description": "What is being assessed — e.g. 'nginx:latest', '10.0.1.4', 'repo:org/svc'."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "pending",
+            "unknown"
+          ],
+          "description": "Outcome of the assessment."
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "info"
+          ],
+          "description": "Severity if the holon fails (or informational level if it passes)."
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Normalised numeric score (0 worst, 100 best)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp for when this holon snapshot was captured."
+        },
+        "hash": {
+          "type": "string",
+          "description": "SHA-256 of the canonicalised source data — proves immutability.",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "source": {
+          "type": "string",
+          "description": "Where this holon came from. Examples: '0bias', 'manual', 'automated', 'tenable', 'wiz'."
+        },
+        "immutable": {
+          "type": "boolean",
+          "description": "True if the source record is cryptographically frozen and cannot be re-written."
+        },
+        "provenance": {
+          "type": "object",
+          "required": [
+            "collectedAt",
+            "collectedBy",
+            "verifiedAt",
+            "chain"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "collectedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "collectedBy": {
+              "type": "string",
+              "description": "Agent, scanner, or human who collected the evidence."
+            },
+            "verifiedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "When an independent assessor verified the holon, or null if unverified."
+            },
+            "chain": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Ordered list of prior source ids — the provenance chain back to origin."
+            }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "required": [
+            "description",
+            "remediation",
+            "references"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "remediation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "references": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        },
+        "projection": {
+          "type": "string",
+          "enum": [
+            "2d",
+            "3d",
+            "both"
+          ],
+          "description": "Which projection(s) this holon should render in."
         }
       }
-    },
-    "meta": {
-      "type": "object",
-      "required": ["description", "remediation", "references"],
-      "additionalProperties": true,
-      "properties": {
-        "description": { "type": "string" },
-        "remediation": {
-          "anyOf": [
-            { "type": "string" },
-            { "type": "null" }
-          ]
-        },
-        "references": {
-          "type": "array",
-          "items": { "type": "string", "format": "uri" }
-        }
-      }
-    },
-    "projection": {
-      "type": "string",
-      "enum": ["2d", "3d", "both"],
-      "description": "Which projection(s) this holon should render in."
     }
-  }
+  ]
 }

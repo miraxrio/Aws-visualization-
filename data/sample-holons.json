@@ -20,7 +20,9 @@
         "collectedAt": "2026-05-12T08:14:00Z",
         "collectedBy": "0bias-scanner@v3.2",
         "verifiedAt": "2026-05-12T11:02:00Z",
-        "chain": ["scan-job-44812"]
+        "chain": [
+          "scan-job-44812"
+        ]
       },
       "meta": {
         "description": "DISA STIG V-72081 container base image hardening — verifies non-root user, dropped capabilities, and pinned digest.",
@@ -29,7 +31,21 @@
           "https://public.cyber.mil/stigs/"
         ]
       },
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "SecurityControl",
+      "entityCategory": "SECURITY",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — individual assessment finding, not decomposable further",
+      "atomicChildren": null,
+      "assembledInto": "holonic-container-stigs",
+      "relationships": [],
+      "properties": {
+        "target": "nginx:1.25-alpine"
+      }
     },
     {
       "id": "stig-container-nginx-tls",
@@ -49,7 +65,9 @@
         "collectedAt": "2026-05-12T08:14:00Z",
         "collectedBy": "0bias-scanner@v3.2",
         "verifiedAt": null,
-        "chain": ["scan-job-44812"]
+        "chain": [
+          "scan-job-44812"
+        ]
       },
       "meta": {
         "description": "Server still negotiates TLS 1.0 and exposes weak CBC ciphers. Fails DISA STIG cryptographic requirements.",
@@ -58,7 +76,21 @@
           "https://ssl-config.mozilla.org/"
         ]
       },
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "SecurityControl",
+      "entityCategory": "SECURITY",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — individual assessment finding, not decomposable further",
+      "atomicChildren": null,
+      "assembledInto": "holonic-container-stigs",
+      "relationships": [],
+      "properties": {
+        "target": "nginx:1.25-alpine"
+      }
     },
     {
       "id": "cve-container-openssl-2025-9999",
@@ -78,7 +110,10 @@
         "collectedAt": "2026-05-12T08:14:01Z",
         "collectedBy": "0bias-scanner@v3.2",
         "verifiedAt": "2026-05-13T09:00:00Z",
-        "chain": ["scan-job-44812", "nvd-feed-2026-05-10"]
+        "chain": [
+          "scan-job-44812",
+          "nvd-feed-2026-05-10"
+        ]
       },
       "meta": {
         "description": "OpenSSL 3.x heap overflow in X.509 verification. Bundled version still <3.3.1.",
@@ -87,7 +122,21 @@
           "https://nvd.nist.gov/vuln/detail/CVE-2025-9999"
         ]
       },
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "VulnerabilityFinding",
+      "entityCategory": "SECURITY",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — individual assessment finding, not decomposable further",
+      "atomicChildren": null,
+      "assembledInto": "holonic-container-stigs",
+      "relationships": [],
+      "properties": {
+        "target": "nginx:1.25-alpine"
+      }
     },
     {
       "id": "cve-vm-kernel-2026-0142",
@@ -107,7 +156,9 @@
         "collectedAt": "2026-05-15T12:01:00Z",
         "collectedBy": "tenable-agent@10.0.12.44",
         "verifiedAt": null,
-        "chain": ["tenable-scan-77123"]
+        "chain": [
+          "tenable-scan-77123"
+        ]
       },
       "meta": {
         "description": "Use-after-free in io_uring path. Patched kernel awaiting maintenance window.",
@@ -116,7 +167,21 @@
           "https://nvd.nist.gov/vuln/detail/CVE-2026-0142"
         ]
       },
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "VulnerabilityFinding",
+      "entityCategory": "SECURITY",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — individual assessment finding, not decomposable further",
+      "atomicChildren": null,
+      "assembledInto": "holonic-checkout-service",
+      "relationships": [],
+      "properties": {
+        "target": "ip-10-0-12-44.ec2.internal"
+      }
     },
     {
       "id": "cis-vm-baseline-1-1-1",
@@ -136,7 +201,9 @@
         "collectedAt": "2026-05-15T12:02:00Z",
         "collectedBy": "cis-cat-pro@4.18",
         "verifiedAt": "2026-05-15T13:30:00Z",
-        "chain": ["cis-scan-2026-05-15"]
+        "chain": [
+          "cis-scan-2026-05-15"
+        ]
       },
       "meta": {
         "description": "/tmp mounted on its own partition with nodev,nosuid,noexec options set.",
@@ -145,7 +212,21 @@
           "https://www.cisecurity.org/benchmark/ubuntu_linux"
         ]
       },
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "ComplianceControl",
+      "entityCategory": "SECURITY",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — individual assessment finding, not decomposable further",
+      "atomicChildren": null,
+      "assembledInto": "holonic-checkout-service",
+      "relationships": [],
+      "properties": {
+        "target": "ip-10-0-12-44.ec2.internal"
+      }
     },
     {
       "id": "nist-service-ac-2",
@@ -174,7 +255,21 @@
           "https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final"
         ]
       },
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "ComplianceControl",
+      "entityCategory": "SECURITY",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — individual assessment finding, not decomposable further",
+      "atomicChildren": null,
+      "assembledInto": "holonic-checkout-service",
+      "relationships": [],
+      "properties": {
+        "target": "iam-role:checkout-svc"
+      }
     },
     {
       "id": "cis-repo-secrets-scan",
@@ -194,7 +289,9 @@
         "collectedAt": "2026-05-18T07:20:00Z",
         "collectedBy": "gitleaks-action@v2",
         "verifiedAt": null,
-        "chain": ["github-actions-run-87401"]
+        "chain": [
+          "github-actions-run-87401"
+        ]
       },
       "meta": {
         "description": "Gitleaks detected an AWS_SECRET_ACCESS_KEY pattern in commit 7d3a91b on branch feature/quick-fix.",
@@ -203,7 +300,21 @@
           "https://github.com/gitleaks/gitleaks"
         ]
       },
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "ComplianceControl",
+      "entityCategory": "SECURITY",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — individual assessment finding, not decomposable further",
+      "atomicChildren": null,
+      "assembledInto": "holonic-checkout-service",
+      "relationships": [],
+      "properties": {
+        "target": "github.com/acme/checkout-svc"
+      }
     },
     {
       "id": "stig-network-sg-ingress",
@@ -223,14 +334,30 @@
         "collectedAt": "2026-05-19T06:00:00Z",
         "collectedBy": "aws-config@us-east-1",
         "verifiedAt": null,
-        "chain": ["config-rule-eval-99921"]
+        "chain": [
+          "config-rule-eval-99921"
+        ]
       },
       "meta": {
         "description": "Could not evaluate because the AWS Config recorder is paused for sg-0a1b2c3d4e5f6789a.",
         "remediation": "Resume AWS Config recording for VPC sg-0a1b2c3d4e5f6789a and re-run the eligibility evaluator.",
         "references": []
       },
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "SecurityControl",
+      "entityCategory": "SECURITY",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — individual assessment finding, not decomposable further",
+      "atomicChildren": null,
+      "assembledInto": "holonic-checkout-service",
+      "relationships": [],
+      "properties": {
+        "target": "sg-0a1b2c3d4e5f6789a"
+      }
     }
   ],
   "holonics": [
@@ -252,7 +379,44 @@
         "color": "#f97316"
       },
       "timestamp": "2026-05-12T08:14:00Z",
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "AssessmentControl",
+      "entityCategory": "ASSESSMENT",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 1,
+      "assemblyContext": "Component — control grouping 3 atomic findings",
+      "atomicChildren": [
+        "stig-container-nginx-base",
+        "stig-container-nginx-tls",
+        "cve-container-openssl-2025-9999"
+      ],
+      "assembledInto": null,
+      "relationships": [
+        {
+          "type": "CONTAINS",
+          "targetId": "stig-container-nginx-base",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "stig-container-nginx-tls",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "cve-container-openssl-2025-9999",
+          "direction": "outbound",
+          "label": null
+        }
+      ],
+      "properties": {
+        "holonType": "control"
+      }
     },
     {
       "id": "holonic-checkout-service",
@@ -274,7 +438,58 @@
         "color": "#ef4444"
       },
       "timestamp": "2026-05-19T06:00:00Z",
-      "projection": "both"
+      "projection": "both",
+      "entityClass": "AssessmentControl",
+      "entityCategory": "ASSESSMENT",
+      "provider": "agnostic",
+      "providerType": null,
+      "providerRegion": null,
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 1,
+      "assemblyContext": "Component — control grouping 5 atomic findings",
+      "atomicChildren": [
+        "cve-vm-kernel-2026-0142",
+        "cis-vm-baseline-1-1-1",
+        "nist-service-ac-2",
+        "cis-repo-secrets-scan",
+        "stig-network-sg-ingress"
+      ],
+      "assembledInto": null,
+      "relationships": [
+        {
+          "type": "CONTAINS",
+          "targetId": "cve-vm-kernel-2026-0142",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "cis-vm-baseline-1-1-1",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "nist-service-ac-2",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "cis-repo-secrets-scan",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "stig-network-sg-ingress",
+          "direction": "outbound",
+          "label": null
+        }
+      ],
+      "properties": {
+        "holonType": "boundary"
+      }
     }
   ]
 }

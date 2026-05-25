@@ -10,8 +10,17 @@
       "status": "published",
       "version": "1.4.0",
       "dataFile": "data/sample-holons.json",
-      "tags": ["container", "stig", "0bias"],
-      "stats": { "totalHolons": 3, "passRate": 33, "lastRun": "2026-05-12T08:14:00Z" }
+      "tags": [
+        "container",
+        "stig",
+        "0bias"
+      ],
+      "stats": {
+        "totalHolons": 3,
+        "passRate": 33,
+        "lastRun": "2026-05-12T08:14:00Z"
+      },
+      "provider": "agnostic"
     },
     {
       "id": "checkout-service-snapshot",
@@ -23,8 +32,17 @@
       "status": "published",
       "version": "1.0.1",
       "dataFile": "data/sample-boundary.json",
-      "tags": ["boundary", "audit", "checkout"],
-      "stats": { "totalHolons": 8, "passRate": 50, "lastRun": "2026-05-19T06:00:00Z" }
+      "tags": [
+        "boundary",
+        "audit",
+        "checkout"
+      ],
+      "stats": {
+        "totalHolons": 8,
+        "passRate": 50,
+        "lastRun": "2026-05-19T06:00:00Z"
+      },
+      "provider": "agnostic"
     },
     {
       "id": "three-tier-web-app",
@@ -36,8 +54,17 @@
       "status": "published",
       "version": "1.6.0",
       "dataFile": "data/sample-network.json",
-      "tags": ["aws", "boundary", "reference"],
-      "stats": { "totalHolons": 7, "passRate": 86, "lastRun": "2026-05-01T16:10:00Z" }
+      "tags": [
+        "aws",
+        "boundary",
+        "reference"
+      ],
+      "stats": {
+        "totalHolons": 7,
+        "passRate": 86,
+        "lastRun": "2026-05-01T16:10:00Z"
+      },
+      "provider": "aws"
     },
     {
       "id": "kernel-cve-feed",
@@ -49,8 +76,17 @@
       "status": "published",
       "version": "0.9.0",
       "dataFile": "data/sample-holons.json",
-      "tags": ["cve", "vm", "kernel"],
-      "stats": { "totalHolons": 1, "passRate": 0, "lastRun": "2026-05-15T12:01:00Z" }
+      "tags": [
+        "cve",
+        "vm",
+        "kernel"
+      ],
+      "stats": {
+        "totalHolons": 1,
+        "passRate": 0,
+        "lastRun": "2026-05-15T12:01:00Z"
+      },
+      "provider": "aws"
     },
     {
       "id": "cis-vm-benchmark",
@@ -62,8 +98,17 @@
       "status": "under-review",
       "version": "2.1.0",
       "dataFile": "data/sample-holons.json",
-      "tags": ["cis", "vm", "ubuntu"],
-      "stats": { "totalHolons": 1, "passRate": 100, "lastRun": "2026-05-15T13:30:00Z" }
+      "tags": [
+        "cis",
+        "vm",
+        "ubuntu"
+      ],
+      "stats": {
+        "totalHolons": 1,
+        "passRate": 100,
+        "lastRun": "2026-05-15T13:30:00Z"
+      },
+      "provider": "on-prem"
     }
   ]
 }

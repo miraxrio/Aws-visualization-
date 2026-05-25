@@ -4408,7 +4408,26 @@ function renderHoloLevel0(boundaryData) {
       `${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`,
       new THREE.Vector3(x, radius + 2.4, z),
     );
+    addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
+      new THREE.Vector3(x + radius * 0.9, radius + 1.0, z));
   });
+}
+
+/**
+ * Add a small floating assembly-level badge that tracks a world position,
+ * mirroring the 2D node badge. Reuses the label projection loop.
+ * @param {number} level
+ * @param {THREE.Vector3} position
+ */
+function addHoloAssemblyBadge(level, position) {
+  const icons = ["⬥", "◈", "◉", "⬡", "⊕"];
+  const el = document.createElement("div");
+  el.className = `asm-badge-3d asm-${level}`;
+  el.textContent = `${icons[level] || "⬥"} ${level}`;
+  el.style.position = "absolute";
+  el.style.pointerEvents = "none";
+  holo.container.appendChild(el);
+  holo.labels.push({ el, position: position.clone() });
 }
 
 /**
@@ -4583,6 +4602,8 @@ function addHoloHolon(holon, pos) {
   if (holon.label) {
     addHoloLabel(holon.label, pos.clone().add(new THREE.Vector3(0, radius + 0.8, 0)));
   }
+  addHoloAssemblyBadge(holon.assemblyLevel != null ? holon.assemblyLevel : 0,
+    pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)));
 }
 
 /**

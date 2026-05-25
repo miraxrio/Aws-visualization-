@@ -18,6 +18,9 @@
   <script src="visualizer.js" defer></script>
   <script src="catalog.js" defer></script>
   <script src="app.js" defer></script>
+  <script type="module" src="ontology/entity-classes.js"></script>
+  <script type="module" src="ontology/entity-renderer.js"></script>
+  <script type="module" src="ontology/assembly.js"></script>
   <script type="module" src="viz3d.js"></script>
 </head>
 <body>
@@ -68,6 +71,15 @@
           <option value="custom">Custom</option>
         </select>
       </div>
+      <div class="catalog-search">
+        <select id="catalog-provider-filter" aria-label="Filter by provider">
+          <option value="ALL">All providers</option>
+          <option value="aws">AWS</option>
+          <option value="azure">Azure</option>
+          <option value="gcp">GCP</option>
+          <option value="on-prem">On-Prem</option>
+        </select>
+      </div>
       <div class="catalog-list" id="catalog-list"></div>
       <div class="catalog-drafts">
         <h3>My Drafts</h3>
@@ -89,6 +101,14 @@
         <button class="holo-crumb" id="holo-crumb-holon" data-level="2" hidden></button>
         <button class="holo-back" id="holo-back" hidden>← Back</button>
         <button class="holo-exit" id="holo-exit" title="Close boundary and return to network view">× Exit boundary</button>
+      </div>
+      <div class="asm-filter-bar" id="asm-filter-bar" hidden role="group" aria-label="Assembly level filter">
+        <button class="asm-pill is-active" data-asm="all">All</button>
+        <button class="asm-pill" data-asm="0" title="Atom — smallest indivisible unit">⬥ Atoms</button>
+        <button class="asm-pill" data-asm="1" title="Component — assembly of atoms">◈ Components</button>
+        <button class="asm-pill" data-asm="2" title="Subsystem — assembly of components">◉ Subsystems</button>
+        <button class="asm-pill" data-asm="3" title="System — complete functional system">⬡ Systems</button>
+        <button class="asm-pill" data-asm="4" title="System of Systems — highest assembly">⊕ SoS</button>
       </div>
       <svg id="diagram" role="img" aria-label="AWS network diagram"></svg>
       <div class="stage-3d" id="stage-3d" hidden aria-label="AWS network city (3D)"></div>
