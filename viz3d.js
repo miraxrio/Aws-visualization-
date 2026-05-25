@@ -4104,7 +4104,8 @@ const holo = {
   pointer: null,
   clickables: new Map(),
   camTween: null,
-  orbitAngle: 0,
+  orbiters: [],
+  orbitEdges: [],
 };
 
 /**
@@ -4274,12 +4275,16 @@ function holoAnimate() {
     holo.camera.position.setLength(len);
     if (e >= 1) holo.camTween = null;
   }
-  // Child holons orbit the boundary centre like electrons while the cursor
-  // is outside the canvas (paused on hover, same as the Level 0 spin).
-  if (holo.orbitGroup && holo.state.level === 1 && !holo.hoverPause) {
-    holo.orbitAngle += 0.004;
-    holo.orbitGroup.rotation.y = holo.orbitAngle;
-    holo.orbitGroup.rotation.x = Math.sin(holo.orbitAngle * 0.5) * 0.25;
+  // Child holons orbit the boundary centre like electrons, each on its own
+  // great-circle path at its rendered radius. Advance only while the cursor
+  // is outside the canvas (paused on hover); always re-sync edges so they
+  // keep spanning their holons.
+  if (holo.state.level === 1 && holo.orbiters.length) {
+    holo.orbiters.forEach((o) => {
+      if (!holo.hoverPause) o.angle += o.speed;
+      o.satellite.setRotationFromAxisAngle(o.axis, o.angle);
+    });
+    updateOrbitEdges();
   }
   // Keep the ring framed in the viewport even after wheel-zoom or drag.
   // Looking slightly above origin pushes the ring upward in the frame so
@@ -4365,6 +4370,8 @@ function holoClear() {
   holo.labels = [];
   holo.pulseMesh = null;
   holo.orbitGroup = null;
+  holo.orbiters = [];
+  holo.orbitEdges = [];
 }
 
 /**
@@ -4540,19 +4547,98 @@ function renderHoloLevel1(holonicId, boundaryData) {
   addHoloLabel(`${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`,
     new THREE.Vector3(0, boundaryR + 2, 0));
 
-  // Child holons + their edges live in a dedicated orbit group so they can
-  // revolve around the boundary centre like electrons while the shell +
-  // rings stay put. The orbit group is rotated in the animate loop.
+  // Child holons each get their own satellite group centred at the boundary
+  // centre. Rotating a satellite around an axis perpendicular to its holon
+  // makes that holon orbit the centre at its full rendered radius — a real
+  // great-circle orbit, not a Y-axis spin that collapses polar holons.
   holo.orbitGroup = new THREE.Group();
   holo.group.add(holo.orbitGroup);
-  holo.orbitAngle = 0;
+  holo.orbiters = [];
+  holo.orbitEdges = [];
 
   const lookup = buildHoloLookup(boundaryData);
   const holons = (hc.holons || []).map((id) => lookup.get(id)).filter(Boolean);
-  const positions = fibSphere(holons.length, boundaryR * 0.65);
-  holons.forEach((holon, i) => addHoloHolon(holon, positions[i], holo.orbitGroup));
-  drawHoloTargetEdges(holons, positions, holo.orbitGroup);
+  const positions = fibSphere(holons.length, boundaryR * 0.6);
+  holons.forEach((holon, i) => addHoloOrbiter(holon, positions[i], i));
+  buildOrbitEdges(holons);
+  updateOrbitEdges();
   holoZoomTo(HOLO_LEVEL_DISTANCE[1]);
+}
+
+/**
+ * Create a satellite group for one holon and register its orbit. The holon
+ * sits at `pos` inside the satellite; the satellite rotates about an axis
+ * perpendicular to `pos` so the holon revolves at radius |pos|.
+ * @param {object} holon
+ * @param {THREE.Vector3} pos rendered position on the boundary sphere
+ * @param {number} i index (used to vary orbit speed/phase)
+ */
+function addHoloOrbiter(holon, pos, i) {
+  const satellite = new THREE.Group();
+  holo.orbitGroup.add(satellite);
+  const mesh = addHoloHolon(holon, pos, satellite);
+  // Axis perpendicular to the holon direction → holon stays at full radius.
+  const u = pos.clone().normalize();
+  const ref = Math.abs(u.y) < 0.85 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const axis = new THREE.Vector3().crossVectors(u, ref).normalize();
+  holo.orbiters.push({
+    satellite,
+    mesh,
+    axis,
+    angle: 0,
+    speed: 0.014 + (i % 3) * 0.004,
+  });
+}
+
+/**
+ * Build glowing tube edges between holons that share the same target. Each
+ * edge stores its two meshes + base length so the animate loop can stretch
+ * and re-orient it as the holons orbit.
+ * @param {object[]} holons
+ */
+function buildOrbitEdges(holons) {
+  const byTarget = new Map();
+  holons.forEach((h) => {
+    if (!h.target) return;
+    const arr = byTarget.get(h.target) || [];
+    arr.push(h.id);
+    byTarget.set(h.target, arr);
+  });
+  byTarget.forEach((ids) => {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = holo.clickables.get(ids[i]);
+        const b = holo.clickables.get(ids[j]);
+        if (!a || !b) continue;
+        const geom = new THREE.CylinderGeometry(0.12, 0.12, 1, 10, 1);
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0x7bc4ff, emissive: 0x7bc4ff, emissiveIntensity: 0.9,
+          transparent: true, opacity: 0.85, roughness: 0.4,
+        });
+        const tube = new THREE.Mesh(geom, mat);
+        holo.orbitGroup.add(tube);
+        holo.orbitEdges.push({ tube, aMesh: a.mesh, bMesh: b.mesh });
+      }
+    }
+  });
+}
+
+/**
+ * Re-position, re-orient, and stretch every orbit edge to span its two
+ * (possibly orbiting) holons. Called each frame at Level 1.
+ */
+function updateOrbitEdges() {
+  const up = new THREE.Vector3(0, 1, 0);
+  holo.orbitEdges.forEach((e) => {
+    // Holon position in orbit-group space = satellite rotation × local pos.
+    const a = e.aMesh.position.clone().applyQuaternion(e.aMesh.parent.quaternion);
+    const b = e.bMesh.position.clone().applyQuaternion(e.bMesh.parent.quaternion);
+    const dir = b.clone().sub(a);
+    const len = Math.max(0.001, dir.length());
+    e.tube.position.copy(a).add(b).multiplyScalar(0.5);
+    e.tube.quaternion.setFromUnitVectors(up, dir.normalize());
+    e.tube.scale.set(1, len, 1);
+  });
 }
 
 /**
@@ -4580,11 +4666,12 @@ function fibSphere(n, r) {
 
 /**
  * Add a solid sphere for a single holon, sized by severity and coloured by
- * status, with a floating label. Added to `parent` (the orbit group) so it
- * can revolve around the boundary centre.
+ * status, with a floating label. Added to `parent` (the holon's satellite
+ * group) so it can revolve around the boundary centre.
  * @param {object} holon
  * @param {THREE.Vector3} pos
  * @param {THREE.Object3D} parent
+ * @returns {THREE.Mesh} the core sphere mesh
  */
 function addHoloHolon(holon, pos, parent) {
   const target = parent || holo.group;
@@ -4645,65 +4732,6 @@ function addHoloHolon(holon, pos, parent) {
   }
   addHoloAssemblyBadge(holon.assemblyLevel != null ? holon.assemblyLevel : 0,
     pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)), target);
-}
-
-/**
- * Draw glowing emissive lines between holons that share the same `target`.
- * Added to `parent` (the orbit group) so edges revolve with their holons.
- * @param {Array<object>} holons
- * @param {THREE.Vector3[]} positions
- * @param {THREE.Object3D} parent
- */
-function drawHoloTargetEdges(holons, positions, parent) {
-  const target = parent || holo.group;
-  const byTarget = new Map();
-  holons.forEach((h, i) => {
-    if (!h.target) return;
-    const arr = byTarget.get(h.target) || [];
-    arr.push(i);
-    byTarget.set(h.target, arr);
-  });
-  byTarget.forEach((arr) => {
-    if (arr.length < 2) return;
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        target.add(makeGlowTube(positions[arr[i]], positions[arr[j]], 0.12, 0x7bc4ff));
-      }
-    }
-  });
-}
-
-/**
- * Build a thin glowing cylinder between two points. Using geometry rather
- * than THREE.Line because WebGL ignores LineBasicMaterial.linewidth on
- * most platforms, leaving lines stuck at 1px which is invisible in 3D.
- * @param {THREE.Vector3} a
- * @param {THREE.Vector3} b
- * @param {number} radius
- * @param {number} color
- * @returns {THREE.Mesh}
- */
-function makeGlowTube(a, b, radius, color) {
-  const dir = b.clone().sub(a);
-  const length = dir.length();
-  const geom = new THREE.CylinderGeometry(radius, radius, length, 12, 1);
-  const mat = new THREE.MeshStandardMaterial({
-    color,
-    emissive: color,
-    emissiveIntensity: 0.9,
-    transparent: true,
-    opacity: 0.85,
-    roughness: 0.4,
-    metalness: 0.0,
-  });
-  const mesh = new THREE.Mesh(geom, mat);
-  const mid = a.clone().add(b).multiplyScalar(0.5);
-  mesh.position.copy(mid);
-  // CylinderGeometry's axis is +Y; rotate it to align with the direction
-  // vector so the tube spans from a to b.
-  const up = new THREE.Vector3(0, 1, 0);
-  const quat = new THREE.Quaternion().setFromUnitVectors(up, dir.clone().normalize());
-  mesh.quaternion.copy(quat);
   return mesh;
 }
 
@@ -4732,6 +4760,7 @@ function renderHoloLevel2(holonId, boundaryData) {
   if (holo.state.holonicId) renderHoloLevel1(holo.state.holonicId, boundaryData);
   holo.state = { level: 2, holonicId: holo.state.holonicId, holonId };
   let targetPos = null;
+  let targetParent = null;
   let targetRadius = 0.6;
   let targetColor = HOLO_STATUS_COLOR.unknown;
   holo.group.traverse((c) => {
@@ -4753,12 +4782,13 @@ function renderHoloLevel2(holonId, boundaryData) {
     if (isTarget && c.isMesh && c.userData && c.userData.holoKind === "holon") {
       holo.pulseMesh = c;
       targetPos = c.position.clone();
+      targetParent = c.parent;
       const g = c.geometry && c.geometry.parameters;
       if (g && g.radius) targetRadius = g.radius;
       if (c.material && c.material.color) targetColor = c.material.color.getHex();
     }
   });
-  if (targetPos) addHoloReticle(targetPos, targetRadius, targetColor);
+  if (targetPos) addHoloReticle(targetPos, targetRadius, targetColor, targetParent);
   holoZoomTo(HOLO_LEVEL_DISTANCE[2]);
 }
 
@@ -4766,11 +4796,12 @@ function renderHoloLevel2(holonId, boundaryData) {
  * Draw a billboarded pulsing ring around the currently selected holon.
  * The ring is a flat Torus tagged with userData.holoPulseRing so the
  * animate loop can re-orient and scale it every frame.
- * @param {THREE.Vector3} pos
+ * @param {THREE.Vector3} pos local position within `parent`
  * @param {number} radius
  * @param {number} color
+ * @param {THREE.Object3D} [parent] the holon's satellite group
  */
-function addHoloReticle(pos, radius, color) {
+function addHoloReticle(pos, radius, color, parent) {
   // Torus oriented to face the camera (billboarded in the animate loop).
   const ringGeom = new THREE.TorusGeometry(radius * 2.1, 0.09, 10, 60);
   const ringMat = new THREE.MeshBasicMaterial({
@@ -4783,8 +4814,8 @@ function addHoloReticle(pos, radius, color) {
   ring.position.copy(pos);
   ring.userData = { holoPulseRing: true, holoBaseRadius: radius * 2.1, holoColor: color };
   ring.renderOrder = 7;
-  // Attach to the orbit group so the reticle stays locked to its holon.
-  (holo.orbitGroup || holo.group).add(ring);
+  // Attach to the holon's satellite so the reticle stays locked to it.
+  (parent || holo.orbitGroup || holo.group).add(ring);
 }
 
 /**
