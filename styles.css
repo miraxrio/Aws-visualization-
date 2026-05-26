@@ -2257,3 +2257,25 @@ body.mode-holographic .sidebar > .panel:last-child {
   0%, 100% { filter: drop-shadow(0 0 1px rgba(239, 68, 68, 0.4)); }
   50%      { filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.9)); }
 }
+
+/* Per-level orientation caption in the holographic view. */
+.holo-view-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 8;
+  padding: 6px 14px;
+  background: rgba(7, 16, 31, 0.8);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: #cbd6e8;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.holo-view-hint[hidden] { display: none; }
+.holo-view-hint b { color: var(--accent-2); }

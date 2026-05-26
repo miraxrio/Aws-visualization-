@@ -1262,6 +1262,7 @@
     if (els.holoWatermark) els.holoWatermark.hidden = false;
     if (els.holoStarfield) els.holoStarfield.hidden = false;
     if (els.asmFilterBar) els.asmFilterBar.hidden = false;
+    if (els.holoViewHint) els.holoViewHint.hidden = false;
     if (window.AwsHoloViz) window.AwsHoloViz.reset();
     ZoomLevel = 0;
     currentHolonicId = null;
@@ -1297,6 +1298,7 @@
     if (els.holoStarfield) els.holoStarfield.hidden = true;
     if (els.holoDetail) els.holoDetail.hidden = true;
     if (els.asmFilterBar) els.asmFilterBar.hidden = true;
+    if (els.holoViewHint) els.holoViewHint.hidden = true;
     // Hide the holographic 3D stage and restore the legacy stage(s) for
     // the current viewing mode, otherwise the boundary spheres linger on
     // top of the AWS view after the user clicks "Exit boundary".
@@ -1379,6 +1381,15 @@
       sep2.hidden = true;
     }
     back.hidden = ZoomLevel === 0;
+
+    if (els.holoViewHint) {
+      const hints = {
+        0: "<b>Holonic Control View</b> · each sphere is a holonic — click one to expand its holons",
+        1: "<b>Holonic View</b> · holons orbiting their cluster — click one for full detail",
+        2: "<b>Holon Detail</b> · see the panel on the right · Back returns to the cluster",
+      };
+      els.holoViewHint.innerHTML = hints[ZoomLevel] || "";
+    }
   }
 
   /**
@@ -1551,6 +1562,7 @@
   els.sidebarToggle = document.getElementById("sidebar-toggle");
   els.loadBoundary = document.getElementById("load-boundary");
   els.asmFilterBar = document.getElementById("asm-filter-bar");
+  els.holoViewHint = document.getElementById("holo-view-hint");
 
   // Assembly-level filter toolbar (multi-select pills).
   const asmSelected = new Set();
@@ -1571,8 +1583,22 @@
         const allPill = els.asmFilterBar.querySelector('[data-asm="all"]');
         if (allPill) allPill.classList.toggle("is-active", asmSelected.size === 0);
       }
-      if (window.AwsHoloViz) window.AwsHoloViz.applyAssemblyFilter(asmSelected.size ? asmSelected : null);
+      applyAssemblyFilterBothViews(asmSelected.size ? asmSelected : null);
     });
+  }
+
+  /**
+   * Apply the assembly-level filter to whichever view is active (the 2D
+   * SVG nodes and/or the 3D holographic meshes).
+   * @param {Set<number>|null} sel
+   */
+  function applyAssemblyFilterBothViews(sel) {
+    if (window.AwsHoloViz && window.AwsHoloViz.applyAssemblyFilter) {
+      window.AwsHoloViz.applyAssemblyFilter(sel);
+    }
+    if (window.AwsHoloViz3D && window.AwsHoloViz3D.isReady() && window.AwsHoloViz3D.applyAssemblyFilter) {
+      window.AwsHoloViz3D.applyAssemblyFilter(sel);
+    }
   }
 
   // Wire up breadcrumb navigation.

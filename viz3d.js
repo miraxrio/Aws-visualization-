@@ -4106,6 +4106,7 @@ const holo = {
   camTween: null,
   orbiters: [],
   orbitEdges: [],
+  asmFilter: null,
 };
 
 /**
@@ -4332,8 +4333,12 @@ function holoAnimate() {
   }
   if (holo.starfield) holo.starfield.rotation.y += 0.0003;
   // Refresh world matrices so floating labels/badges track the orbiting
-  // holons this frame rather than lagging one frame behind.
+  // holons this frame rather than lagging one frame behind. The camera's
+  // inverse must be current too or project() places labels with a stale
+  // (or identity, on frame 1) transform and they never appear.
   holo.group.updateMatrixWorld(true);
+  holo.camera.updateMatrixWorld();
+  holo.camera.matrixWorldInverse.copy(holo.camera.matrixWorld).invert();
   updateHoloLabels();
   holo.renderer.render(holo.scene, holo.camera);
   holo.raf = requestAnimationFrame(holoAnimate);
@@ -4454,9 +4459,10 @@ function renderHoloLevel0(boundaryData) {
       roughness: 0.35,
       metalness: 0.1,
     });
+    const asmLvl = hc.assemblyLevel != null ? hc.assemblyLevel : 1;
     const core = new THREE.Mesh(coreGeom, coreMat);
     core.position.set(x, 0, z);
-    core.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7 };
+    core.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7, asmLevel: asmLvl };
     holo.group.add(core);
     // Halo shell adds the "translucent boundary" feel without losing the
     // core's contrast.
@@ -4473,7 +4479,7 @@ function renderHoloLevel0(boundaryData) {
     });
     const halo = new THREE.Mesh(haloGeom, haloMat);
     halo.position.set(x, 0, z);
-    halo.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7 + 0.3 };
+    halo.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7 + 0.3, asmLevel: asmLvl };
     holo.group.add(halo);
     holo.clickables.set(hc.id, { mesh: core });
     addHoloLabel(
@@ -4487,6 +4493,7 @@ function renderHoloLevel0(boundaryData) {
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
       new THREE.Vector3(x + radius * 0.9, radius + 1.0, z));
   });
+  holoApplyAssemblyFilter(holo.asmFilter);
   holoZoomTo(HOLO_LEVEL_DISTANCE[0]);
 }
 
@@ -4602,6 +4609,7 @@ function renderHoloLevel1(holonicId, boundaryData) {
   holons.forEach((holon, i) => addHoloOrbiter(holon, positions[i], i));
   buildOrbitEdges(holons);
   updateOrbitEdges();
+  holoApplyAssemblyFilter(holo.asmFilter);
   holoZoomTo(HOLO_LEVEL_DISTANCE[1]);
 }
 
@@ -4615,6 +4623,7 @@ function renderHoloLevel1(holonicId, boundaryData) {
  */
 function addHoloOrbiter(holon, pos, i) {
   const satellite = new THREE.Group();
+  satellite.userData = { asmLevel: holon.assemblyLevel != null ? holon.assemblyLevel : 0 };
   holo.orbitGroup.add(satellite);
   const mesh = addHoloHolon(holon, pos, satellite);
   // Axis perpendicular to the holon direction → holon stays at full radius.
@@ -4882,6 +4891,29 @@ function holoZoomTo(targetLen, dur) {
 }
 
 /**
+ * Apply the assembly-level filter in 3D: holonic spheres (Level 0) and
+ * holon satellites (Level 1) whose assemblyLevel is not in the selected
+ * set are hidden. Pass null/empty to show everything.
+ * @param {Set<number>|null} levels
+ */
+function holoApplyAssemblyFilter(levels) {
+  holo.asmFilter = levels && levels.size ? levels : null;
+  const ok = (lvl) => !holo.asmFilter || holo.asmFilter.has(lvl);
+  // Level 0 — holonic core + halo meshes carry userData.asmLevel.
+  holo.group.children.forEach((c) => {
+    if (c.userData && c.userData.holoKind === "holonic" && c.userData.asmLevel != null) {
+      c.visible = ok(c.userData.asmLevel);
+    }
+  });
+  // Level 1 — each holon satellite carries userData.asmLevel.
+  if (holo.orbitGroup) {
+    holo.orbitGroup.children.forEach((c) => {
+      if (c.userData && c.userData.asmLevel != null) c.visible = ok(c.userData.asmLevel);
+    });
+  }
+}
+
+/**
  * Navigate the holographic 3D view between zoom levels.
  * @param {0|1|2} level
  * @param {string|null} holonicId
@@ -4924,6 +4956,7 @@ window.AwsHoloViz3D = {
   renderHolonicControlView: renderHoloLevel0,
   renderHolonicView: renderHoloLevel1,
   renderHolonDetailView: renderHoloLevel2,
+  applyAssemblyFilter: holoApplyAssemblyFilter,
   isReady: () => holo.initialized,
   getState: () => ({ ...holo.state }),
   onLevelChange: null,
