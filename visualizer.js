@@ -1416,6 +1416,14 @@
       .style("font-size", "11px")
       .style("pointer-events", "none")
       .text(truncate(holon.label || holon.id, 22));
+    // Status · severity · score sub-label for at-a-glance assessment detail.
+    g.append("text")
+      .attr("class", `holon-sublabel status-${holon.status}`)
+      .attr("x", x).attr("y", y + radius + 27)
+      .attr("text-anchor", "middle")
+      .style("font-size", "9px")
+      .style("pointer-events", "none")
+      .text(`${holon.status} · ${holon.severity} · ${Math.round(holon.score || 0)}/100`);
     drawAssemblyBadge(g, x + radius + 4, y - radius - 2, holon.assemblyLevel != null ? holon.assemblyLevel : 0);
     g.on("click", () => navigate(2, state.holonicId, holon.id));
     g.on("mouseenter", () => highlightChain(holon.id));

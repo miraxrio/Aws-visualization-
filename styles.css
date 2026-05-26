@@ -1799,7 +1799,31 @@ body.mode-holographic .sidebar > .panel:last-child {
   white-space: nowrap;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
   z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+  animation: holo-label-in 0.45s ease both;
 }
+.holo-label-title { font-weight: 700; }
+.holo-label-sub {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.92;
+}
+.holo-label-sub.status-pass         { color: var(--status-pass); }
+.holo-label-sub.status-fail         { color: #ff8a8a; }
+.holo-label-sub.status-partial-fail { color: #ffb27a; }
+.holo-label-sub.status-pending      { color: #cbd5e1; }
+.holo-label-sub.status-unknown      { color: #9aa6bd; }
+/* Opacity-only so it never fights the per-frame transform that tracks
+   each label to its projected 3D position. */
+@keyframes holo-label-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.asm-badge-3d { animation: holo-label-in 0.45s ease both; }
 
 /* Detail panel — slides in from right when a holon is selected (Level 2). */
 .holo-detail {
@@ -2199,3 +2223,37 @@ body.mode-holographic .sidebar > .panel:last-child {
 .asm-badge-3d.asm-2 { background: var(--asm-2); }
 .asm-badge-3d.asm-3 { background: var(--asm-3); }
 .asm-badge-3d.asm-4 { background: var(--asm-4); }
+
+/* 2D holon status sub-label + life animations */
+.holon-sublabel {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  fill: var(--status-unknown);
+}
+.holon-sublabel.status-pass         { fill: var(--status-pass); }
+.holon-sublabel.status-fail         { fill: var(--status-fail); }
+.holon-sublabel.status-partial-fail { fill: var(--status-partial-fail); }
+.holon-sublabel.status-pending      { fill: var(--status-pending); }
+.holon-sublabel.status-unknown      { fill: var(--status-unknown); }
+
+/* Nodes fade in when a level renders. */
+.holon-node, .holonic-hex {
+  animation: holo-node-in 0.45s ease both;
+}
+@keyframes holo-node-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Failing elements pulse a red glow to draw the eye. Animating `filter`
+   (not opacity) keeps the pulse independent of the opacity-based dimming
+   used by the Level-2 focus, the assembly filter, and chain highlight. */
+.holon-node.status-fail,
+.holon-node.sev-critical { animation: holo-node-in 0.45s ease both, asm-fail-pulse 1.8s ease-in-out infinite; }
+.holonic-hex.status-fail,
+.holonic-hex.status-partial-fail { animation: holo-node-in 0.45s ease both, asm-fail-pulse 2.2s ease-in-out infinite; }
+@keyframes asm-fail-pulse {
+  0%, 100% { filter: drop-shadow(0 0 1px rgba(239, 68, 68, 0.4)); }
+  50%      { filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.9)); }
+}

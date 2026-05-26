@@ -4275,14 +4275,29 @@ function holoAnimate() {
     holo.camera.position.setLength(len);
     if (e >= 1) holo.camTween = null;
   }
+  // Level 0 holonic spheres gently breathe (per-sphere phase) so the
+  // overview feels alive rather than static.
+  if (holo.state.level === 0) {
+    holo.group.traverse((c) => {
+      if (c.userData && c.userData.holoKind === "holonic" && c.userData.breathePhase != null) {
+        c.scale.setScalar(1 + 0.05 * Math.sin(now / 650 + c.userData.breathePhase));
+      }
+    });
+  }
   // Child holons orbit the boundary centre like electrons, each on its own
   // great-circle path at its rendered radius. Advance only while the cursor
   // is outside the canvas (paused on hover); always re-sync edges so they
-  // keep spanning their holons.
+  // keep spanning their holons. Glows twinkle and edges pulse energy.
   if (holo.state.level === 1 && holo.orbiters.length) {
     holo.orbiters.forEach((o) => {
       if (!holo.hoverPause) o.angle += o.speed;
       o.satellite.setRotationFromAxisAngle(o.axis, o.angle);
+      const glow = o.mesh.userData.glowSprite;
+      if (glow) glow.material.opacity = 0.7 + 0.25 * (0.5 + 0.5 * Math.sin(now / 420 + o.phase));
+    });
+    holo.orbitEdges.forEach((e, k) => {
+      e.tube.material.opacity = 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(now / 320 + k * 1.3));
+      e.tube.material.emissiveIntensity = 0.7 + 0.6 * (0.5 + 0.5 * Math.sin(now / 320 + k * 1.3));
     });
     updateOrbitEdges();
   }
@@ -4375,16 +4390,37 @@ function holoClear() {
 }
 
 /**
+ * Escape a string for safe HTML interpolation in a label.
+ * @param {*} s
+ * @returns {string}
+ */
+function escHolo(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/**
  * Add a floating HTML label that follows a world-space position via the
- * animation loop's projection.
- * @param {string} text
+ * animation loop's projection. `content` may be a plain string or a
+ * { title, sub, status } object for a richer two-line label.
+ * @param {string|{title:string, sub?:string, status?:string}} content
  * @param {THREE.Vector3} position
+ * @param {THREE.Object3D} [parent]
  * @returns {HTMLElement}
  */
-function addHoloLabel(text, position, parent) {
+function addHoloLabel(content, position, parent) {
   const el = document.createElement("div");
   el.className = "holo-label";
-  el.textContent = text;
+  if (typeof content === "string") {
+    el.textContent = content;
+  } else {
+    el.innerHTML =
+      `<span class="holo-label-title">${escHolo(content.title)}</span>` +
+      (content.sub
+        ? `<span class="holo-label-sub status-${escHolo(content.status || "unknown")}">${escHolo(content.sub)}</span>`
+        : "");
+  }
   el.style.position = "absolute";
   el.style.pointerEvents = "none";
   holo.container.appendChild(el);
@@ -4420,7 +4456,7 @@ function renderHoloLevel0(boundaryData) {
     });
     const core = new THREE.Mesh(coreGeom, coreMat);
     core.position.set(x, 0, z);
-    core.userData = { holoId: hc.id, holoKind: "holonic" };
+    core.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7 };
     holo.group.add(core);
     // Halo shell adds the "translucent boundary" feel without losing the
     // core's contrast.
@@ -4437,12 +4473,16 @@ function renderHoloLevel0(boundaryData) {
     });
     const halo = new THREE.Mesh(haloGeom, haloMat);
     halo.position.set(x, 0, z);
-    halo.userData = { holoId: hc.id, holoKind: "holonic" };
+    halo.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7 + 0.3 };
     holo.group.add(halo);
     holo.clickables.set(hc.id, { mesh: core });
     addHoloLabel(
-      `${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`,
-      new THREE.Vector3(x, radius + 2.4, z),
+      {
+        title: hc.label,
+        sub: `${hc.aggregateStatus} · ${Math.round(hc.aggregateScore || 0)}/100 · ${(hc.holons || []).length} holons`,
+        status: hc.aggregateStatus,
+      },
+      new THREE.Vector3(x, radius + 2.6, z),
     );
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
       new THREE.Vector3(x + radius * 0.9, radius + 1.0, z));
@@ -4587,6 +4627,7 @@ function addHoloOrbiter(holon, pos, i) {
     axis,
     angle: 0,
     speed: 0.014 + (i % 3) * 0.004,
+    phase: i * 0.9,
   });
 }
 
@@ -4728,7 +4769,15 @@ function addHoloHolon(holon, pos, parent) {
   target.add(mesh);
   holo.clickables.set(holon.id, { mesh });
   if (holon.label) {
-    addHoloLabel(holon.label, pos.clone().add(new THREE.Vector3(0, radius + 0.8, 0)), target);
+    addHoloLabel(
+      {
+        title: holon.label,
+        sub: `${holon.status} · ${holon.severity} · ${Math.round(holon.score || 0)}/100`,
+        status: holon.status,
+      },
+      pos.clone().add(new THREE.Vector3(0, radius + 1.0, 0)),
+      target,
+    );
   }
   addHoloAssemblyBadge(holon.assemblyLevel != null ? holon.assemblyLevel : 0,
     pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)), target);
