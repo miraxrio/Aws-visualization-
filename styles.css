@@ -2441,3 +2441,61 @@ body.mode-holographic.mode-3d.holo-l2 .stage::after {
 }
 .stage-holo canvas { cursor: default; }
 body.mode-holographic.mode-3d .stage-holo canvas:hover { cursor: pointer; }
+
+/* ============================================================
+   Entity card overlay — icon + label + status, anchored to a
+   sphere in the holographic view. Replaces the tiny floating
+   glyph approach that was hard to see against bright spheres. */
+.holo-card {
+  position: absolute;
+  z-index: 12;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 150px;
+  max-width: 260px;
+  padding: 6px 12px 7px 10px;
+  background: rgba(7, 16, 31, 0.94);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+  animation: holo-label-in 0.45s ease both;
+}
+.holo-card-icon {
+  font-size: 26px;
+  line-height: 1;
+  text-shadow: 0 0 8px currentColor, 0 0 2px rgba(0, 0, 0, 0.85);
+  flex-shrink: 0;
+}
+.holo-card-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.holo-card-title {
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.15;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.holo-card-sub {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.92;
+}
+.holo-card.status-pass         { border-color: var(--status-pass); }
+.holo-card.status-pass .holo-card-sub         { color: var(--status-pass); }
+.holo-card.status-fail         { border-color: var(--status-fail); }
+.holo-card.status-fail .holo-card-sub         { color: #ff8a8a; }
+.holo-card.status-partial-fail { border-color: var(--status-partial-fail); }
+.holo-card.status-partial-fail .holo-card-sub { color: #ffb27a; }
+.holo-card.status-pending      { border-color: var(--status-pending); }
+.holo-card.status-pending .holo-card-sub      { color: #cbd5e1; }
+.holo-card.status-unknown      { border-color: var(--status-unknown); }
+.holo-card.status-unknown .holo-card-sub      { color: #9aa6bd; }

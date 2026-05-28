@@ -4649,19 +4649,11 @@ function renderHoloLevel0(boundaryData) {
     halo.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7 + 0.3, asmLevel: asmLvl };
     holo.group.add(halo);
     holo.clickables.set(hc.id, { mesh: core });
-    addHoloLabel(
-      {
-        title: hc.label,
-        sub: `${hc.aggregateStatus} · ${Math.round(hc.aggregateScore || 0)}/100 · ${(hc.holons || []).length} holons`,
-        status: hc.aggregateStatus,
-      },
-      new THREE.Vector3(x, radius + 2.6, z),
-    );
+    // One unified card per sphere: icon + label + status. Sits next to
+    // the sphere so the user can read what each glowing orb actually is.
+    addHoloEntityCard(hc, new THREE.Vector3(x, radius + 1.4, z));
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
-      new THREE.Vector3(x + radius * 0.9, radius + 1.0, z));
-    // Icon goes ON the sphere (Universal-logo style) — big white glyph
-    // with a coloured halo, anchored to the sphere centre in world space.
-    addHoloEntityIcon(hc, new THREE.Vector3(x, 0, z), undefined, 56);
+      new THREE.Vector3(x + radius * 0.9, radius + 0.3, z));
   });
   holoApplyAssemblyFilter(holo.asmFilter);
   setQuantumBackground(false);
@@ -4711,6 +4703,42 @@ function addHoloEntityIcon(entity, position, parent, size) {
   el.style.setProperty("--ont-icon-color", props.baseColor || "#cbd5e1");
   if (size) el.style.fontSize = size + "px";
   el.title = `${entity.entityClass}${entity.provider && entity.provider !== "agnostic" ? " · " + entity.provider.toUpperCase() : ""}`;
+  holo.container.appendChild(el);
+  holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
+}
+
+/**
+ * Add an info card overlay (icon + label + status sub-line) anchored next
+ * to a sphere. Replaces the previous separate icon + label glyphs that
+ * were too easy to lose against a bright sphere — the card has its own
+ * dark background and a status-coloured border so it stays legible.
+ * @param {object} entity holon or holonic with entityClass + label
+ * @param {THREE.Vector3} position anchor in `parent`-local space
+ * @param {THREE.Object3D} [parent]
+ */
+function addHoloEntityCard(entity, position, parent) {
+  if (!entity) return;
+  const r = typeof window !== "undefined" ? window.OntologyRenderer : null;
+  const props = r ? r.getRenderProps(entity.entityClass || "")
+    : { icon: "◯", baseColor: "#cbd5e1" };
+  const status = entity.aggregateStatus || entity.status || "unknown";
+  const score = entity.aggregateScore != null ? entity.aggregateScore : entity.score;
+  const isHolonic = entity.aggregateStatus != null;
+  const parts = [status];
+  if (isHolonic && Array.isArray(entity.holons)) parts.push(`${entity.holons.length} holons`);
+  else if (entity.severity) parts.push(entity.severity);
+  parts.push(`${Math.round(score || 0)}/100`);
+  const el = document.createElement("div");
+  el.className = `holo-card status-${status}`;
+  el.innerHTML = `
+    <div class="holo-card-icon" style="color: ${escHolo(props.baseColor || "#cbd5e1")}">${escHolo(props.icon || "◯")}</div>
+    <div class="holo-card-text">
+      <div class="holo-card-title">${escHolo(entity.label || entity.id)}</div>
+      <div class="holo-card-sub">${escHolo(parts.join(" · "))}</div>
+    </div>
+  `;
+  el.style.position = "absolute";
+  el.style.pointerEvents = "none";
   holo.container.appendChild(el);
   holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
 }
@@ -4979,23 +5007,11 @@ function addHoloHolon(holon, pos, parent) {
   mesh.renderOrder = 6;
   target.add(mesh);
   holo.clickables.set(holon.id, { mesh });
-  if (holon.label) {
-    addHoloLabel(
-      {
-        title: holon.label,
-        sub: `${holon.status} · ${holon.severity} · ${Math.round(holon.score || 0)}/100`,
-        status: holon.status,
-      },
-      pos.clone().add(new THREE.Vector3(0, radius + 1.0, 0)),
-      target,
-    );
-  }
+  // Unified card with icon + label + status — anchored just above the
+  // holon and parented to the satellite so it orbits along with it.
+  addHoloEntityCard(holon, pos.clone().add(new THREE.Vector3(0, radius + 1.2, 0)), target);
   addHoloAssemblyBadge(holon.assemblyLevel != null ? holon.assemblyLevel : 0,
     pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)), target);
-  // Icon sized roughly to the sphere's screen footprint so it sits "on"
-  // the holon like the Universal logo on the globe.
-  const iconSize = Math.max(14, Math.round(radius * 14));
-  addHoloEntityIcon(holon, pos.clone(), target, iconSize);
   return mesh;
 }
 
