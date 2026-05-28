@@ -4707,6 +4707,39 @@ function addHoloEntityIcon(entity, position, parent, size) {
   holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
 }
 
+// Emoji icons per entityClass — emoji renders reliably across platforms
+// where the geometric Unicode glyphs (⬡ ◈ ◯ …) can ship as thin
+// outlines or fail to render at all.
+const HOLO_CARD_EMOJI = {
+  ComputeInstance: "🖥️",
+  ContainerRuntime: "📦",
+  ServerlessFunction: "⚡",
+  ComputeCluster: "🧮",
+  ObjectStore: "🗂️",
+  BlockVolume: "💽",
+  FileSystem: "📁",
+  DatabaseInstance: "🗄️",
+  VirtualNetwork: "🌐",
+  Subnet: "🕸️",
+  NetworkGateway: "🚪",
+  LoadBalancer: "⚖️",
+  Firewall: "🧱",
+  PrivateEndpoint: "🔗",
+  IdentityPrincipal: "👤",
+  IdentityRole: "🎭",
+  IdentityPolicy: "📜",
+  SecurityControl: "🛡️",
+  VulnerabilityFinding: "⚠️",
+  ComplianceControl: "✅",
+  ThreatIndicator: "🚨",
+  AssessmentBoundary: "🔲",
+  AssessmentControl: "📋",
+  AssessmentFinding: "📍",
+  Guild: "🏛️",
+  Project: "📂",
+  SubProject: "🗃️",
+};
+
 /**
  * Add an info card overlay (icon + label + status sub-line) anchored next
  * to a sphere. Replaces the previous separate icon + label glyphs that
@@ -4721,6 +4754,7 @@ function addHoloEntityCard(entity, position, parent) {
   const r = typeof window !== "undefined" ? window.OntologyRenderer : null;
   const props = r ? r.getRenderProps(entity.entityClass || "")
     : { icon: "◯", baseColor: "#cbd5e1" };
+  const emoji = HOLO_CARD_EMOJI[entity.entityClass] || "🔹";
   const status = entity.aggregateStatus || entity.status || "unknown";
   const score = entity.aggregateScore != null ? entity.aggregateScore : entity.score;
   const isHolonic = entity.aggregateStatus != null;
@@ -4731,7 +4765,7 @@ function addHoloEntityCard(entity, position, parent) {
   const el = document.createElement("div");
   el.className = `holo-card status-${status}`;
   el.innerHTML = `
-    <div class="holo-card-icon" style="color: ${escHolo(props.baseColor || "#cbd5e1")}">${escHolo(props.icon || "◯")}</div>
+    <div class="holo-card-icon" style="color: ${escHolo(props.baseColor || "#cbd5e1")}">${escHolo(emoji)}</div>
     <div class="holo-card-text">
       <div class="holo-card-title">${escHolo(entity.label || entity.id)}</div>
       <div class="holo-card-sub">${escHolo(parts.join(" · "))}</div>
