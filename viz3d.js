@@ -4119,15 +4119,17 @@ function holoInit(container) {
   if (holo.initialized) return;
   holo.container = container;
   holo.scene = new THREE.Scene();
-  holo.scene.background = new THREE.Color(0x0a0a0f);
+  // No scene background — the renderer clears with alpha 0 so the CSS
+  // nebula gradients on .stage / .stage-holo show through the canvas.
   holo.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
   // Bird's-eye angle so the ring sits in the middle of the viewport
   // instead of slumping to the bottom. lookAt is re-applied every frame
   // (in holoAnimate) so wheel zoom and drag don't drift the framing.
   holo.camera.position.set(0, 18, 24);
   holo.camera.lookAt(0, 1.5, 0);
-  holo.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  holo.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   holo.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  holo.renderer.setClearColor(0x000000, 0);
   container.appendChild(holo.renderer.domElement);
 
   holo.group = new THREE.Group();
@@ -4657,7 +4659,9 @@ function renderHoloLevel0(boundaryData) {
     );
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
       new THREE.Vector3(x + radius * 0.9, radius + 1.0, z));
-    addHoloEntityIcon(hc, new THREE.Vector3(x, radius + 0.4, z));
+    // Icon goes ON the sphere (Universal-logo style) — big white glyph
+    // with a coloured halo, anchored to the sphere centre in world space.
+    addHoloEntityIcon(hc, new THREE.Vector3(x, 0, z), undefined, 56);
   });
   holoApplyAssemblyFilter(holo.asmFilter);
   setQuantumBackground(false);
@@ -4689,7 +4693,7 @@ function addHoloAssemblyBadge(level, position, parent) {
  * @param {THREE.Vector3} position
  * @param {THREE.Object3D} [parent]
  */
-function addHoloEntityIcon(entity, position, parent) {
+function addHoloEntityIcon(entity, position, parent, size) {
   if (!entity || !entity.entityClass) return;
   const r = typeof window !== "undefined" ? window.OntologyRenderer : null;
   const props = r ? r.getRenderProps(entity.entityClass)
@@ -4700,12 +4704,12 @@ function addHoloEntityIcon(entity, position, parent) {
   el.textContent = props.icon || "◯";
   el.style.position = "absolute";
   el.style.pointerEvents = "none";
-  // White glyph + coloured halo via a CSS variable so the icon stays
-  // legible against every sphere/background — using props.baseColor as the
-  // text color was invisible for dark classes (e.g. AssessmentControl
-  // #4b5563 against the dark stage).
+  // White glyph + coloured halo via a CSS var so it stays legible on any
+  // sphere/background — using props.baseColor as the text colour was
+  // invisible for dark classes (e.g. AssessmentControl #4b5563).
   el.style.color = "#ffffff";
   el.style.setProperty("--ont-icon-color", props.baseColor || "#cbd5e1");
+  if (size) el.style.fontSize = size + "px";
   el.title = `${entity.entityClass}${entity.provider && entity.provider !== "agnostic" ? " · " + entity.provider.toUpperCase() : ""}`;
   holo.container.appendChild(el);
   holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
@@ -4988,7 +4992,10 @@ function addHoloHolon(holon, pos, parent) {
   }
   addHoloAssemblyBadge(holon.assemblyLevel != null ? holon.assemblyLevel : 0,
     pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)), target);
-  addHoloEntityIcon(holon, pos.clone().add(new THREE.Vector3(0, radius + 0.2, 0)), target);
+  // Icon sized roughly to the sphere's screen footprint so it sits "on"
+  // the holon like the Universal logo on the globe.
+  const iconSize = Math.max(14, Math.round(radius * 14));
+  addHoloEntityIcon(holon, pos.clone(), target, iconSize);
   return mesh;
 }
 

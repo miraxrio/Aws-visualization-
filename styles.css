@@ -1712,7 +1712,10 @@ body.sidebar-open .layout {
 .stage-holo {
   position: absolute;
   inset: 0;
-  background: #0a0a0f;
+  /* Transparent so the .stage's CSS nebula / starfield gradients show
+     through. The Three.js renderer is also alpha:true and clears with
+     alpha 0, so only the rendered meshes/particles are opaque. */
+  background: transparent;
   z-index: 1;
 }
 .stage-holo[hidden] { display: none; }
@@ -1769,7 +1772,9 @@ body.mode-holographic.mode-3d.holo-l0 .holo-starfield { display: block; }
 /* When the boundary is loaded, dim the legend / hint chrome. */
 body.mode-holographic .legend { display: none; }
 body.mode-holographic .hint { display: none; }
-body.mode-holographic .stage {
+/* Level 0 keeps the deep-space backdrop; L1 / L2 use the nebula
+   gradients defined further down. */
+body.mode-holographic.holo-l0 .stage {
   background: #0a0a0f;
 }
 /* Hide AWS-specific panels in boundary mode — they describe topology
@@ -2301,22 +2306,32 @@ body.mode-holographic .sidebar > .panel:last-child {
   animation: holo-label-in 0.45s ease both;
 }
 
-/* Quantum-realm tint at Level 1: a cool blue radial wash behind the
-   Three.js particle field gives the "Ant-Man" quantum vibe. */
+/* Nebula backdrop at Level 1+ — multi-coloured radial blooms
+   (blue / cyan / magenta / orange / violet) over a deep base, like
+   looking into a star-forming region. Because the WebGL renderer is
+   alpha:true and clears transparent, this CSS actually reaches the eye
+   through the canvas. */
 body.mode-holographic.mode-3d.holo-l1 .stage {
   background:
-    radial-gradient(ellipse 70% 55% at 50% 50%, rgba(58, 142, 240, 0.18), transparent 70%),
-    radial-gradient(ellipse 90% 75% at 30% 35%, rgba(80, 220, 255, 0.10), transparent 75%),
-    #04060e;
+    radial-gradient(ellipse 55% 45% at 30% 25%, rgba( 80, 220, 255, 0.55), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 75% 20%, rgba(150,  80, 220, 0.50), transparent 70%),
+    radial-gradient(ellipse 70% 55% at 50% 70%, rgba( 60, 110, 240, 0.40), transparent 75%),
+    radial-gradient(ellipse 40% 35% at 85% 80%, rgba(240, 110,  70, 0.32), transparent 70%),
+    radial-gradient(ellipse 50% 45% at 15% 80%, rgba(220,  60, 120, 0.28), transparent 70%),
+    linear-gradient(180deg, #0a0820 0%, #06061a 100%);
 }
-/* Level 2 leans much further into blue/cyan — the user wanted less
-   black so the focused-holon view feels like being inside the field. */
+/* Level 2 cranks the saturation up — the user wanted to feel inside
+   the nebula. Heavier cyan + magenta cores, hotter orange and pink
+   bands, and a richer blue-violet base. */
 body.mode-holographic.mode-3d.holo-l2 .stage {
   background:
-    radial-gradient(ellipse 80% 65% at 50% 50%, rgba(58, 142, 240, 0.42), transparent 78%),
-    radial-gradient(ellipse 110% 95% at 30% 30%, rgba(80, 220, 255, 0.26), transparent 80%),
-    radial-gradient(ellipse 110% 95% at 70% 70%, rgba(120, 90, 255, 0.18), transparent 80%),
-    linear-gradient(180deg, #0c2348 0%, #06122c 100%);
+    radial-gradient(ellipse 60% 50% at 32% 28%, rgba( 80, 230, 255, 0.75), transparent 72%),
+    radial-gradient(ellipse 65% 52% at 72% 22%, rgba(170,  90, 240, 0.70), transparent 72%),
+    radial-gradient(ellipse 75% 55% at 50% 70%, rgba( 60, 130, 255, 0.55), transparent 78%),
+    radial-gradient(ellipse 50% 40% at 85% 82%, rgba(255, 130,  80, 0.55), transparent 72%),
+    radial-gradient(ellipse 55% 45% at 15% 82%, rgba(255,  80, 150, 0.50), transparent 72%),
+    radial-gradient(ellipse 45% 40% at 50% 50%, rgba(255, 255, 255, 0.06), transparent 70%),
+    linear-gradient(180deg, #110b34 0%, #060422 100%);
 }
 body.mode-holographic.mode-3d.holo-l1 .stage-holo,
 body.mode-holographic.mode-3d.holo-l2 .stage-holo {
