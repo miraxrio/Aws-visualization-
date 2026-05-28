@@ -1,0 +1,717 @@
+{
+  "_breaking_changes": [
+    "BREAKING: top-level shape now follows the boundary schema. Old top-level 'vpcs' and 'versions' arrays have been moved under 'legacy' for backward compatibility.",
+    "BREAKING: every resource that was previously a {id,type,name} record is now represented as a holon with assessmentType, status, severity, hash and provenance.",
+    "BREAKING: 'flows' are no longer a peer of 'vpcs'. They are scoped under legacy.flows and are not part of the holon graph.",
+    "BREAKING: subnets are no longer first-class. They are encoded as 'holonics' with holonType=boundary; their CIDR and tier survive under 'meta'."
+  ],
+  "id": "boundary-three-tier-web-app",
+  "entityType": "boundary",
+  "label": "Three-tier web app · prod",
+  "environment": "prod",
+  "role": "supplier",
+  "snapshotAt": "2026-05-01T16:10:00Z",
+  "schemaVersion": "1.0.0",
+  "holonics": [
+    {
+      "id": "holonic-vpc-prod",
+      "entityType": "holonic",
+      "label": "Production VPC",
+      "holonType": "boundary",
+      "holons": [],
+      "childHolonics": [
+        "holonic-public-tier",
+        "holonic-private-tier",
+        "holonic-data-tier"
+      ],
+      "aggregateStatus": "partial-fail",
+      "aggregateScore": 78,
+      "boundary": {
+        "shape": "cluster",
+        "color": "#58a6ff"
+      },
+      "timestamp": "2026-05-01T16:10:00Z",
+      "projection": "both",
+      "meta": {
+        "cidr": "10.0.0.0/16",
+        "region": "us-east-1"
+      },
+      "entityClass": "VirtualNetwork",
+      "entityCategory": "NETWORK",
+      "provider": "aws",
+      "providerType": "vpc",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 2,
+      "assemblyContext": "Subsystem — VPC assembled from public/private/data subnet tiers",
+      "atomicChildren": [
+        "holonic-public-tier",
+        "holonic-private-tier",
+        "holonic-data-tier"
+      ],
+      "assembledInto": "boundary-three-tier-web-app",
+      "relationships": [
+        {
+          "type": "CONTAINS",
+          "targetId": "holonic-public-tier",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "holonic-private-tier",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "holonic-data-tier",
+          "direction": "outbound",
+          "label": null
+        }
+      ],
+      "properties": {
+        "cidr": "10.0.0.0/16"
+      }
+    },
+    {
+      "id": "holonic-public-tier",
+      "entityType": "holonic",
+      "label": "Public tier",
+      "holonType": "boundary",
+      "holons": [
+        "holon-alb-prod",
+        "holon-waf-prod",
+        "holon-cdn-prod"
+      ],
+      "childHolonics": [],
+      "aggregateStatus": "pass",
+      "aggregateScore": 88,
+      "boundary": {
+        "shape": "cluster",
+        "color": "#22c55e"
+      },
+      "timestamp": "2026-05-01T16:10:00Z",
+      "projection": "both",
+      "meta": {
+        "tier": "public",
+        "cidr": "10.0.0.0/20"
+      },
+      "entityClass": "Subnet",
+      "entityCategory": "NETWORK",
+      "provider": "aws",
+      "providerType": "subnet",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 1,
+      "assemblyContext": "Component — subnet tier grouping 3 resources",
+      "atomicChildren": [
+        "holon-alb-prod",
+        "holon-waf-prod",
+        "holon-cdn-prod"
+      ],
+      "assembledInto": "holonic-vpc-prod",
+      "relationships": [
+        {
+          "type": "CONTAINS",
+          "targetId": "holon-alb-prod",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "holon-waf-prod",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "holon-cdn-prod",
+          "direction": "outbound",
+          "label": null
+        }
+      ],
+      "properties": {
+        "tier": "public"
+      }
+    },
+    {
+      "id": "holonic-private-tier",
+      "entityType": "holonic",
+      "label": "Private app tier",
+      "holonType": "boundary",
+      "holons": [
+        "holon-ecs-app-a",
+        "holon-ecs-app-b"
+      ],
+      "childHolonics": [],
+      "aggregateStatus": "partial-fail",
+      "aggregateScore": 70,
+      "boundary": {
+        "shape": "ring",
+        "color": "#f97316"
+      },
+      "timestamp": "2026-05-01T16:10:00Z",
+      "projection": "both",
+      "meta": {
+        "tier": "private",
+        "cidr": "10.0.16.0/20"
+      },
+      "entityClass": "Subnet",
+      "entityCategory": "NETWORK",
+      "provider": "aws",
+      "providerType": "subnet",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 1,
+      "assemblyContext": "Component — subnet tier grouping 2 resources",
+      "atomicChildren": [
+        "holon-ecs-app-a",
+        "holon-ecs-app-b"
+      ],
+      "assembledInto": "holonic-vpc-prod",
+      "relationships": [
+        {
+          "type": "CONTAINS",
+          "targetId": "holon-ecs-app-a",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "holon-ecs-app-b",
+          "direction": "outbound",
+          "label": null
+        }
+      ],
+      "properties": {
+        "tier": "private"
+      }
+    },
+    {
+      "id": "holonic-data-tier",
+      "entityType": "holonic",
+      "label": "Data tier",
+      "holonType": "boundary",
+      "holons": [
+        "holon-aurora-writer",
+        "holon-aurora-reader"
+      ],
+      "childHolonics": [],
+      "aggregateStatus": "pass",
+      "aggregateScore": 91,
+      "boundary": {
+        "shape": "cluster",
+        "color": "#c084fc"
+      },
+      "timestamp": "2026-05-01T16:10:00Z",
+      "projection": "both",
+      "meta": {
+        "tier": "data",
+        "cidr": "10.0.32.0/20"
+      },
+      "entityClass": "Subnet",
+      "entityCategory": "NETWORK",
+      "provider": "aws",
+      "providerType": "subnet",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 1,
+      "assemblyContext": "Component — subnet tier grouping 2 resources",
+      "atomicChildren": [
+        "holon-aurora-writer",
+        "holon-aurora-reader"
+      ],
+      "assembledInto": "holonic-vpc-prod",
+      "relationships": [
+        {
+          "type": "CONTAINS",
+          "targetId": "holon-aurora-writer",
+          "direction": "outbound",
+          "label": null
+        },
+        {
+          "type": "CONTAINS",
+          "targetId": "holon-aurora-reader",
+          "direction": "outbound",
+          "label": null
+        }
+      ],
+      "properties": {
+        "tier": "data"
+      }
+    }
+  ],
+  "loose_holons": [
+    {
+      "id": "holon-alb-prod",
+      "entityType": "holon",
+      "assessmentType": "STIG",
+      "subtype": "service",
+      "label": "ALB · TLS policy",
+      "target": "web-alb-prod",
+      "status": "pass",
+      "severity": "medium",
+      "score": 95,
+      "timestamp": "2026-05-01T16:10:00Z",
+      "hash": "11aa22bb33cc44dd55ee66ff77001122334455667788990011223344556677ee",
+      "source": "0bias",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-01T16:10:00Z",
+        "collectedBy": "0bias-scanner@v3.2",
+        "verifiedAt": "2026-05-01T18:00:00Z",
+        "chain": [
+          "scan-job-50001"
+        ]
+      },
+      "meta": {
+        "description": "Public ALB enforces TLS 1.3 with ECDHE-only suites.",
+        "remediation": null,
+        "references": []
+      },
+      "projection": "both",
+      "entityClass": "LoadBalancer",
+      "entityCategory": "NETWORK",
+      "provider": "aws",
+      "providerType": "alb",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — single assessed cloud resource",
+      "atomicChildren": null,
+      "assembledInto": "holonic-public-tier",
+      "relationships": [],
+      "properties": {
+        "target": "web-alb-prod"
+      }
+    },
+    {
+      "id": "holon-waf-prod",
+      "entityType": "holon",
+      "assessmentType": "STIG",
+      "subtype": "service",
+      "label": "WAF · OWASP rule set",
+      "target": "waf-prod",
+      "status": "pass",
+      "severity": "medium",
+      "score": 85,
+      "timestamp": "2026-05-01T16:10:00Z",
+      "hash": "22bb33cc44dd55ee66ff770011223344556677889900112233445566778899aa",
+      "source": "0bias",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-01T16:10:00Z",
+        "collectedBy": "0bias-scanner@v3.2",
+        "verifiedAt": null,
+        "chain": [
+          "scan-job-50001"
+        ]
+      },
+      "meta": {
+        "description": "AWS WAF managed rule sets attached. OWASP Top 10 in count mode for ALB.",
+        "remediation": "Move OWASP managed rules from count to block once false-positive backlog is cleared.",
+        "references": []
+      },
+      "projection": "both",
+      "entityClass": "Firewall",
+      "entityCategory": "NETWORK",
+      "provider": "aws",
+      "providerType": "waf",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — single assessed cloud resource",
+      "atomicChildren": null,
+      "assembledInto": "holonic-public-tier",
+      "relationships": [],
+      "properties": {
+        "target": "waf-prod"
+      }
+    },
+    {
+      "id": "holon-cdn-prod",
+      "entityType": "holon",
+      "assessmentType": "CIS",
+      "subtype": "service",
+      "label": "CloudFront · TLS + WAF wiring",
+      "target": "cdn-prod.d12345.cloudfront.net",
+      "status": "pass",
+      "severity": "low",
+      "score": 92,
+      "timestamp": "2026-05-01T16:10:00Z",
+      "hash": "33cc44dd55ee66ff770011223344556677889900aabbccddeeff001122334455",
+      "source": "automated",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-01T16:10:00Z",
+        "collectedBy": "aws-config@us-east-1",
+        "verifiedAt": null,
+        "chain": [
+          "config-rule-eval-30201"
+        ]
+      },
+      "meta": {
+        "description": "CloudFront distribution serves only HTTPS, with AWS WAF attached.",
+        "remediation": null,
+        "references": []
+      },
+      "projection": "both",
+      "entityClass": "LoadBalancer",
+      "entityCategory": "NETWORK",
+      "provider": "aws",
+      "providerType": "cloudfront",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — single assessed cloud resource",
+      "atomicChildren": null,
+      "assembledInto": "holonic-public-tier",
+      "relationships": [],
+      "properties": {
+        "target": "cdn-prod.d12345.cloudfront.net"
+      }
+    },
+    {
+      "id": "holon-ecs-app-a",
+      "entityType": "holon",
+      "assessmentType": "CVE",
+      "subtype": "container",
+      "label": "API Tasks 1a · OpenSSL CVE",
+      "target": "ecs-task:api-1a",
+      "status": "fail",
+      "severity": "high",
+      "score": 35,
+      "timestamp": "2026-05-01T16:10:00Z",
+      "hash": "44dd55ee66ff770011223344556677889900aabbccddeeff0011223344556677",
+      "source": "0bias",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-01T16:10:00Z",
+        "collectedBy": "0bias-scanner@v3.2",
+        "verifiedAt": null,
+        "chain": [
+          "scan-job-50001"
+        ]
+      },
+      "meta": {
+        "description": "Task image bundles openssl 3.2.0 which is vulnerable to CVE-2025-9999.",
+        "remediation": "Rebuild image against openssl 3.3.2 or later and re-deploy.",
+        "references": [
+          "https://nvd.nist.gov/vuln/detail/CVE-2025-9999"
+        ]
+      },
+      "projection": "both",
+      "entityClass": "ContainerRuntime",
+      "entityCategory": "COMPUTE",
+      "provider": "aws",
+      "providerType": "ecs-task",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — single assessed cloud resource",
+      "atomicChildren": null,
+      "assembledInto": "holonic-private-tier",
+      "relationships": [],
+      "properties": {
+        "target": "ecs-task:api-1a"
+      }
+    },
+    {
+      "id": "holon-ecs-app-b",
+      "entityType": "holon",
+      "assessmentType": "CIS",
+      "subtype": "container",
+      "label": "API Tasks 1b · runtime hardening",
+      "target": "ecs-task:api-1b",
+      "status": "pass",
+      "severity": "info",
+      "score": 90,
+      "timestamp": "2026-05-01T16:10:00Z",
+      "hash": "55ee66ff770011223344556677889900aabbccddeeff00112233445566778800",
+      "source": "automated",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-01T16:10:00Z",
+        "collectedBy": "aws-inspector@us-east-1",
+        "verifiedAt": null,
+        "chain": [
+          "inspector-finding-22001"
+        ]
+      },
+      "meta": {
+        "description": "Read-only root FS, drop all capabilities, non-root user.",
+        "remediation": null,
+        "references": []
+      },
+      "projection": "both",
+      "entityClass": "ContainerRuntime",
+      "entityCategory": "COMPUTE",
+      "provider": "aws",
+      "providerType": "ecs-task",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — single assessed cloud resource",
+      "atomicChildren": null,
+      "assembledInto": "holonic-private-tier",
+      "relationships": [],
+      "properties": {
+        "target": "ecs-task:api-1b"
+      }
+    },
+    {
+      "id": "holon-aurora-writer",
+      "entityType": "holon",
+      "assessmentType": "NIST",
+      "subtype": "service",
+      "label": "Aurora writer · encryption at rest",
+      "target": "aurora-prod-writer",
+      "status": "pass",
+      "severity": "low",
+      "score": 97,
+      "timestamp": "2026-05-01T16:10:00Z",
+      "hash": "66ff770011223344556677889900aabbccddeeff001122334455667788990011",
+      "source": "automated",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-01T16:10:00Z",
+        "collectedBy": "aws-config@us-east-1",
+        "verifiedAt": null,
+        "chain": [
+          "config-rule-eval-30202"
+        ]
+      },
+      "meta": {
+        "description": "Aurora cluster has storage encryption enabled with customer-managed KMS key.",
+        "remediation": null,
+        "references": []
+      },
+      "projection": "both",
+      "entityClass": "DatabaseInstance",
+      "entityCategory": "STORAGE",
+      "provider": "aws",
+      "providerType": "aurora",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — single assessed cloud resource",
+      "atomicChildren": null,
+      "assembledInto": "holonic-data-tier",
+      "relationships": [],
+      "properties": {
+        "target": "aurora-prod-writer"
+      }
+    },
+    {
+      "id": "holon-aurora-reader",
+      "entityType": "holon",
+      "assessmentType": "NIST",
+      "subtype": "service",
+      "label": "Aurora reader · backup retention",
+      "target": "aurora-prod-reader",
+      "status": "pass",
+      "severity": "low",
+      "score": 85,
+      "timestamp": "2026-05-01T16:10:00Z",
+      "hash": "770011223344556677889900aabbccddeeff001122334455667788990011aabb",
+      "source": "automated",
+      "immutable": true,
+      "provenance": {
+        "collectedAt": "2026-05-01T16:10:00Z",
+        "collectedBy": "aws-config@us-east-1",
+        "verifiedAt": null,
+        "chain": [
+          "config-rule-eval-30203"
+        ]
+      },
+      "meta": {
+        "description": "Read replica retains 14 days of automated backups; matches RTO/RPO target.",
+        "remediation": null,
+        "references": []
+      },
+      "projection": "both",
+      "entityClass": "DatabaseInstance",
+      "entityCategory": "STORAGE",
+      "provider": "aws",
+      "providerType": "aurora",
+      "providerRegion": "us-east-1",
+      "ontologyVersion": "1.0.0",
+      "assemblyLevel": 0,
+      "assemblyContext": "Atomic — single assessed cloud resource",
+      "atomicChildren": null,
+      "assembledInto": "holonic-data-tier",
+      "relationships": [],
+      "properties": {
+        "target": "aurora-prod-reader"
+      }
+    }
+  ],
+  "meta": {
+    "guild": "Cloud Platform Guild",
+    "project": "Three-tier web app",
+    "version": "1.6.0"
+  },
+  "legacy": {
+    "_description": "Original AWS topology kept verbatim so the legacy visualizer keeps rendering.",
+    "name": "Three-Tier Web App",
+    "region": "us-east-1",
+    "vpcs": [
+      {
+        "id": "vpc-prod",
+        "name": "Production",
+        "cidr": "10.0.0.0/16",
+        "region": "us-east-1",
+        "subnets": [
+          {
+            "id": "pub-1a",
+            "name": "Public 1a",
+            "cidr": "10.0.1.0/24",
+            "tier": "public",
+            "az": "us-east-1a"
+          },
+          {
+            "id": "prv-1a",
+            "name": "App 1a",
+            "cidr": "10.0.11.0/24",
+            "tier": "private",
+            "az": "us-east-1a"
+          },
+          {
+            "id": "db-1a",
+            "name": "Data 1a",
+            "cidr": "10.0.21.0/24",
+            "tier": "data",
+            "az": "us-east-1a"
+          },
+          {
+            "id": "pub-1b",
+            "name": "Public 1b",
+            "cidr": "10.0.2.0/24",
+            "tier": "public",
+            "az": "us-east-1b"
+          },
+          {
+            "id": "prv-1b",
+            "name": "App 1b",
+            "cidr": "10.0.12.0/24",
+            "tier": "private",
+            "az": "us-east-1b"
+          },
+          {
+            "id": "db-1b",
+            "name": "Data 1b",
+            "cidr": "10.0.22.0/24",
+            "tier": "data",
+            "az": "us-east-1b"
+          }
+        ],
+        "gateways": [
+          {
+            "id": "igw-prod",
+            "type": "igw",
+            "name": "Internet GW"
+          },
+          {
+            "id": "nat-1a",
+            "type": "nat",
+            "name": "NAT 1a",
+            "subnet": "pub-1a"
+          },
+          {
+            "id": "nat-1b",
+            "type": "nat",
+            "name": "NAT 1b",
+            "subnet": "pub-1b"
+          }
+        ],
+        "resources": [
+          {
+            "id": "alb",
+            "type": "alb",
+            "name": "Web ALB",
+            "subnet": "pub-1a"
+          },
+          {
+            "id": "waf",
+            "type": "waf",
+            "name": "WAF",
+            "subnet": "pub-1b"
+          },
+          {
+            "id": "app-a",
+            "type": "ecs",
+            "name": "API Tasks",
+            "subnet": "prv-1a"
+          },
+          {
+            "id": "app-b",
+            "type": "ecs",
+            "name": "API Tasks",
+            "subnet": "prv-1b"
+          },
+          {
+            "id": "rds-w",
+            "type": "aurora",
+            "name": "Aurora W",
+            "subnet": "db-1a"
+          },
+          {
+            "id": "rds-r",
+            "type": "aurora",
+            "name": "Aurora R",
+            "subnet": "db-1b"
+          }
+        ]
+      }
+    ],
+    "flows": [
+      {
+        "from": "internet",
+        "to": "alb",
+        "label": "HTTPS 443",
+        "kind": "internet"
+      },
+      {
+        "from": "alb",
+        "to": "app-a",
+        "label": "HTTP"
+      },
+      {
+        "from": "alb",
+        "to": "app-b",
+        "label": "HTTP"
+      },
+      {
+        "from": "app-a",
+        "to": "rds-w",
+        "label": "5432 write"
+      },
+      {
+        "from": "app-b",
+        "to": "rds-r",
+        "label": "5432 read"
+      }
+    ]
+  },
+  "entityClass": "AssessmentBoundary",
+  "entityCategory": "ASSESSMENT",
+  "provider": "agnostic",
+  "providerType": null,
+  "providerRegion": null,
+  "ontologyVersion": "1.0.0",
+  "assemblyLevel": 3,
+  "assemblyContext": "System — three-tier web app production environment",
+  "atomicChildren": [
+    "holonic-vpc-prod"
+  ],
+  "assembledInto": null,
+  "relationships": [
+    {
+      "type": "CONTAINS",
+      "targetId": "holonic-vpc-prod",
+      "direction": "outbound",
+      "label": null
+    }
+  ]
+}

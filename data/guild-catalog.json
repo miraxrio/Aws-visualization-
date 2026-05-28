@@ -1,0 +1,114 @@
+{
+  "catalog": [
+    {
+      "id": "container-stig-baseline",
+      "name": "Container STIG baseline",
+      "description": "DISA STIG container hardening checks for nginx, redis, and node base images.",
+      "assessmentType": "STIG",
+      "author": "Platform Security Guild",
+      "publishedAt": "2026-05-12T08:14:00Z",
+      "status": "published",
+      "version": "1.4.0",
+      "dataFile": "data/sample-holons.json",
+      "tags": [
+        "container",
+        "stig",
+        "0bias"
+      ],
+      "stats": {
+        "totalHolons": 3,
+        "passRate": 33,
+        "lastRun": "2026-05-12T08:14:00Z"
+      },
+      "provider": "agnostic"
+    },
+    {
+      "id": "checkout-service-snapshot",
+      "name": "Checkout service · Q2 attestation",
+      "description": "Full boundary snapshot of the checkout service: VM CIS, repo secrets, NIST AC-2.",
+      "assessmentType": "custom",
+      "author": "Acme Compliance",
+      "publishedAt": "2026-05-19T06:00:00Z",
+      "status": "published",
+      "version": "1.0.1",
+      "dataFile": "data/sample-boundary.json",
+      "tags": [
+        "boundary",
+        "audit",
+        "checkout"
+      ],
+      "stats": {
+        "totalHolons": 8,
+        "passRate": 50,
+        "lastRun": "2026-05-19T06:00:00Z"
+      },
+      "provider": "agnostic"
+    },
+    {
+      "id": "three-tier-web-app",
+      "name": "Three-tier web app · prod",
+      "description": "Reference three-tier AWS network expressed as holons and holonics.",
+      "assessmentType": "NIST",
+      "author": "Cloud Platform Guild",
+      "publishedAt": "2026-05-01T16:10:00Z",
+      "status": "published",
+      "version": "1.6.0",
+      "dataFile": "data/sample-network.json",
+      "tags": [
+        "aws",
+        "boundary",
+        "reference"
+      ],
+      "stats": {
+        "totalHolons": 7,
+        "passRate": 86,
+        "lastRun": "2026-05-01T16:10:00Z"
+      },
+      "provider": "aws"
+    },
+    {
+      "id": "kernel-cve-feed",
+      "name": "Linux kernel CVE feed",
+      "description": "Live CVE feed mapped against a managed fleet of EC2 hosts.",
+      "assessmentType": "CVE",
+      "author": "FleetSec",
+      "publishedAt": "2026-04-22T11:00:00Z",
+      "status": "published",
+      "version": "0.9.0",
+      "dataFile": "data/sample-holons.json",
+      "tags": [
+        "cve",
+        "vm",
+        "kernel"
+      ],
+      "stats": {
+        "totalHolons": 1,
+        "passRate": 0,
+        "lastRun": "2026-05-15T12:01:00Z"
+      },
+      "provider": "aws"
+    },
+    {
+      "id": "cis-vm-benchmark",
+      "name": "CIS Ubuntu 22 baseline",
+      "description": "CIS-CAT Pro benchmark sweep of the Ubuntu 22 VM fleet.",
+      "assessmentType": "CIS",
+      "author": "Compliance Engineering",
+      "publishedAt": "2026-05-15T13:30:00Z",
+      "status": "under-review",
+      "version": "2.1.0",
+      "dataFile": "data/sample-holons.json",
+      "tags": [
+        "cis",
+        "vm",
+        "ubuntu"
+      ],
+      "stats": {
+        "totalHolons": 1,
+        "passRate": 100,
+        "lastRun": "2026-05-15T13:30:00Z"
+      },
+      "provider": "on-prem"
+    }
+  ]
+}

@@ -1025,3 +1025,641 @@
     onSelectFlow: null,
   };
 })();
+
+// ============================================================
+//  Holographic Assessment Principle — 2D renderer
+// ============================================================
+// Renders holon / holonic / boundary entities with three semantic zoom
+// levels. Exposes window.AwsHoloViz so app.js can route boundary data
+// through this renderer while keeping AwsViz (above) intact for AWS data.
+(function () {
+  const STATUS_COLOR = {
+    pass: "#22c55e",
+    fail: "#ef4444",
+    "partial-fail": "#f97316",
+    pending: "#a3a3a3",
+    unknown: "#6b7280",
+  };
+  const SEVERITY_RADIUS = {
+    critical: 30,
+    high: 24,
+    medium: 18,
+    low: 14,
+    info: 10,
+  };
+
+  let state = { level: 0, holonicId: null, holonId: null };
+  let boundary = null;
+  let svg = null;
+  let rootG = null;
+  let zoomBehavior = null;
+
+  /**
+   * Detect whether a JSON payload is a holographic boundary (new schema).
+   * @param {object} data
+   * @returns {boolean}
+   */
+  function isBoundary(data) {
+    return !!(data && data.entityType === "boundary" && Array.isArray(data.holonics));
+  }
+
+  /**
+   * Build an index of holons in a boundary so we can resolve ids to objects.
+   * @param {object} boundaryData
+   * @returns {Map<string, object>}
+   */
+  function indexHolons(boundaryData) {
+    const map = new Map();
+    (boundaryData.loose_holons || []).forEach((h) => map.set(h.id, h));
+    (boundaryData.holonics || []).forEach((hc) => {
+      (hc.holons || []).forEach((id) => { if (!map.has(id)) map.set(id, { id, _placeholder: true }); });
+    });
+    return map;
+  }
+
+  const ASM_BADGE = {
+    0: { icon: "⬥", cls: "asm-0" },
+    1: { icon: "◈", cls: "asm-1" },
+    2: { icon: "◉", cls: "asm-2" },
+    3: { icon: "⬡", cls: "asm-3" },
+    4: { icon: "⊕", cls: "asm-4" },
+  };
+  // Assembly-level filter state (set of visible levels, or null = all).
+  let asmFilter = null;
+
+  /**
+   * Resolve ontology render properties for an entity, with a safe fallback
+   * when the ontology module hasn't loaded.
+   * @param {object} entity
+   * @returns {{icon:string, shape:string, baseColor:string, category:string}}
+   */
+  function ontProps(entity) {
+    const r = window.OntologyRenderer;
+    if (r && entity && entity.entityClass) return r.getRenderProps(entity.entityClass);
+    return { icon: "◯", shape: "circle", baseColor: "#6b7280", category: "UNKNOWN" };
+  }
+
+  /**
+   * Gather every entity in the active boundary (holonics + loose_holons +
+   * the boundary itself) into a flat array for assembly-chain walking.
+   * @returns {object[]}
+   */
+  function allEntities() {
+    if (!boundary) return [];
+    return [...(boundary.loose_holons || []), ...(boundary.holonics || []), boundary];
+  }
+
+  /**
+   * Append an assembly-level badge pill to a node group.
+   * @param {object} g d3 selection of the node group
+   * @param {number} x badge anchor x
+   * @param {number} y badge anchor y
+   * @param {number} level assembly level 0-4
+   */
+  function drawAssemblyBadge(g, x, y, level) {
+    const b = ASM_BADGE[level] || ASM_BADGE[0];
+    const grp = g.append("g")
+      .attr("class", `asm-badge ${b.cls}`)
+      .attr("transform", `translate(${x}, ${y})`);
+    grp.append("rect")
+      .attr("x", -13).attr("y", -10).attr("width", 26).attr("height", 18).attr("rx", 9);
+    grp.append("text")
+      .attr("text-anchor", "middle").attr("dy", "0.32em")
+      .text(`${b.icon} ${level}`);
+    grp.append("title").text(asmLabel(level));
+  }
+
+  /**
+   * Human-readable label for an assembly level via the ontology module.
+   * @param {number} level
+   * @returns {string}
+   */
+  function asmLabel(level) {
+    const a = window.OntologyAssembly;
+    return a ? a.getAssemblyLabel(level) : `Level ${level}`;
+  }
+
+  /**
+   * Initialise the SVG canvas. Called on each render so re-renders don't
+   * accumulate stale layers.
+   */
+  function resetCanvas() {
+    svg = d3.select("#diagram");
+    svg.selectAll("*").remove();
+    rootG = svg.append("g").attr("class", "holo-root");
+    const w = svg.node() ? svg.node().clientWidth || 1200 : 1200;
+    const h = svg.node() ? svg.node().clientHeight || 700 : 700;
+    svg.attr("viewBox", `0 0 ${w} ${h}`).attr("preserveAspectRatio", "xMidYMid meet");
+    zoomBehavior = d3.zoom()
+      .scaleExtent([0.3, 3])
+      .on("zoom", (evt) => rootG.attr("transform", evt.transform));
+    svg.call(zoomBehavior);
+    return { w, h };
+  }
+
+  /**
+   * Position holonics in a grid so the Level 0 control view fits any count.
+   * @param {Array} holonics
+   * @param {number} canvasW
+   * @param {number} canvasH
+   * @returns {Array<{x:number,y:number}>}
+   */
+  function gridPositions(holonics, canvasW, canvasH) {
+    const n = holonics.length;
+    const cols = Math.min(n, Math.ceil(Math.sqrt(n * (canvasW / Math.max(1, canvasH)))));
+    const rows = Math.ceil(n / cols);
+    const dx = canvasW / (cols + 1);
+    const dy = canvasH / (rows + 1);
+    return holonics.map((_, i) => ({
+      x: dx * ((i % cols) + 1),
+      y: dy * (Math.floor(i / cols) + 1),
+    }));
+  }
+
+  /**
+   * Render Level 0 — every holonic as a large status-coloured hexagon.
+   * @param {object} boundaryData
+   */
+  function renderHolonicControlView(boundaryData) {
+    boundary = boundaryData;
+    state.level = 0;
+    state.holonicId = null;
+    state.holonId = null;
+    const { w, h } = resetCanvas();
+    const holonics = boundaryData.holonics || [];
+    const positions = gridPositions(holonics, w, h);
+    const r = Math.min(80, Math.max(50, Math.min(w, h) / (holonics.length > 6 ? 9 : 6)));
+
+    holonics.forEach((hc, i) => {
+      const p = positions[i];
+      const fill = STATUS_COLOR[hc.aggregateStatus] || STATUS_COLOR.unknown;
+      const g = rootG.append("g")
+        .attr("class", `holonic-hex status-${hc.aggregateStatus}`)
+        .attr("data-id", hc.id)
+        .attr("data-asm", hc.assemblyLevel != null ? hc.assemblyLevel : 1)
+        .style("cursor", "pointer");
+      g.append("polygon")
+        .attr("points", hexagonPoints(p.x, p.y, r))
+        .attr("fill", fill)
+        .attr("fill-opacity", 0.18)
+        .attr("stroke", fill)
+        .attr("stroke-width", 3);
+      g.append("text")
+        .attr("x", p.x).attr("y", p.y - 8)
+        .attr("text-anchor", "middle")
+        .attr("fill", "currentColor")
+        .style("font-weight", "700")
+        .style("font-size", "14px")
+        .text(truncate(hc.label, 22));
+      g.append("text")
+        .attr("x", p.x).attr("y", p.y + 12)
+        .attr("text-anchor", "middle")
+        .attr("fill", "currentColor")
+        .style("font-size", "12px")
+        .style("opacity", 0.8)
+        .text(`${Math.round(hc.aggregateScore || 0)}/100`);
+      g.append("text")
+        .attr("x", p.x).attr("y", p.y + 30)
+        .attr("text-anchor", "middle")
+        .attr("fill", "currentColor")
+        .style("font-size", "10px")
+        .style("opacity", 0.65)
+        .text(`${(hc.holons || []).length} holons`);
+      drawAssemblyBadge(g, p.x + r * 0.7, p.y - r * 0.78, hc.assemblyLevel != null ? hc.assemblyLevel : 1);
+      g.on("click", () => navigate(1, hc.id, null));
+      g.on("mouseenter", () => highlightChain(hc.id));
+      g.on("mouseleave", () => clearChainHighlight());
+    });
+    applyAssemblyFilter(asmFilter);
+  }
+
+  /**
+   * Compute SVG polygon points for a hexagon centered at (cx, cy).
+   * @param {number} cx
+   * @param {number} cy
+   * @param {number} r
+   * @returns {string}
+   */
+  function hexagonPoints(cx, cy, r) {
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i - Math.PI / 6;
+      pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`);
+    }
+    return pts.join(" ");
+  }
+
+  /**
+   * Render Level 1 — the chosen holonic expanded into individual holons.
+   * Other holonics stay as collapsed hexagons in the background, dimmed.
+   * @param {string} holonicId
+   * @param {object} boundaryData
+   */
+  function renderHolonicView(holonicId, boundaryData) {
+    boundary = boundaryData;
+    state.level = 1;
+    state.holonicId = holonicId;
+    state.holonId = null;
+    const { w, h } = resetCanvas();
+    const holonics = boundaryData.holonics || [];
+    const positions = gridPositions(holonics, w, h);
+    const r = Math.min(70, Math.max(40, Math.min(w, h) / 8));
+
+    const selected = holonics.find((x) => x.id === holonicId);
+    if (!selected) return;
+    const idx = holonics.indexOf(selected);
+    drawBackgroundHolonics(holonics, positions, r, idx);
+    drawExpandedHolons(selected, boundaryData, positions[idx], r, w, h);
+    applyAssemblyFilter(asmFilter);
+  }
+
+  /**
+   * Draw the dimmed background hexagons behind the expanded holonic.
+   * @param {Array} holonics
+   * @param {Array<{x:number,y:number}>} positions
+   * @param {number} r
+   * @param {number} activeIdx
+   */
+  function drawBackgroundHolonics(holonics, positions, r, activeIdx) {
+    holonics.forEach((hc, i) => {
+      if (i === activeIdx) return;
+      const p = positions[i];
+      const fill = STATUS_COLOR[hc.aggregateStatus] || STATUS_COLOR.unknown;
+      const g = rootG.append("g")
+        .attr("class", "holonic-hex holo-dim")
+        .attr("data-id", hc.id)
+        .attr("data-asm", hc.assemblyLevel != null ? hc.assemblyLevel : 1)
+        .style("cursor", "pointer")
+        .style("opacity", 0.55);
+      g.append("polygon")
+        .attr("points", hexagonPoints(p.x, p.y, r * 0.8))
+        .attr("fill", fill).attr("fill-opacity", 0.18)
+        .attr("stroke", fill).attr("stroke-width", 2);
+      g.append("text")
+        .attr("x", p.x).attr("y", p.y + 4)
+        .attr("text-anchor", "middle")
+        .attr("fill", "currentColor")
+        .style("font-size", "11px")
+        .text(truncate(hc.label, 14));
+      g.on("click", () => navigate(1, hc.id, null));
+    });
+  }
+
+  /**
+   * Expand a holonic: draw its holons in a ring around the cluster center.
+   * @param {object} hc the holonic
+   * @param {object} boundaryData
+   * @param {{x:number,y:number}} center
+   * @param {number} r background hex radius
+   * @param {number} w canvas width
+   * @param {number} h canvas height
+   */
+  function drawExpandedHolons(hc, boundaryData, center, r, w, h) {
+    const lookup = indexHolons(boundaryData);
+    const holons = (hc.holons || []).map((id) => lookup.get(id)).filter(Boolean);
+
+    // Big translucent boundary ring around the chosen holonic.
+    const boundaryR = Math.min(w, h) * 0.38;
+    const cx = w / 2;
+    const cy = h / 2;
+    rootG.append("circle")
+      .attr("cx", cx).attr("cy", cy).attr("r", boundaryR)
+      .attr("fill", hc.boundary && hc.boundary.color ? hc.boundary.color : "#58a6ff")
+      .attr("fill-opacity", 0.06)
+      .attr("stroke", hc.boundary && hc.boundary.color ? hc.boundary.color : "#58a6ff")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "6 6");
+    rootG.append("text")
+      .attr("x", cx).attr("y", cy - boundaryR - 10)
+      .attr("text-anchor", "middle")
+      .attr("fill", "currentColor")
+      .style("font-weight", "700")
+      .style("font-size", "14px")
+      .text(`${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`);
+
+    // Connect holons that share the same target.
+    drawTargetEdges(holons, cx, cy, boundaryR);
+
+    holons.forEach((holon, i) => {
+      const angle = (2 * Math.PI * i) / Math.max(1, holons.length) - Math.PI / 2;
+      const nx = cx + Math.cos(angle) * boundaryR * 0.75;
+      const ny = cy + Math.sin(angle) * boundaryR * 0.75;
+      drawHolonNode(holon, nx, ny);
+    });
+  }
+
+  /**
+   * Draw faint edges between holons that share the same `target` asset.
+   * @param {Array<object>} holons
+   * @param {number} cx
+   * @param {number} cy
+   * @param {number} boundaryR
+   */
+  function drawTargetEdges(holons, cx, cy, boundaryR) {
+    const byTarget = new Map();
+    holons.forEach((h, i) => {
+      if (!h.target) return;
+      const arr = byTarget.get(h.target) || [];
+      arr.push({ h, i });
+      byTarget.set(h.target, arr);
+    });
+    byTarget.forEach((arr) => {
+      if (arr.length < 2) return;
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          const a = arr[i], b = arr[j];
+          const aA = (2 * Math.PI * a.i) / Math.max(1, holons.length) - Math.PI / 2;
+          const bA = (2 * Math.PI * b.i) / Math.max(1, holons.length) - Math.PI / 2;
+          rootG.append("line")
+            .attr("class", "holo-target-edge")
+            .attr("x1", cx + Math.cos(aA) * boundaryR * 0.75)
+            .attr("y1", cy + Math.sin(aA) * boundaryR * 0.75)
+            .attr("x2", cx + Math.cos(bA) * boundaryR * 0.75)
+            .attr("y2", cy + Math.sin(bA) * boundaryR * 0.75)
+            .attr("stroke", "#7bc4ff")
+            .attr("stroke-opacity", 0.85)
+            .attr("stroke-width", 4)
+            .attr("stroke-linecap", "round");
+        }
+      }
+    });
+  }
+
+  /**
+   * Draw a single holon as a labelled circle sized by severity.
+   * @param {object} holon
+   * @param {number} x
+   * @param {number} y
+   */
+  function drawHolonNode(holon, x, y) {
+    const radius = SEVERITY_RADIUS[holon.severity] || 14;
+    const fill = STATUS_COLOR[holon.status] || STATUS_COLOR.unknown;
+    const props = ontProps(holon);
+    const g = rootG.append("g")
+      .attr("class", `holon-node status-${holon.status} sev-${holon.severity}`)
+      .attr("data-id", holon.id)
+      .attr("data-asm", holon.assemblyLevel != null ? holon.assemblyLevel : 0)
+      .style("cursor", "pointer");
+    // Shape comes from the ontology entityClass; fill stays status-coloured
+    // (the assessment signal) with the entityClass colour as the stroke.
+    drawShape(g, props.shape, x, y, radius, fill, props.baseColor);
+    g.append("text")
+      .attr("x", x).attr("y", y).attr("dy", "0.32em")
+      .attr("text-anchor", "middle")
+      .style("font-size", `${Math.max(10, radius * 0.7)}px`)
+      .style("pointer-events", "none")
+      .text(props.icon);
+    g.append("text")
+      .attr("x", x).attr("y", y + radius + 14)
+      .attr("text-anchor", "middle")
+      .attr("fill", "currentColor")
+      .style("font-size", "11px")
+      .style("pointer-events", "none")
+      .text(truncate(holon.label || holon.id, 22));
+    // Status · severity · score sub-label for at-a-glance assessment detail.
+    g.append("text")
+      .attr("class", `holon-sublabel status-${holon.status}`)
+      .attr("x", x).attr("y", y + radius + 27)
+      .attr("text-anchor", "middle")
+      .style("font-size", "9px")
+      .style("pointer-events", "none")
+      .text(`${holon.status} · ${holon.severity} · ${Math.round(holon.score || 0)}/100`);
+    drawAssemblyBadge(g, x + radius + 4, y - radius - 2, holon.assemblyLevel != null ? holon.assemblyLevel : 0);
+    g.on("click", () => navigate(2, state.holonicId, holon.id));
+    g.on("mouseenter", () => highlightChain(holon.id));
+    g.on("mouseleave", () => clearChainHighlight());
+  }
+
+  /**
+   * Draw the ontology shape for a node. Falls back to a circle for shapes
+   * that don't have a distinct 2D form here.
+   * @param {object} g d3 group
+   * @param {string} shape
+   * @param {number} x
+   * @param {number} y
+   * @param {number} r
+   * @param {string} fill
+   * @param {string} stroke
+   */
+  function drawShape(g, shape, x, y, r, fill, stroke) {
+    const common = (el) => el.attr("fill", fill).attr("fill-opacity", 0.78)
+      .attr("stroke", stroke).attr("stroke-width", 3);
+    if (shape === "square" || shape === "rect") {
+      const w = shape === "rect" ? r * 2.4 : r * 1.8;
+      common(g.append("rect").attr("x", x - w / 2).attr("y", y - r).attr("width", w).attr("height", r * 2).attr("rx", 3));
+    } else if (shape === "diamond") {
+      common(g.append("polygon").attr("points", `${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}`));
+    } else if (shape === "triangle") {
+      common(g.append("polygon").attr("points", `${x},${y - r} ${x + r},${y + r} ${x - r},${y + r}`));
+    } else if (shape === "hexagon") {
+      common(g.append("polygon").attr("points", hexagonPoints(x, y, r)));
+    } else {
+      common(g.append("circle").attr("cx", x).attr("cy", y).attr("r", r));
+    }
+  }
+
+  /**
+   * Highlight the full assembly chain (ancestors + descendants) of a node
+   * on hover: parent gold, children green, distant kin partial, rest dimmed.
+   * @param {string} id
+   */
+  function highlightChain(id) {
+    const ents = allEntities();
+    const map = Object.fromEntries(ents.map((e) => [e.id, e]));
+    const node = map[id];
+    if (!node) return;
+    const parents = ancestors(id, map);     // [direct, grandparent, ...]
+    const children = descendants(id, map);  // [direct[], deeper[]]
+    rootG.selectAll(".holon-node, .holonic-hex").each(function () {
+      const nid = this.getAttribute("data-id");
+      const sel = d3.select(this);
+      sel.classed("asm-chain-dim asm-chain-self asm-chain-parent asm-chain-child asm-chain-far", false);
+      if (nid === id) sel.classed("asm-chain-self", true);
+      else if (parents[0] === nid) sel.classed("asm-chain-parent", true);
+      else if (children.direct.includes(nid)) sel.classed("asm-chain-child", true);
+      else if (parents.slice(1).includes(nid) || children.deeper.includes(nid)) sel.classed("asm-chain-far", true);
+      else sel.classed("asm-chain-dim", true);
+    });
+  }
+
+  /**
+   * Walk the assembledInto chain upward, returning ancestor ids nearest-first.
+   * @param {string} id
+   * @param {Object<string,object>} map
+   * @returns {string[]}
+   */
+  function ancestors(id, map) {
+    const out = [];
+    let cur = map[id];
+    while (cur && cur.assembledInto && map[cur.assembledInto]) {
+      out.push(cur.assembledInto);
+      cur = map[cur.assembledInto];
+    }
+    return out;
+  }
+
+  /**
+   * Collect descendant ids split into direct children and deeper kin.
+   * @param {string} id
+   * @param {Object<string,object>} map
+   * @returns {{direct:string[], deeper:string[]}}
+   */
+  function descendants(id, map) {
+    const node = map[id];
+    const direct = (node && node.atomicChildren) || [];
+    const deeper = [];
+    direct.forEach((cid) => {
+      ((map[cid] && map[cid].atomicChildren) || []).forEach((g) => deeper.push(g));
+    });
+    return { direct: [...direct], deeper };
+  }
+
+  /**
+   * Clear any chain-highlight classes applied during hover.
+   */
+  function clearChainHighlight() {
+    rootG.selectAll(".holon-node, .holonic-hex")
+      .classed("asm-chain-dim asm-chain-self asm-chain-parent asm-chain-child asm-chain-far", false);
+  }
+
+  /**
+   * Apply the assembly-level filter: dim all nodes whose assemblyLevel is
+   * not in the selected set. Pass null to clear.
+   * @param {Set<number>|null} levels
+   */
+  function applyAssemblyFilter(levels) {
+    asmFilter = levels && levels.size ? levels : null;
+    if (!rootG) return;
+    rootG.selectAll(".holon-node, .holonic-hex").each(function () {
+      const lvl = Number(this.getAttribute("data-asm"));
+      const dim = asmFilter && !asmFilter.has(lvl);
+      d3.select(this).classed("asm-filtered-out", !!dim);
+    });
+  }
+
+  /**
+   * Render Level 2 — dim everything except the selected holon + neighbours,
+   * then open the detail panel.
+   * @param {string} holonId
+   * @param {object} boundaryData
+   */
+  function renderHolonDetailView(holonId, boundaryData) {
+    boundary = boundaryData;
+    state.level = 2;
+    state.holonId = holonId;
+    // Re-render Level 1 first, then dim everything except the selection.
+    if (!state.holonicId) {
+      const owning = (boundaryData.holonics || []).find((hc) => (hc.holons || []).includes(holonId));
+      if (owning) state.holonicId = owning.id;
+    }
+    if (state.holonicId) renderHolonicView(state.holonicId, boundaryData);
+    state.level = 2;
+    state.holonId = holonId;
+
+    rootG.selectAll(".holon-node").style("opacity", function () {
+      return this.getAttribute("data-id") === holonId ? 1 : 0.55;
+    });
+    rootG.selectAll(".holonic-hex").style("opacity", 0.45);
+
+    const lookup = indexHolons(boundaryData);
+    const holon = lookup.get(holonId);
+    if (holon && !holon._placeholder && window.AwsHoloViz.onSelectHolon) {
+      window.AwsHoloViz.onSelectHolon(holon);
+    }
+  }
+
+  /**
+   * Navigate to a new zoom level. Re-renders accordingly and notifies app.js.
+   * @param {0|1|2} level
+   * @param {string|null} holonicId
+   * @param {string|null} holonId
+   */
+  function navigate(level, holonicId, holonId) {
+    state.level = level;
+    state.holonicId = holonicId;
+    state.holonId = holonId;
+    if (!boundary) return;
+    if (level === 0) renderHolonicControlView(boundary);
+    else if (level === 1) renderHolonicView(holonicId, boundary);
+    else if (level === 2) renderHolonDetailView(holonId, boundary);
+    if (window.AwsHoloViz.onLevelChange) {
+      window.AwsHoloViz.onLevelChange(level, holonicId, holonId);
+    }
+  }
+
+  /**
+   * Render the visualizer at whatever state we're currently in.
+   * @param {object} boundaryData
+   */
+  function render(boundaryData) {
+    boundary = boundaryData;
+    if (state.level === 2 && state.holonId) renderHolonDetailView(state.holonId, boundaryData);
+    else if (state.level === 1 && state.holonicId) renderHolonicView(state.holonicId, boundaryData);
+    else renderHolonicControlView(boundaryData);
+  }
+
+  /**
+   * Truncate a string for display, appending an ellipsis if shortened.
+   * @param {string} s
+   * @param {number} n
+   * @returns {string}
+   */
+  function truncate(s, n) {
+    if (!s) return "";
+    return s.length > n ? s.slice(0, n - 1) + "…" : s;
+  }
+
+  /**
+   * Reset to Level 0.
+   */
+  function reset() {
+    state = { level: 0, holonicId: null, holonId: null };
+  }
+
+  /**
+   * Return the current zoom-navigation state.
+   * @returns {{level:number, holonicId:string|null, holonId:string|null}}
+   */
+  function getState() {
+    return { ...state };
+  }
+
+  /**
+   * Look up a holon by id from the active boundary.
+   * @param {string} id
+   * @returns {object|null}
+   */
+  function findHolon(id) {
+    if (!boundary) return null;
+    return indexHolons(boundary).get(id) || null;
+  }
+
+  /**
+   * Look up a holonic by id from the active boundary.
+   * @param {string} id
+   * @returns {object|null}
+   */
+  function findHolonic(id) {
+    if (!boundary) return null;
+    return (boundary.holonics || []).find((hc) => hc.id === id) || null;
+  }
+
+  window.AwsHoloViz = {
+    isBoundary,
+    render,
+    renderHolonicControlView,
+    renderHolonicView,
+    renderHolonDetailView,
+    navigate,
+    reset,
+    getState,
+    findHolon,
+    findHolonic,
+    applyAssemblyFilter,
+    allEntities,
+    onLevelChange: null,
+    onSelectHolon: null,
+    STATUS_COLOR,
+    SEVERITY_RADIUS,
+  };
+})();

@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://miraxrio.github.io/aws-visualization/schema/holonic.schema.json",
+  "title": "Holonic",
+  "description": "A holonic aggregate — a named cluster of holons (and/or other holonics) that share a control surface or organisational boundary in the Holographic Assessment Principle.",
+  "allOf": [
+    {
+      "$ref": "../ontology/entity-classes.schema.json"
+    },
+    {
+      "type": "object",
+      "required": [
+        "id",
+        "entityType",
+        "label",
+        "holonType",
+        "holons",
+        "childHolonics",
+        "aggregateStatus",
+        "aggregateScore",
+        "boundary",
+        "timestamp",
+        "projection",
+        "entityClass",
+        "entityCategory",
+        "provider",
+        "ontologyVersion",
+        "assemblyLevel"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "entityType": {
+          "type": "string",
+          "const": "holonic"
+        },
+        "label": {
+          "type": "string"
+        },
+        "holonType": {
+          "type": "string",
+          "enum": [
+            "control",
+            "boundary",
+            "guild",
+            "project"
+          ],
+          "description": "Why this holonic groups its children: a control surface, an organisational boundary, a guild ownership scope, or a delivery project."
+        },
+        "holons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Holon ids contained by this aggregate. Must resolve inside the same boundary file."
+        },
+        "childHolonics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Holonic ids that are nested inside this holonic. Enables tree-shaped aggregation."
+        },
+        "aggregateStatus": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "partial-fail",
+            "pending",
+            "unknown"
+          ]
+        },
+        "aggregateScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Mean of the child holon scores (and child holonic aggregate scores)."
+        },
+        "boundary": {
+          "type": "object",
+          "required": [
+            "shape",
+            "color"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "shape": {
+              "type": "string",
+              "enum": [
+                "cluster",
+                "ring",
+                "tree",
+                "flat"
+              ]
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+              "description": "Group colour used to tint the cluster outline."
+            }
+          }
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "projection": {
+          "type": "string",
+          "enum": [
+            "2d",
+            "3d",
+            "both"
+          ]
+        }
+      }
+    }
+  ]
+}
