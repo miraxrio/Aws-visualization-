@@ -4520,6 +4520,14 @@ function updateHoloLabels() {
   const rect = holo.container.getBoundingClientRect();
   const w = rect.width;
   const h = rect.height;
+  // Force the ENTIRE scene graph (not just holo.group) to recompute
+  // matrixWorld. Without this, the orbit satellites and quantum field
+  // can lag a frame and the cards drift away from their spheres during
+  // orbit / drag — which read as "cards stick to the camera, not the
+  // object". Camera matrices too: project() needs both current.
+  holo.scene.updateMatrixWorld(true);
+  holo.camera.updateMatrixWorld();
+  holo.camera.matrixWorldInverse.copy(holo.camera.matrixWorld).invert();
   holo.labels.forEach((entry) => {
     const parent = entry.parent || holo.group;
     const v = entry.position.clone().applyMatrix4(parent.matrixWorld);
