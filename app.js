@@ -68,6 +68,16 @@
   window.AwsMode = {
     is3D: () => mode === "3d",
     current: () => mode,
+    set: setMode,
+  };
+
+  // Exposed so builder.js can read the live network and push edits back
+  // through the same render pipeline (so it stays in sync with 3D, the
+  // sidebar summary, brand detection, etc.).
+  window.AwsApp = {
+    getData: () => currentData,
+    applyData: (data, opts) => applyVersionData(data, opts),
+    detectCloud: (data) => detectCloud(data || currentData),
   };
 
   function loadData(data) {

@@ -17,6 +17,7 @@
   <script src="explanations.js" defer></script>
   <script src="visualizer.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="builder.js" defer></script>
   <script type="module" src="viz3d.js"></script>
 </head>
 <body>
@@ -36,6 +37,7 @@
       </label>
       <button id="load-sample" class="btn ghost">Load sample</button>
       <button id="start-tour" class="btn primary">Start tour</button>
+      <button id="builder-btn" class="btn ghost" aria-pressed="false">Builder</button>
       <button id="explore-btn" class="btn ghost mode-3d-only" hidden>Explore</button>
       <button id="attack-btn" class="btn ghost mode-3d-only" hidden>Simulate attack</button>
       <button id="toggle-flow" class="btn ghost">Pause traffic</button>
@@ -64,6 +66,40 @@
       <div class="hint hint-3d" id="hint-3d" hidden>
         <strong>Drag</strong> to orbit · <strong>scroll</strong> to zoom · <strong>right-drag</strong> to pan
       </div>
+      <aside class="builder-drawer" id="builder-drawer" hidden aria-label="Service inventory">
+        <div class="builder-head">
+          <div>
+            <div class="panel-eyebrow" id="builder-eyebrow">AWS inventory</div>
+            <h3 class="builder-title">Drag onto a subnet</h3>
+            <p class="muted builder-sub" id="builder-sub">
+              Pick a service and drop it on a highlighted subnet. We'll wire it into the existing network and simulate the new traffic.
+            </p>
+          </div>
+          <button class="tour-btn" id="builder-close" aria-label="Close inventory">
+            <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+          </button>
+        </div>
+        <div class="builder-actions">
+          <button class="btn ghost btn-sm" id="builder-reset" title="Revert to imported network">Reset</button>
+          <button class="btn ghost btn-sm" id="builder-undo" title="Undo last addition">Undo</button>
+        </div>
+        <div class="builder-inventory" id="builder-inventory"></div>
+      </aside>
+
+      <div class="sim-hud" id="sim-hud" hidden>
+        <div class="sim-hud-head">
+          <span class="sim-hud-icon" id="sim-hud-icon">+</span>
+          <div class="sim-hud-titles">
+            <div class="sim-hud-name" id="sim-hud-name">Simulating</div>
+            <div class="sim-hud-where" id="sim-hud-where">in subnet</div>
+          </div>
+          <button class="tour-btn" id="sim-hud-close" aria-label="Dismiss">
+            <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+          </button>
+        </div>
+        <ul class="sim-hud-flows" id="sim-hud-flows"></ul>
+      </div>
+
       <div class="explore-hud" id="explore-hud" hidden>
         <div class="explore-help">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move ·

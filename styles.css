@@ -1611,6 +1611,236 @@ pre {
 }
 .tour-extra strong { color: #fff; font-weight: 600; }
 
+/* ============ Builder mode ============ */
+
+.builder-drawer {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: 280px;
+  border-radius: 14px;
+  background: rgba(11, 18, 32, 0.92);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 14px 10px;
+  z-index: 4;
+  backdrop-filter: blur(10px);
+  animation: builder-in 0.22s ease-out;
+}
+@keyframes builder-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.builder-drawer[hidden] { display: none; }
+body.theme-day .builder-drawer { background: rgba(197, 219, 240, 0.95); }
+
+.builder-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.builder-title { margin: 4px 0 4px; font-size: 15px; }
+.builder-sub {
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0 0 4px;
+}
+.builder-actions {
+  display: flex;
+  gap: 6px;
+  padding: 6px 0 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+
+.builder-inventory {
+  overflow-y: auto;
+  flex: 1;
+  margin: 0 -6px 0 -4px;
+  padding: 0 2px 0 4px;
+}
+.inv-section { margin-bottom: 12px; }
+.inv-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin: 6px 2px 6px;
+}
+.inv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.inv-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease;
+  text-align: left;
+}
+.inv-tile:hover {
+  border-color: var(--accent-2);
+  transform: translateY(-1px);
+  background: rgba(88, 166, 255, 0.06);
+}
+.inv-tile:active { cursor: grabbing; transform: translateY(0); }
+.inv-tile-icon {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+}
+.inv-tile-label {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Drop-target highlight during inventory drag */
+/* While dragging an inventory item, the existing JSON-file dropzone
+   overlay ("Drop JSON to load network") would visually compete with the
+   subnet-target highlights — suppress it. */
+body.builder-dragging .dropping::after { display: none; }
+
+body.builder-dragging #diagram .subnet { cursor: copy; }
+body.builder-dragging #diagram .subnet.drop-eligible {
+  stroke: rgba(74, 222, 128, 0.75) !important;
+  stroke-width: 2.4 !important;
+  stroke-dasharray: 6 4;
+  filter: drop-shadow(0 0 10px rgba(74, 222, 128, 0.45));
+}
+body.builder-dragging #diagram .subnet.drop-active {
+  stroke: #4ade80 !important;
+  stroke-width: 3 !important;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 18px rgba(74, 222, 128, 0.8));
+}
+body.builder-dragging #diagram .subnet.drop-ineligible {
+  opacity: 0.45;
+}
+
+/* Builder button active state */
+#builder-btn[aria-pressed="true"] {
+  background: linear-gradient(180deg, #4ade80, #16a34a);
+  border-color: transparent;
+  color: #052310;
+  font-weight: 600;
+}
+
+/* Mid-drag tooltip */
+.builder-drop-toast {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  background: rgba(11, 18, 32, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 12px;
+  z-index: 6;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+}
+.builder-drop-toast.warn { border-color: #f5c451; color: #f5c451; }
+
+/* ============ Simulation HUD (post-drop) ============ */
+.sim-hud {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 320px;
+  background: rgba(11, 18, 32, 0.94);
+  border: 1px solid #4ade80;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(74, 222, 128, 0.18);
+  z-index: 5;
+  padding: 10px 12px;
+  animation: sim-hud-in 0.28s ease-out;
+}
+@keyframes sim-hud-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.sim-hud[hidden] { display: none; }
+body.theme-day .sim-hud { background: rgba(197, 219, 240, 0.96); }
+
+.sim-hud-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.sim-hud-icon {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #4ade80, #16a34a);
+  color: #052310;
+  font-weight: 800;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sim-hud-titles { flex: 1; min-width: 0; }
+.sim-hud-name { font-weight: 600; font-size: 13px; }
+.sim-hud-where { color: var(--muted); font-size: 11px; }
+
+.sim-hud-flows {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.sim-hud-flows li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px dashed rgba(255,255,255,0.05);
+}
+.sim-hud-flows li:last-child { border-bottom: 0; }
+.sim-hud-flows .dir {
+  color: #4ade80;
+  font-weight: 700;
+  width: 18px;
+  text-align: center;
+}
+.sim-hud-flows .lbl { color: var(--muted); margin-left: auto; font-size: 11px; }
+
+@media (max-width: 900px) {
+  .builder-drawer { width: 220px; bottom: 60px; }
+  .sim-hud { width: 240px; }
+}
+
 /* Drag overlay */
 .dropping::after {
   content: "Drop JSON to load network";
