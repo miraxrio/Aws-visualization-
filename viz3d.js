@@ -4292,8 +4292,95 @@ function attachHoloPointer() {
     holo.camera.lookAt(0, 1.5, 0);
   }, { passive: false });
   dom.addEventListener("mouseenter", () => { holo.hoverPause = true; });
-  dom.addEventListener("mouseleave", () => { holo.hoverPause = false; });
+  dom.addEventListener("mouseleave", () => {
+    holo.hoverPause = false;
+    const tip = document.getElementById("holo-hover-tip");
+    if (tip) tip.hidden = true;
+  });
   dom.addEventListener("click", onHoloClick);
+  dom.addEventListener("pointermove", onHoloHover);
+}
+
+/**
+ * Hover handler: raycast against clickable spheres and pop a tooltip near
+ * the cursor with the entity's name, status, score, and provenance hint.
+ * Works at Level 0 (holonics) and Level 1 (holons).
+ * @param {PointerEvent} ev
+ */
+function onHoloHover(ev) {
+  const tip = document.getElementById("holo-hover-tip");
+  if (!tip || !holo.boundary) return;
+  const rect = holo.renderer.domElement.getBoundingClientRect();
+  holo.pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  holo.pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  holo.raycaster.setFromCamera(holo.pointer, holo.camera);
+  const meshes = [];
+  holo.clickables.forEach((entry) => { if (entry.mesh) meshes.push(entry.mesh); });
+  const hits = holo.raycaster.intersectObjects(meshes, false);
+  if (!hits.length) { tip.hidden = true; return; }
+  const id = hits[0].object.userData && hits[0].object.userData.holoId;
+  const entity = lookupHoloEntity(id);
+  if (!entity) { tip.hidden = true; return; }
+  tip.innerHTML = renderHoloHoverTip(entity);
+  tip.hidden = false;
+  // Position near cursor but keep inside the container.
+  const stage = holo.container;
+  const sRect = stage.getBoundingClientRect();
+  const x = ev.clientX - sRect.left + 14;
+  const y = ev.clientY - sRect.top + 14;
+  const tipRect = tip.getBoundingClientRect();
+  const maxX = sRect.width - tipRect.width - 8;
+  const maxY = sRect.height - tipRect.height - 8;
+  tip.style.left = Math.max(8, Math.min(x, maxX)) + "px";
+  tip.style.top  = Math.max(8, Math.min(y, maxY)) + "px";
+}
+
+/**
+ * Resolve a hovered/clicked id to its full holonic or holon entity in the
+ * loaded boundary.
+ * @param {string} id
+ * @returns {object|null}
+ */
+function lookupHoloEntity(id) {
+  if (!id || !holo.boundary) return null;
+  const hc = (holo.boundary.holonics || []).find((x) => x.id === id);
+  if (hc) return hc;
+  return (holo.boundary.loose_holons || []).find((x) => x.id === id) || null;
+}
+
+/**
+ * Build the inner HTML for the hover tooltip from an entity.
+ * @param {object} e
+ * @returns {string}
+ */
+function renderHoloHoverTip(e) {
+  const status = e.aggregateStatus || e.status || "unknown";
+  const score = e.aggregateScore != null ? e.aggregateScore : e.score;
+  const r = typeof window !== "undefined" ? window.OntologyRenderer : null;
+  const icon = r ? r.getRenderProps(e.entityClass || "").icon : "◯";
+  const cls = e.entityClass || "";
+  const provider = e.provider && e.provider !== "agnostic" ? e.provider.toUpperCase() : "";
+  const sub = e.aggregateStatus
+    ? `${(e.holons || []).length} holons · ${Math.round(score || 0)}/100`
+    : `${e.severity || ""} · ${Math.round(score || 0)}/100`;
+  const desc = (e.meta && e.meta.description) || e.assemblyContext || "";
+  const safe = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `
+    <div class="hht-head">
+      <span class="hht-icon">${safe(icon)}</span>
+      <div>
+        <div class="hht-title">${safe(e.label || e.id)}</div>
+        <div class="hht-sub status-${safe(status)}">${safe(sub)}</div>
+      </div>
+    </div>
+    <div class="hht-meta">
+      <span class="hht-chip">${safe(cls)}</span>
+      ${provider ? `<span class="hht-chip">${safe(provider)}</span>` : ""}
+      <span class="hht-chip status-${safe(status)}">${safe(status)}</span>
+    </div>
+    ${desc ? `<div class="hht-desc">${safe(desc)}</div>` : ""}
+  `;
 }
 
 /**
@@ -4613,7 +4700,12 @@ function addHoloEntityIcon(entity, position, parent) {
   el.textContent = props.icon || "◯";
   el.style.position = "absolute";
   el.style.pointerEvents = "none";
-  el.style.color = props.baseColor || "#cbd5e1";
+  // White glyph + coloured halo via a CSS variable so the icon stays
+  // legible against every sphere/background — using props.baseColor as the
+  // text color was invisible for dark classes (e.g. AssessmentControl
+  // #4b5563 against the dark stage).
+  el.style.color = "#ffffff";
+  el.style.setProperty("--ont-icon-color", props.baseColor || "#cbd5e1");
   el.title = `${entity.entityClass}${entity.provider && entity.provider !== "agnostic" ? " · " + entity.provider.toUpperCase() : ""}`;
   holo.container.appendChild(el);
   holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });

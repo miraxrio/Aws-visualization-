@@ -2286,30 +2286,43 @@ body.mode-holographic .sidebar > .panel:last-child {
 .holo-icon {
   position: absolute;
   pointer-events: none;
-  font-size: 20px;
+  font-size: 26px;
   font-weight: 700;
   line-height: 1;
   z-index: 7;
-  filter: drop-shadow(0 0 5px currentColor) drop-shadow(0 0 2px rgba(255,255,255,0.5));
+  color: #ffffff;
+  /* Coloured halo via a CSS var set inline per element — a white glyph
+     is legible against any background, and the var-tinted glow signals
+     the entityClass. */
+  filter:
+    drop-shadow(0 0 8px var(--ont-icon-color, #fff))
+    drop-shadow(0 0 14px var(--ont-icon-color, #fff))
+    drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));
   animation: holo-label-in 0.45s ease both;
 }
 
-/* Quantum-realm tint at Level 1+: a cool blue radial wash behind the
-   Three.js particle field gives the "Ant-Man" quantum vibe without
-   adding a separate canvas. */
-body.mode-holographic.mode-3d.holo-l1 .stage,
+/* Quantum-realm tint at Level 1: a cool blue radial wash behind the
+   Three.js particle field gives the "Ant-Man" quantum vibe. */
+body.mode-holographic.mode-3d.holo-l1 .stage {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 50%, rgba(58, 142, 240, 0.18), transparent 70%),
+    radial-gradient(ellipse 90% 75% at 30% 35%, rgba(80, 220, 255, 0.10), transparent 75%),
+    #04060e;
+}
+/* Level 2 leans much further into blue/cyan — the user wanted less
+   black so the focused-holon view feels like being inside the field. */
 body.mode-holographic.mode-3d.holo-l2 .stage {
   background:
-    radial-gradient(ellipse 70% 55% at 50% 50%, rgba(58, 142, 240, 0.16), transparent 70%),
-    radial-gradient(ellipse 90% 75% at 30% 35%, rgba(80, 220, 255, 0.08), transparent 75%),
-    #04060e;
+    radial-gradient(ellipse 80% 65% at 50% 50%, rgba(58, 142, 240, 0.42), transparent 78%),
+    radial-gradient(ellipse 110% 95% at 30% 30%, rgba(80, 220, 255, 0.26), transparent 80%),
+    radial-gradient(ellipse 110% 95% at 70% 70%, rgba(120, 90, 255, 0.18), transparent 80%),
+    linear-gradient(180deg, #0c2348 0%, #06122c 100%);
 }
 body.mode-holographic.mode-3d.holo-l1 .stage-holo,
 body.mode-holographic.mode-3d.holo-l2 .stage-holo {
   background: transparent;
 }
-body.mode-holographic.mode-3d.holo-l1 .stage::after,
-body.mode-holographic.mode-3d.holo-l2 .stage::after {
+body.mode-holographic.mode-3d.holo-l1 .stage::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -2321,7 +2334,95 @@ body.mode-holographic.mode-3d.holo-l2 .stage::after {
   animation: holo-quantum-shimmer 6s linear infinite;
   mix-blend-mode: screen;
 }
+body.mode-holographic.mode-3d.holo-l2 .stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    repeating-linear-gradient(110deg, transparent 0 40px, rgba(56, 178, 255, 0.12) 40px 41px),
+    repeating-linear-gradient(70deg, transparent 0 60px, rgba(120, 220, 255, 0.10) 60px 61px),
+    repeating-linear-gradient(20deg, transparent 0 90px, rgba(160, 100, 255, 0.06) 90px 91px);
+  animation: holo-quantum-shimmer 4s linear infinite;
+  mix-blend-mode: screen;
+}
 @keyframes holo-quantum-shimmer {
   from { background-position: 0 0, 0 0; }
   to   { background-position: 200px 0, -160px 0; }
 }
+
+/* Hover tooltip — shown when the cursor sits on a holographic sphere. */
+.holo-hover-tip {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: rgba(7, 16, 31, 0.96);
+  border: 1px solid rgba(88, 166, 255, 0.45);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(88, 166, 255, 0.08);
+  backdrop-filter: blur(6px);
+}
+.holo-hover-tip[hidden] { display: none; }
+.holo-hover-tip .hht-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+.holo-hover-tip .hht-icon {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--accent-2);
+  text-shadow: 0 0 6px currentColor;
+}
+.holo-hover-tip .hht-title { font-weight: 700; font-size: 13px; line-height: 1.25; }
+.holo-hover-tip .hht-sub {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.holo-hover-tip .hht-sub.status-pass         { color: var(--status-pass); }
+.holo-hover-tip .hht-sub.status-fail         { color: #ff8a8a; }
+.holo-hover-tip .hht-sub.status-partial-fail { color: #ffb27a; }
+.holo-hover-tip .hht-sub.status-pending      { color: #cbd5e1; }
+.holo-hover-tip .hht-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+}
+.holo-hover-tip .hht-chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--text);
+}
+.holo-hover-tip .hht-chip.status-pass         { background: rgba(34,197,94,0.18); color: var(--status-pass); border-color: rgba(34,197,94,0.4); }
+.holo-hover-tip .hht-chip.status-fail         { background: rgba(239,68,68,0.18); color: #fca5a5; border-color: rgba(239,68,68,0.4); }
+.holo-hover-tip .hht-chip.status-partial-fail { background: rgba(249,115,22,0.18); color: #fdba74; border-color: rgba(249,115,22,0.4); }
+.holo-hover-tip .hht-chip.status-pending      { background: rgba(163,163,163,0.18); color: var(--status-pending); border-color: rgba(163,163,163,0.4); }
+.holo-hover-tip .hht-desc {
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #cbd6e8;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.stage-holo canvas { cursor: default; }
+body.mode-holographic.mode-3d .stage-holo canvas:hover { cursor: pointer; }
