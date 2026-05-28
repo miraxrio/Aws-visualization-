@@ -1299,6 +1299,7 @@
     if (els.holoDetail) els.holoDetail.hidden = true;
     if (els.asmFilterBar) els.asmFilterBar.hidden = true;
     if (els.holoViewHint) els.holoViewHint.hidden = true;
+    document.body.classList.remove("holo-l0", "holo-l1", "holo-l2");
     // Hide the holographic 3D stage and restore the legacy stage(s) for
     // the current viewing mode, otherwise the boundary spheres linger on
     // top of the AWS view after the user clicks "Exit boundary".
@@ -1381,6 +1382,10 @@
       sep2.hidden = true;
     }
     back.hidden = ZoomLevel === 0;
+
+    // Body class drives the CSS background swap (starfield ↔ quantum tint).
+    document.body.classList.remove("holo-l0", "holo-l1", "holo-l2");
+    document.body.classList.add(`holo-l${ZoomLevel}`);
 
     if (els.holoViewHint) {
       const hints = {

@@ -1757,7 +1757,9 @@ body.mode-3d .holo-watermark { display: block; }
   display: none;
 }
 .holo-starfield[hidden] { display: none; }
-body.mode-holographic.mode-3d .holo-starfield { display: block; }
+/* Stars only at the holonic-control overview; drilling in swaps to the
+   quantum-field backdrop (rendered by the Three.js scene). */
+body.mode-holographic.mode-3d.holo-l0 .holo-starfield { display: block; }
 @keyframes holo-twinkle {
   0%   { opacity: 0.35; }
   50%  { opacity: 0.55; }
@@ -2279,3 +2281,47 @@ body.mode-holographic .sidebar > .panel:last-child {
 }
 .holo-view-hint[hidden] { display: none; }
 .holo-view-hint b { color: var(--accent-2); }
+
+/* Per-entity icon glyph floating above the holographic sphere. */
+.holo-icon {
+  position: absolute;
+  pointer-events: none;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  z-index: 7;
+  filter: drop-shadow(0 0 5px currentColor) drop-shadow(0 0 2px rgba(255,255,255,0.5));
+  animation: holo-label-in 0.45s ease both;
+}
+
+/* Quantum-realm tint at Level 1+: a cool blue radial wash behind the
+   Three.js particle field gives the "Ant-Man" quantum vibe without
+   adding a separate canvas. */
+body.mode-holographic.mode-3d.holo-l1 .stage,
+body.mode-holographic.mode-3d.holo-l2 .stage {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 50%, rgba(58, 142, 240, 0.16), transparent 70%),
+    radial-gradient(ellipse 90% 75% at 30% 35%, rgba(80, 220, 255, 0.08), transparent 75%),
+    #04060e;
+}
+body.mode-holographic.mode-3d.holo-l1 .stage-holo,
+body.mode-holographic.mode-3d.holo-l2 .stage-holo {
+  background: transparent;
+}
+body.mode-holographic.mode-3d.holo-l1 .stage::after,
+body.mode-holographic.mode-3d.holo-l2 .stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    repeating-linear-gradient(110deg, transparent 0 40px, rgba(56, 178, 255, 0.05) 40px 41px),
+    repeating-linear-gradient(70deg, transparent 0 60px, rgba(120, 220, 255, 0.04) 60px 61px);
+  animation: holo-quantum-shimmer 6s linear infinite;
+  mix-blend-mode: screen;
+}
+@keyframes holo-quantum-shimmer {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 200px 0, -160px 0; }
+}

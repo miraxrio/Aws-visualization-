@@ -4107,6 +4107,7 @@ const holo = {
   orbiters: [],
   orbitEdges: [],
   asmFilter: null,
+  quantumField: null,
 };
 
 /**
@@ -4146,6 +4147,11 @@ function holoInit(container) {
 
   holo.starfield = makeStarfield(2000);
   holo.scene.add(holo.starfield);
+
+  // Quantum-realm electric field shown at Level 1+ in place of stars.
+  holo.quantumField = makeQuantumField(900);
+  holo.quantumField.visible = false;
+  holo.scene.add(holo.quantumField);
 
   holo.raycaster = new THREE.Raycaster();
   holo.pointer = new THREE.Vector2();
@@ -4188,6 +4194,60 @@ function makeStarfield(count) {
     blending: THREE.AdditiveBlending,
   });
   return new THREE.Points(geom, mat);
+}
+
+/**
+ * Build the quantum-realm electric field — a dense cloud of cyan-blue
+ * particles that jitter around their base position to suggest crackling
+ * energy. Replaces the starfield at Level 1+ in the holographic view.
+ * @param {number} count
+ * @returns {THREE.Points}
+ */
+function makeQuantumField(count) {
+  const geom = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const base = new Float32Array(count * 3);
+  const phase = new Float32Array(count);
+  const speed = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const r = 60 + Math.random() * 220;
+    const u = Math.random() * 2 - 1;
+    const t = Math.random() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    const x = r * s * Math.cos(t);
+    const y = r * u;
+    const z = r * s * Math.sin(t);
+    positions[i * 3] = base[i * 3] = x;
+    positions[i * 3 + 1] = base[i * 3 + 1] = y;
+    positions[i * 3 + 2] = base[i * 3 + 2] = z;
+    phase[i] = Math.random() * Math.PI * 2;
+    speed[i] = 0.4 + Math.random() * 1.8;
+  }
+  geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0x6ad6ff,
+    map: ensureHoloGlowTexture(),
+    size: 5.5,
+    transparent: true,
+    opacity: 0.85,
+    sizeAttenuation: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const pts = new THREE.Points(geom, mat);
+  pts.userData = { base, phase, speed };
+  return pts;
+}
+
+/**
+ * Swap the in-scene backdrop between the starfield (Level 0) and the
+ * jittering quantum field (Level 1+). The body class is toggled by
+ * app.js so CSS overlays react in lockstep.
+ * @param {boolean} active true → quantum field
+ */
+function setQuantumBackground(active) {
+  if (holo.starfield) holo.starfield.visible = !active;
+  if (holo.quantumField) holo.quantumField.visible = !!active;
 }
 
 /**
@@ -4331,7 +4391,25 @@ function holoAnimate() {
       c.material.opacity = 0.65 + 0.3 * t;
     });
   }
-  if (holo.starfield) holo.starfield.rotation.y += 0.0003;
+  if (holo.starfield && holo.starfield.visible) holo.starfield.rotation.y += 0.0003;
+  // Quantum field: every particle jitters around its base position so the
+  // backdrop looks like a crackling energy haze.
+  if (holo.quantumField && holo.quantumField.visible) {
+    const attr = holo.quantumField.geometry.attributes.position;
+    const ud = holo.quantumField.userData;
+    const t = now / 700;
+    for (let i = 0; i < ud.phase.length; i++) {
+      const j = i * 3;
+      const p = ud.phase[i];
+      const sp = ud.speed[i];
+      attr.array[j]     = ud.base[j]     + Math.sin(t * sp + p) * 7;
+      attr.array[j + 1] = ud.base[j + 1] + Math.sin(t * sp + p + 1.7) * 7;
+      attr.array[j + 2] = ud.base[j + 2] + Math.cos(t * sp + p) * 7;
+    }
+    attr.needsUpdate = true;
+    holo.quantumField.rotation.y += 0.0009;
+    holo.quantumField.rotation.x = Math.sin(now / 4500) * 0.12;
+  }
   // Refresh world matrices so floating labels/badges track the orbiting
   // holons this frame rather than lagging one frame behind. The camera's
   // inverse must be current too or project() places labels with a stale
@@ -4492,8 +4570,10 @@ function renderHoloLevel0(boundaryData) {
     );
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
       new THREE.Vector3(x + radius * 0.9, radius + 1.0, z));
+    addHoloEntityIcon(hc, new THREE.Vector3(x, radius + 0.4, z));
   });
   holoApplyAssemblyFilter(holo.asmFilter);
+  setQuantumBackground(false);
   holoZoomTo(HOLO_LEVEL_DISTANCE[0]);
 }
 
@@ -4510,6 +4590,31 @@ function addHoloAssemblyBadge(level, position, parent) {
   el.textContent = `${icons[level] || "⬥"} ${level}`;
   el.style.position = "absolute";
   el.style.pointerEvents = "none";
+  holo.container.appendChild(el);
+  holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
+}
+
+/**
+ * Add a floating entityClass icon glyph above a holonic or holon, like the
+ * type-pins the legacy 3D city view puts above each AWS / Azure node.
+ * Reads from window.OntologyRenderer.getRenderProps.
+ * @param {object} entity must carry entityClass + status/aggregateStatus
+ * @param {THREE.Vector3} position
+ * @param {THREE.Object3D} [parent]
+ */
+function addHoloEntityIcon(entity, position, parent) {
+  if (!entity || !entity.entityClass) return;
+  const r = typeof window !== "undefined" ? window.OntologyRenderer : null;
+  const props = r ? r.getRenderProps(entity.entityClass)
+    : { icon: "◯", baseColor: "#cbd5e1" };
+  const status = entity.status || entity.aggregateStatus || "unknown";
+  const el = document.createElement("div");
+  el.className = `holo-icon status-${status}`;
+  el.textContent = props.icon || "◯";
+  el.style.position = "absolute";
+  el.style.pointerEvents = "none";
+  el.style.color = props.baseColor || "#cbd5e1";
+  el.title = `${entity.entityClass}${entity.provider && entity.provider !== "agnostic" ? " · " + entity.provider.toUpperCase() : ""}`;
   holo.container.appendChild(el);
   holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
 }
@@ -4610,6 +4715,7 @@ function renderHoloLevel1(holonicId, boundaryData) {
   buildOrbitEdges(holons);
   updateOrbitEdges();
   holoApplyAssemblyFilter(holo.asmFilter);
+  setQuantumBackground(true);
   holoZoomTo(HOLO_LEVEL_DISTANCE[1]);
 }
 
@@ -4790,6 +4896,7 @@ function addHoloHolon(holon, pos, parent) {
   }
   addHoloAssemblyBadge(holon.assemblyLevel != null ? holon.assemblyLevel : 0,
     pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)), target);
+  addHoloEntityIcon(holon, pos.clone().add(new THREE.Vector3(0, radius + 0.2, 0)), target);
   return mesh;
 }
 
