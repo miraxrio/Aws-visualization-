@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AWS Network Visualizer</title>
   <link rel="stylesheet" href="styles.css" />
+  <!-- MapLibre GL JS (keyless WebGL globe) — same engine OSIRIS uses for its map -->
+  <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" defer></script>
   <script type="importmap">
     {
       "imports": {
@@ -23,6 +26,7 @@
   <script type="module" src="ontology/entity-renderer.js"></script>
   <script type="module" src="ontology/assembly.js"></script>
   <script type="module" src="viz3d.js"></script>
+  <script src="map.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -35,6 +39,7 @@
       <div class="seg" role="group" aria-label="View mode">
         <button id="mode-2d" class="seg-btn is-active" aria-pressed="true">2D</button>
         <button id="mode-3d" class="seg-btn" aria-pressed="false">Holographic View</button>
+        <button id="mode-map" class="seg-btn" aria-pressed="false">Map</button>
       </div>
       <label class="btn" for="file-input">
         <span>Import network</span>
@@ -117,6 +122,22 @@
       <div class="holo-hover-tip" id="holo-hover-tip" hidden></div>
       <svg id="diagram" role="img" aria-label="AWS network diagram"></svg>
       <div class="stage-3d" id="stage-3d" hidden aria-label="AWS network city (3D)"></div>
+      <div class="stage-map" id="stage-map" hidden aria-label="Geographic map of AWS / Azure networks">
+        <div class="map-canvas" id="map-canvas"></div>
+        <div class="map-controls" id="map-controls">
+          <button class="btn ghost btn-sm" id="map-style-toggle" title="Toggle satellite imagery">🛰️ Satellite</button>
+          <button class="btn ghost btn-sm" id="map-proj-toggle" title="Toggle globe / flat projection">🗺️ Flat</button>
+          <button class="btn ghost btn-sm" id="map-fit" title="Zoom to fit all networks">⤢ Fit networks</button>
+        </div>
+        <div class="map-legend" id="map-legend">
+          <div><span class="map-dot map-aws"></span> AWS region</div>
+          <div><span class="map-dot map-azure"></span> Azure region</div>
+          <div><span class="map-line"></span> Cross-region link</div>
+        </div>
+        <div class="map-empty" id="map-empty" hidden>
+          Load a network with <code>region</code> fields to plot it on the globe.
+        </div>
+      </div>
       <div class="stage-holo" id="stage-holo" hidden aria-label="Holographic assessment view (3D)"></div>
       <div class="holo-watermark" id="holo-watermark" hidden>Holographic Assessment Principle</div>
       <div class="holo-starfield" id="holo-starfield" hidden></div>

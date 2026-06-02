@@ -7,6 +7,8 @@
     resetZoom: document.getElementById("reset-zoom"),
     mode2d: document.getElementById("mode-2d"),
     mode3d: document.getElementById("mode-3d"),
+    modeMap: document.getElementById("mode-map"),
+    stageMap: document.getElementById("stage-map"),
     exploreBtn: document.getElementById("explore-btn"),
     exploreHud: document.getElementById("explore-hud"),
     attackBtn: document.getElementById("attack-btn"),
@@ -143,6 +145,9 @@
     AwsViz.render(data, enriched);
     if (window.AwsViz3D && window.AwsViz3D.isReady()) {
       window.AwsViz3D.render(data, opts);
+    }
+    if (window.AwsMap && window.AwsMap.isReady()) {
+      window.AwsMap.render(data);
     }
     updateSummary(data);
     updateBrandFor(data);
@@ -470,17 +475,22 @@
   function setMode(next) {
     if (next === mode) return;
     mode = next;
-    document.body.classList.toggle("mode-3d", mode === "3d");
-    els.mode2d.classList.toggle("is-active", mode === "2d");
-    els.mode3d.classList.toggle("is-active", mode === "3d");
-    els.mode2d.setAttribute("aria-pressed", mode === "2d" ? "true" : "false");
-    els.mode3d.setAttribute("aria-pressed", mode === "3d" ? "true" : "false");
-    els.diagram.style.display = mode === "2d" ? "" : "none";
-    els.stage3d.hidden = mode !== "3d";
-    els.hint3d.hidden = mode !== "3d";
-    els.exploreBtn.hidden = mode !== "3d";
-    els.attackBtn.hidden = mode !== "3d";
-    if (mode !== "3d") {
+    const is2d = mode === "2d", is3d = mode === "3d", isMap = mode === "map";
+    document.body.classList.toggle("mode-3d", is3d);
+    document.body.classList.toggle("mode-map", isMap);
+    els.mode2d.classList.toggle("is-active", is2d);
+    els.mode3d.classList.toggle("is-active", is3d);
+    if (els.modeMap) els.modeMap.classList.toggle("is-active", isMap);
+    els.mode2d.setAttribute("aria-pressed", is2d ? "true" : "false");
+    els.mode3d.setAttribute("aria-pressed", is3d ? "true" : "false");
+    if (els.modeMap) els.modeMap.setAttribute("aria-pressed", isMap ? "true" : "false");
+    els.diagram.style.display = is2d ? "" : "none";
+    els.stage3d.hidden = !is3d;
+    if (els.stageMap) els.stageMap.hidden = !isMap;
+    els.hint3d.hidden = !is3d;
+    els.exploreBtn.hidden = !is3d;
+    els.attackBtn.hidden = !is3d;
+    if (!is3d) {
       if (window.AwsViz3D && window.AwsViz3D.isExploring()) {
         window.AwsViz3D.exitExplore();
         els.exploreHud.hidden = true;
@@ -512,10 +522,32 @@
       };
       tryInit();
     }
+
+    if (isMap) {
+      // Lazy-init the geographic map. MapLibre GL is loaded from a CDN and may
+      // not be ready yet on a slow connection.
+      const tryInitMap = (attempts = 25) => {
+        if (window.AwsMap && window.maplibregl) {
+          // Seed the theme before init() builds the map so the initial base
+          // style matches; setTheme is a no-op (just records the value) until ready.
+          if (window.AwsMap.setTheme) window.AwsMap.setTheme(theme);
+          if (!window.AwsMap.isReady()) window.AwsMap.init(els.stageMap);
+          window.AwsMap.resize();
+          if (currentData) window.AwsMap.render(currentData);
+        } else if (attempts > 0) {
+          setTimeout(() => tryInitMap(attempts - 1), 120);
+        } else {
+          alert("Map view couldn't load — MapLibre GL failed to load (you may be offline).");
+          setMode("2d");
+        }
+      };
+      tryInitMap();
+    }
   }
 
   els.mode2d.addEventListener("click", () => setMode("2d"));
   els.mode3d.addEventListener("click", () => setMode("3d"));
+  if (els.modeMap) els.modeMap.addEventListener("click", () => setMode("map"));
 
   // ---- Boundary slider + highlight toggle ----
   // The slider snaps to each snapshot index. Each scrub silently swaps the
@@ -557,6 +589,9 @@
       theme === "day" ? "Switch to night theme" : "Switch to day theme");
     if (window.AwsViz3D && window.AwsViz3D.setTheme) {
       window.AwsViz3D.setTheme(theme);
+    }
+    if (window.AwsMap && window.AwsMap.isReady()) {
+      window.AwsMap.setTheme(theme);
     }
   }
 

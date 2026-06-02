@@ -4,12 +4,29 @@ This repository is a **monorepo** containing two independent applications:
 
 | App | Path | Stack | Purpose |
 |-----|------|-------|---------|
-| **AWS Network Visualizer** | repository root | Static HTML / CSS / vanilla JS (D3 + Three.js via CDN) | Interactive 2D / 3D visualization of AWS network topologies, with guided tours, a build wizard, and attack simulation. |
+| **AWS Network Visualizer** | repository root | Static HTML / CSS / vanilla JS (D3 + Three.js + MapLibre GL via CDN) | Interactive 2D / 3D / **geographic Map** visualization of AWS & Azure network topologies, with guided tours, a build wizard, and attack simulation. |
 | **OSIRIS** | [`osiris/`](osiris/) | Next.js 16 + TypeScript + MapLibre GL | Real-time global OSINT dashboard — live flights, CCTV, earthquakes, fires, news, conflict zones, and a RECON toolkit. |
 
 The two apps are linked from the Visualizer header via the **🌐 Global Intel**
 button, which opens the running OSIRIS instance (defaults to
 `http://localhost:3000`).
+
+### Map view (OSIRIS-style globe, no API keys)
+
+The Visualizer's **Map** tab renders your loaded network onto a MapLibre GL
+globe, tying each VPC / VNet to the real-world coordinates of its `region`
+(both AWS — `us-east-1`, … — and Azure — `eastus`, … — region codes are
+supported). It reuses the same **keyless** map stack OSIRIS uses, so **no API
+keys are required**:
+
+- **MapLibre GL JS** — WebGL globe engine
+- **CARTO dark-matter / positron** — base map styles (keyless)
+- **ESRI World Imagery** — optional satellite imagery toggle (keyless)
+
+OSIRIS's own `OsirisMap` is a React/Next component that can't run in this
+static app, so `map.js` is a small vanilla port of the same technique rather
+than a direct file reuse. The OSINT data-feed keys OSIRIS documents (FIRMS,
+OpenSky, …) are **not** needed here — we plot your own network, not live feeds.
 
 ---
 
