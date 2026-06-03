@@ -120,19 +120,33 @@
   // Spread N points around a center so co-located VPCs don't stack exactly.
   function spread(center, index, count) {
     if (count <= 1) return center.slice();
-    const r = 1.1 + count * 0.15; // degrees
+    const r = 0.45 + count * 0.1; // degrees — kept tight so the cluster reads "at the city"
     const ang = (index / count) * Math.PI * 2;
     return [center[0] + Math.cos(ang) * r, center[1] + Math.sin(ang) * r * 0.7];
   }
 
   // --- data -> GeoJSON ---------------------------------------------------
 
-  // Offset a whole network's cluster around its city anchor so several
-  // networks sharing one city (e.g. two AWS fleets at Cochabamba) don't stack.
-  function networkOffset(i, count) {
-    if (count <= 1) return [0, 0];
-    const r = 2.6;
-    const ang = (i / count) * Math.PI * 2 + 0.4;
+  // Small deterministic string hash (FNV-ish) for stable, content-derived
+  // placement that never depends on load order or how many networks are shown.
+  function hashStr(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  // Offset a network's cluster around its city anchor so several networks
+  // sharing one city (e.g. two AWS fleets at Cochabamba) don't stack. The
+  // offset is derived from the network's own content, so a network lands in
+  // the exact same spot every time — whether it's the loaded one or a fleet
+  // member, and regardless of how many others are on the map.
+  function networkOffset(net) {
+    const h = hashStr(sigOf(net.data) || net.name || net.id || "");
+    const ang = (h % 360) * (Math.PI / 180);
+    const r = 0.7 + (h % 5) * 0.18; // 0.70°–1.42°, stable per network
     return [Math.cos(ang) * r, Math.sin(ang) * r * 0.7];
   }
 
@@ -140,13 +154,12 @@
   function buildFeatures(networks) {
     const points = [];
     const lines = [];
-    const nCount = networks.length;
 
-    networks.forEach((net, ni) => {
+    networks.forEach((net) => {
       const data = net.data || {};
       const vpcs = data.vpcs || [];
       const fallbackRegion = data.region;
-      const off = networkOffset(ni, nCount);
+      const off = networkOffset(net);
 
       // Group this network's VPCs by city/region so they fan out together.
       const groups = new Map();
