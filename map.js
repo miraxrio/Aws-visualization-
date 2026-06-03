@@ -88,7 +88,6 @@
   // loaded, so the map is a fleet view rather than a single-network view.
   const EXTRA_FILES = ["complex-network.json", "azure-network.json"];
 
-  let lastData = null;
   let lastPoints = [];
   let extras = [];
   let extrasLoaded = false;
@@ -249,8 +248,9 @@
     return null;
   }
 
-  // Fetch the repo's other network files once so the map shows the whole fleet,
-  // not just the currently-loaded network.
+  // Fetch the fixed fleet of network files once. The map always shows exactly
+  // these networks (one cluster per provider city), regardless of what's
+  // loaded in the rest of the app — keeps the map stable and unambiguous.
   async function loadExtras() {
     if (extrasLoaded) return;
     extrasLoaded = true;
@@ -269,12 +269,11 @@
         }
       }),
     );
-    if (ready) render(lastData);
+    if (ready) render();
   }
 
-  // Fingerprint a network by its full contents — so a loaded network de-dupes
-  // against its own source file, without merging two distinct networks that
-  // merely reuse generic VPC ids (e.g. "vpc-prod").
+  // Fingerprint a network by its contents — used to give each network a stable,
+  // content-derived position (see networkOffset).
   const sigOf = (data) => {
     try {
       return JSON.stringify(data && data.vpcs ? data.vpcs : data);
@@ -282,24 +281,6 @@
       return "";
     }
   };
-
-  // Combine the current network with the fetched fleet, de-duped by signature.
-  function collectNetworks(current) {
-    const list = [];
-    const seen = new Set();
-    if (current && current.vpcs) {
-      list.push({ id: "__current", name: current.name || "Current network", data: current, raw: current });
-      seen.add(sigOf(current));
-    }
-    extras.forEach((e) => {
-      const s = sigOf(e.data);
-      if (!seen.has(s)) {
-        list.push(e);
-        seen.add(s);
-      }
-    });
-    return list;
-  }
 
   // --- map layers --------------------------------------------------------
 
@@ -532,7 +513,7 @@
       } catch (_) {}
       addLayers();
       applySatellite();
-      if (lastData) render(lastData);
+      render();
     });
 
     map.on("zoom", onZoom);
@@ -542,22 +523,24 @@
     if (els.fitBtn) els.fitBtn.addEventListener("click", () => fit());
   }
 
-  function render(data) {
-    lastData = data;
+  // The map renders a fixed fleet (the EXTRA_FILES networks), not the currently
+  // loaded network — so callers may pass data, but it's intentionally ignored.
+  function render() {
     if (!ready || !map || !map.getSource("aws-vpcs")) return;
-    if (!extrasLoaded) loadExtras(); // fetch the rest of the fleet, then re-render
-    const networks = collectNetworks(data);
+    if (!extrasLoaded) {
+      loadExtras(); // fetch the fleet once, then re-render when ready
+      return;
+    }
     networkRaw = {};
-    networks.forEach((n) => (networkRaw[n.id] = n.raw));
-    const { points, lines } = buildFeatures(networks);
+    extras.forEach((n) => (networkRaw[n.id] = n.raw));
+    const { points, lines } = buildFeatures(extras);
     lastPoints = points.features;
     map.getSource("aws-vpcs").setData(points);
     map.getSource("aws-links").setData(lines);
     if (els.empty) els.empty.hidden = points.features.length > 0;
-    // Auto-fit only once the whole fleet is loaded, and only once per visit —
-    // so the camera doesn't jump as data streams in or re-renders, which made
-    // the networks look like they were moving around.
-    if (points.features.length && extrasLoaded && !hasFitted) {
+    // Auto-fit only once per visit — so the camera doesn't jump on re-renders,
+    // which made the networks look like they were moving around.
+    if (points.features.length && !hasFitted) {
       fit(points.features);
       hasFitted = true;
     }
@@ -588,7 +571,7 @@
     map.once("styledata", () => {
       if (!map.getSource("aws-vpcs")) addLayers();
       applySatellite();
-      if (lastData) render(lastData);
+      render();
     });
   }
 
