@@ -95,6 +95,7 @@
   let networkRaw = {}; // networkId -> raw payload, for drill-to-load
   let drilling = false;
   let warp = null;
+  let hasFitted = false; // auto-fit once per map visit, after the fleet loads
   let els = {};
 
   // --- region resolution -------------------------------------------------
@@ -493,7 +494,8 @@
     try {
       map.easeTo({ pitch: 0, duration: 0 });
     } catch (_) {}
-    fit();
+    fit(); // deliberate re-frame to the fleet overview on return
+    hasFitted = true; // ...but don't let the next render re-fit on top of it
   }
 
   // --- public API --------------------------------------------------------
@@ -552,7 +554,13 @@
     map.getSource("aws-vpcs").setData(points);
     map.getSource("aws-links").setData(lines);
     if (els.empty) els.empty.hidden = points.features.length > 0;
-    if (points.features.length) fit(points.features);
+    // Auto-fit only once the whole fleet is loaded, and only once per visit —
+    // so the camera doesn't jump as data streams in or re-renders, which made
+    // the networks look like they were moving around.
+    if (points.features.length && extrasLoaded && !hasFitted) {
+      fit(points.features);
+      hasFitted = true;
+    }
   }
 
   function toggleSatellite() {
