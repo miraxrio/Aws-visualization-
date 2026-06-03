@@ -22,7 +22,7 @@
   // Named city anchors. When a provider has an anchor here, its networks are
   // pinned to that city on the map instead of being placed by region code.
   const PLACES = {
-    cochabamba: { coord: [-66.1568, -17.3935], name: "Cochabamba, Bolivia" },
+    cochabamba: { coord: [-66.12364872691643, -17.415331697386176], name: "Cochabamba, Bolivia" },
     austin: { coord: [-97.7431, 30.2672], name: "Austin, Texas" },
   };
   const PROVIDER_ANCHORS = {
