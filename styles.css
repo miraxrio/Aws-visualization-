@@ -73,7 +73,14 @@ html, body {
   box-shadow: 0 0 0 4px rgba(255, 153, 0, 0.12);
 }
 
-.controls { display: flex; gap: 8px; align-items: center; }
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 8px;
+  justify-content: flex-end;
+}
 
 .seg {
   display: inline-flex;

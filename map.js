@@ -84,8 +84,15 @@
   let theme = "dark";
   let satellite = false;
   let projection = "globe";
+  // Other network files in the repo to show on the map alongside whatever's
+  // loaded, so the map is a fleet view rather than a single-network view.
+  const EXTRA_FILES = ["complex-network.json", "azure-network.json"];
+
   let lastData = null;
   let lastPoints = [];
+  let extras = [];
+  let extrasLoaded = false;
+  let networkRaw = {}; // networkId -> raw payload, for drill-to-load
   let drilling = false;
   let warp = null;
   let els = {};
@@ -120,81 +127,94 @@
 
   // --- data -> GeoJSON ---------------------------------------------------
 
-  function buildFeatures(data) {
-    const vpcs = (data && data.vpcs) || [];
-    const fallbackRegion = data && data.region;
+  // Offset a whole network's cluster around its city anchor so several
+  // networks sharing one city (e.g. two AWS fleets at Cochabamba) don't stack.
+  function networkOffset(i, count) {
+    if (count <= 1) return [0, 0];
+    const r = 2.6;
+    const ang = (i / count) * Math.PI * 2 + 0.4;
+    return [Math.cos(ang) * r, Math.sin(ang) * r * 0.7];
+  }
 
-    // Group VPCs by region so we can fan them out around the city.
-    const groups = new Map();
-    const resolved = [];
-    vpcs.forEach((vpc) => {
-      const firstAz = (vpc.subnets || []).find((s) => s.az) || {};
-      const r = resolveRegion(vpc.region || fallbackRegion, firstAz.az);
-      if (!r) return; // no location — skip, surfaced via the empty hint
-      // A provider anchor (e.g. AWS→Cochabamba, Azure→Austin) overrides the
-      // region's geographic coordinate and groups every VPC of that provider
-      // at one city.
-      const anchor = PROVIDER_ANCHORS[r.provider];
-      const baseCoord = anchor ? anchor.coord : r.coord;
-      const gkey = anchor ? "@" + r.provider : r.label;
-      const place = anchor ? anchor.place : "";
-      if (!groups.has(gkey)) groups.set(gkey, []);
-      const idx = groups.get(gkey).length;
-      groups.get(gkey).push(vpc);
-      resolved.push({ vpc, r, gkey, idx, baseCoord, place });
-    });
-    resolved.forEach((e) => (e.total = groups.get(e.gkey).length));
-
-    const centerOf = new Map(); // vpc.id -> [lng,lat]
-    const points = resolved.map((e) => {
-      const { vpc, r, idx, total, baseCoord, place } = e;
-      const coord = spread(baseCoord, idx, total);
-      centerOf.set(vpc.id, coord);
-      const subnets = vpc.subnets || [];
-      const tiers = [...new Set(subnets.map((s) => s.tier).filter(Boolean))];
-      const color = r.provider === "aws" ? COLOR_AWS : r.provider === "azure" ? COLOR_AZURE : COLOR_OTHER;
-      return {
-        type: "Feature",
-        geometry: { type: "Point", coordinates: coord },
-        properties: {
-          id: vpc.id,
-          name: vpc.name || vpc.id || "VPC",
-          provider: r.provider,
-          region: r.label,
-          place: place || "",
-          cidr: vpc.cidr || "",
-          color,
-          subnets: subnets.length,
-          resources: (vpc.resources || []).length,
-          gateways: (vpc.gateways || []).length,
-          tiers: tiers.join(", "),
-        },
-      };
-    });
-
-    // Cross-region links: any flow whose endpoints live in different VPCs.
-    const resourceToVpc = new Map();
-    vpcs.forEach((vpc) =>
-      (vpc.resources || []).concat(vpc.gateways || []).forEach((res) => {
-        if (res && res.id) resourceToVpc.set(res.id, vpc.id);
-      }),
-    );
-    const seen = new Set();
+  // Build GeoJSON for an array of networks: [{ id, name, data }].
+  function buildFeatures(networks) {
+    const points = [];
     const lines = [];
-    ((data && data.flows) || []).forEach((f) => {
-      const a = resourceToVpc.get(f.from);
-      const b = resourceToVpc.get(f.to);
-      if (!a || !b || a === b) return;
-      const ca = centerOf.get(a);
-      const cb = centerOf.get(b);
-      if (!ca || !cb) return;
-      const key = a < b ? a + "|" + b : b + "|" + a;
-      if (seen.has(key)) return;
-      seen.add(key);
-      lines.push({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: [ca, cb] },
-        properties: {},
+    const nCount = networks.length;
+
+    networks.forEach((net, ni) => {
+      const data = net.data || {};
+      const vpcs = data.vpcs || [];
+      const fallbackRegion = data.region;
+      const off = networkOffset(ni, nCount);
+
+      // Group this network's VPCs by city/region so they fan out together.
+      const groups = new Map();
+      const resolved = [];
+      vpcs.forEach((vpc) => {
+        const firstAz = (vpc.subnets || []).find((s) => s.az) || {};
+        const r = resolveRegion(vpc.region || fallbackRegion, firstAz.az);
+        if (!r) return;
+        const anchor = PROVIDER_ANCHORS[r.provider];
+        const cityCoord = anchor ? anchor.coord : r.coord;
+        const place = anchor ? anchor.place : "";
+        const gkey = anchor ? "@" + r.provider : r.label;
+        if (!groups.has(gkey)) groups.set(gkey, []);
+        const idx = groups.get(gkey).length;
+        groups.get(gkey).push(vpc);
+        resolved.push({ vpc, r, gkey, idx, cityCoord, place });
+      });
+      resolved.forEach((e) => (e.total = groups.get(e.gkey).length));
+
+      const centerOf = new Map(); // vpc.id -> [lng,lat]
+      resolved.forEach((e) => {
+        const { vpc, r, idx, total, cityCoord, place } = e;
+        const base = [cityCoord[0] + off[0], cityCoord[1] + off[1]];
+        const coord = spread(base, idx, total);
+        centerOf.set(vpc.id, coord);
+        const subnets = vpc.subnets || [];
+        const tiers = [...new Set(subnets.map((s) => s.tier).filter(Boolean))];
+        const color = r.provider === "aws" ? COLOR_AWS : r.provider === "azure" ? COLOR_AZURE : COLOR_OTHER;
+        points.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: coord },
+          properties: {
+            id: vpc.id,
+            networkId: net.id,
+            networkName: net.name || "",
+            name: vpc.name || vpc.id || "VPC",
+            provider: r.provider,
+            region: r.label,
+            place: place || "",
+            cidr: vpc.cidr || "",
+            color,
+            subnets: subnets.length,
+            resources: (vpc.resources || []).length,
+            gateways: (vpc.gateways || []).length,
+            tiers: tiers.join(", "),
+          },
+        });
+      });
+
+      // Links between VPCs of this network (incl. cross-cloud, e.g. Cochabamba↔Austin).
+      const resourceToVpc = new Map();
+      vpcs.forEach((vpc) =>
+        (vpc.resources || []).concat(vpc.gateways || []).forEach((res) => {
+          if (res && res.id) resourceToVpc.set(res.id, vpc.id);
+        }),
+      );
+      const seen = new Set();
+      (data.flows || []).forEach((f) => {
+        const a = resourceToVpc.get(f.from);
+        const b = resourceToVpc.get(f.to);
+        if (!a || !b || a === b) return;
+        const ca = centerOf.get(a);
+        const cb = centerOf.get(b);
+        if (!ca || !cb) return;
+        const key = a < b ? a + "|" + b : b + "|" + a;
+        if (seen.has(key)) return;
+        seen.add(key);
+        lines.push({ type: "Feature", geometry: { type: "LineString", coordinates: [ca, cb] }, properties: {} });
       });
     });
 
@@ -202,6 +222,69 @@
       points: { type: "FeatureCollection", features: points },
       lines: { type: "FeatureCollection", features: lines },
     };
+  }
+
+  // Normalize a raw network file (single- or multi-version) to { name, data }.
+  function normalizeNetwork(raw) {
+    if (!raw) return null;
+    if (Array.isArray(raw.versions) && raw.versions.length) {
+      const v = raw.versions[raw.versions.length - 1];
+      return { name: raw.name || (v && v.name) || "Network", data: v && v.data };
+    }
+    if (raw.vpcs) return { name: raw.name || "Network", data: raw };
+    return null;
+  }
+
+  // Fetch the repo's other network files once so the map shows the whole fleet,
+  // not just the currently-loaded network.
+  async function loadExtras() {
+    if (extrasLoaded) return;
+    extrasLoaded = true;
+    await Promise.all(
+      EXTRA_FILES.map(async (file) => {
+        try {
+          const res = await fetch(file);
+          if (!res.ok) return;
+          const raw = await res.json();
+          const n = normalizeNetwork(raw);
+          if (n && n.data && (n.data.vpcs || []).length) {
+            extras.push({ id: file, name: n.name, data: n.data, raw });
+          }
+        } catch (_) {
+          /* offline / missing file — skip */
+        }
+      }),
+    );
+    if (ready) render(lastData);
+  }
+
+  // Fingerprint a network by its full contents — so a loaded network de-dupes
+  // against its own source file, without merging two distinct networks that
+  // merely reuse generic VPC ids (e.g. "vpc-prod").
+  const sigOf = (data) => {
+    try {
+      return JSON.stringify(data && data.vpcs ? data.vpcs : data);
+    } catch (_) {
+      return "";
+    }
+  };
+
+  // Combine the current network with the fetched fleet, de-duped by signature.
+  function collectNetworks(current) {
+    const list = [];
+    const seen = new Set();
+    if (current && current.vpcs) {
+      list.push({ id: "__current", name: current.name || "Current network", data: current, raw: current });
+      seen.add(sigOf(current));
+    }
+    extras.forEach((e) => {
+      const s = sigOf(e.data);
+      if (!seen.has(s)) {
+        list.push(e);
+        seen.add(s);
+      }
+    });
+    return list;
   }
 
   // --- map layers --------------------------------------------------------
@@ -276,6 +359,7 @@
     if (!p) return;
     const prov = p.provider === "aws" ? "AWS" : p.provider === "azure" ? "Azure" : "Cloud";
     const rows = [
+      ...(p.networkName ? [["Network", p.networkName]] : []),
       ["Provider", prov],
       ...(p.place ? [["Location", p.place]] : []),
       ["Region", p.region],
@@ -317,7 +401,7 @@
   }
 
   function fit(features) {
-    const feats = features || (lastData && buildFeatures(lastData).points.features) || [];
+    const feats = features || lastPoints || [];
     if (!feats.length) return;
     if (feats.length === 1) {
       map.flyTo({ center: feats[0].geometry.coordinates, zoom: 3.2, duration: 800 });
@@ -365,8 +449,14 @@
     const p = feature.properties || {};
     if (warp) {
       warp.querySelector(".map-warp-label").textContent =
-        "Entering holographic view — " + (p.name || "network");
+        "Entering holographic view — " + (p.networkName || p.name || "network");
       warp.classList.add("is-on");
+    }
+    // If we're diving into a network other than the one currently loaded,
+    // load it first so the holographic view shows the right topology.
+    const raw = networkRaw[p.networkId];
+    if (raw && p.networkId !== "__current" && window.AwsApp && window.AwsApp.load) {
+      window.AwsApp.load(raw);
     }
     // Fall toward the cluster, then hand off to the holographic (3D) view.
     map.flyTo({
@@ -440,7 +530,11 @@
   function render(data) {
     lastData = data;
     if (!ready || !map || !map.getSource("aws-vpcs")) return;
-    const { points, lines } = buildFeatures(data);
+    if (!extrasLoaded) loadExtras(); // fetch the rest of the fleet, then re-render
+    const networks = collectNetworks(data);
+    networkRaw = {};
+    networks.forEach((n) => (networkRaw[n.id] = n.raw));
+    const { points, lines } = buildFeatures(networks);
     lastPoints = points.features;
     map.getSource("aws-vpcs").setData(points);
     map.getSource("aws-links").setData(lines);

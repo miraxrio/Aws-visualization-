@@ -83,6 +83,9 @@
     getData: () => currentData,
     applyData: (data, opts) => applyVersionData(data, opts),
     detectCloud: (data) => detectCloud(data || currentData),
+    // Load a full network payload (single- or multi-version) — used by the
+    // map view to drill into one of the fleet's networks.
+    load: (data) => loadData(data),
   };
 
   function loadData(data) {

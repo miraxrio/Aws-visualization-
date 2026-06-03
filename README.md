@@ -13,8 +13,11 @@ button, which opens the running OSIRIS instance (defaults to
 
 ### Map view (OSIRIS-style globe, no API keys)
 
-The Visualizer's **Map** tab renders your loaded network onto a MapLibre GL
-globe. By default networks are placed by their `region` code (both AWS —
+The Visualizer's **Map** tab renders a **fleet view** — the currently loaded
+network *plus* the other network files in the repo (`complex-network.json` and
+`azure-network.json`) — onto a MapLibre GL globe, so you see several networks at
+once (de-duped so a loaded network never doubles its own file). By default
+networks are placed by their `region` code (both AWS —
 `us-east-1`, … — and Azure — `eastus`, … — are supported), but **provider
 anchors** override this: AWS networks are pinned to **Cochabamba, Bolivia** and
 Azure networks to **Austin, Texas** (configurable via `PROVIDER_ANCHORS` in
