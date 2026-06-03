@@ -30,9 +30,32 @@
     azure: { coord: PLACES.austin.coord, place: PLACES.austin.name },
   };
 
-  // Past this zoom, zooming into a network's cluster drills into its
-  // holographic (3D) view — Google-Earth-style "fall into the scene".
-  const ZOOM_DRILL = 6.5;
+  // Past this zoom, zooming into a network/boundary drills into its
+  // holographic (3D) view — Google-Earth-style "fall into the scene". Set high
+  // so it takes a deliberate close zoom to enter.
+  const ZOOM_DRILL = 9.2;
+
+  // Guild boundaries (compliance assessments) loaded from the catalog and
+  // scattered across US cities, each shown as an animated atom.
+  const GUILD_FILE = "data/guild-catalog.json";
+  const GUILD_CITIES = [
+    { coord: [-122.3321, 47.6062], name: "Seattle, WA" },
+    { coord: [-73.9857, 40.7484], name: "New York, NY" },
+    { coord: [-87.6298, 41.8781], name: "Chicago, IL" },
+    { coord: [-104.9903, 39.7392], name: "Denver, CO" },
+    { coord: [-84.388, 33.749], name: "Atlanta, GA" },
+    { coord: [-122.4194, 37.7749], name: "San Francisco, CA" },
+    { coord: [-80.1918, 25.7617], name: "Miami, FL" },
+    { coord: [-71.0589, 42.3601], name: "Boston, MA" },
+  ];
+  // Atom colour per assessment type.
+  const ASSESSMENT_COLORS = {
+    STIG: "#7c5cff",
+    CVE: "#ff4d6d",
+    CIS: "#22c55e",
+    NIST: "#38bdf8",
+    custom: "#f59e0b",
+  };
 
   // Region → [lng, lat]. Approximate location of each cloud region's datacenter
   // cluster — accurate enough to place a network on the right city.
@@ -91,7 +114,11 @@
   let lastPoints = [];
   let extras = [];
   let extrasLoaded = false;
+  let guilds = []; // [{ id, name, type, author, coord, cityName, data, raw }]
+  let guildsLoaded = false;
   let networkRaw = {}; // networkId -> raw payload, for drill-to-load
+  let markers = []; // live maplibregl.Marker instances (cubes + atoms)
+  let placedItems = []; // { coord, kind:'network'|'boundary', ... } for drill detection
   let drilling = false;
   let warp = null;
   let hasFitted = false; // auto-fit once per map visit, after the fleet loads
@@ -272,6 +299,47 @@
     if (ready) render();
   }
 
+  // Fetch the guild catalog once and scatter its boundaries across US cities.
+  async function loadGuilds() {
+    if (guildsLoaded) return;
+    guildsLoaded = true;
+    try {
+      const res = await fetch(GUILD_FILE);
+      if (res.ok) {
+        const cat = (await res.json()).catalog || [];
+        // Cache each referenced data file so a drill can load the boundary.
+        const fileCache = {};
+        await Promise.all(
+          [...new Set(cat.map((e) => e.dataFile).filter(Boolean))].map(async (f) => {
+            try {
+              const r = await fetch(f);
+              if (r.ok) fileCache[f] = await r.json();
+            } catch (_) {
+              /* skip */
+            }
+          }),
+        );
+        cat.forEach((e, i) => {
+          const city = GUILD_CITIES[i % GUILD_CITIES.length];
+          guilds.push({
+            id: e.id,
+            name: e.name,
+            type: e.assessmentType || "custom",
+            author: e.author || "Guild",
+            color: ASSESSMENT_COLORS[e.assessmentType] || ASSESSMENT_COLORS.custom,
+            coord: city.coord,
+            cityName: city.name,
+            stats: e.stats || {},
+            raw: fileCache[e.dataFile] || null,
+          });
+        });
+      }
+    } catch (_) {
+      /* offline — skip */
+    }
+    if (ready) render();
+  }
+
   // Fingerprint a network by its contents — used to give each network a stable,
   // content-derived position (see networkOffset).
   const sigOf = (data) => {
@@ -285,9 +353,9 @@
   // --- map layers --------------------------------------------------------
 
   function addLayers() {
+    // Flow links between VPC cubes stay as a line layer; the nodes themselves
+    // are HTML markers (3D cubes / atoms), added in render().
     map.addSource("aws-links", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-    map.addSource("aws-vpcs", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-
     map.addLayer({
       id: "aws-links-line",
       type: "line",
@@ -299,81 +367,51 @@
         "line-dasharray": [2, 2],
       },
     });
-    map.addLayer({
-      id: "aws-vpc-halo",
-      type: "circle",
-      source: "aws-vpcs",
-      paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 7, 3, 14, 6, 26, 10, 44],
-        "circle-color": ["get", "color"],
-        "circle-opacity": 0.18,
-        "circle-stroke-color": ["get", "color"],
-        "circle-stroke-width": 1.2,
-        "circle-stroke-opacity": 0.8,
-      },
-    });
-    map.addLayer({
-      id: "aws-vpc-dot",
-      type: "circle",
-      source: "aws-vpcs",
-      paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 3, 6, 5, 10, 7],
-        "circle-color": ["get", "color"],
-        "circle-stroke-color": "#0b0f17",
-        "circle-stroke-width": 1.2,
-      },
-    });
-    map.addLayer({
-      id: "aws-vpc-label",
-      type: "symbol",
-      source: "aws-vpcs",
-      layout: {
-        "text-field": ["get", "name"],
-        "text-size": 12,
-        "text-offset": [0, 1.5],
-        "text-anchor": "top",
-        "text-font": ["Open Sans Regular", "Noto Sans Regular"],
-        "text-allow-overlap": false,
-      },
-      paint: {
-        "text-color": "#e8eef7",
-        "text-halo-color": "#0b0f17",
-        "text-halo-width": 1.4,
-      },
-    });
-
-    // Popups + cursor affordance on the VPC dots.
-    map.on("click", "aws-vpc-dot", onVpcClick);
-    map.on("click", "aws-vpc-halo", onVpcClick);
-    map.on("mouseenter", "aws-vpc-dot", () => (map.getCanvas().style.cursor = "pointer"));
-    map.on("mouseleave", "aws-vpc-dot", () => (map.getCanvas().style.cursor = ""));
   }
 
-  function onVpcClick(e) {
-    const p = e.features && e.features[0] && e.features[0].properties;
-    if (!p) return;
-    const prov = p.provider === "aws" ? "AWS" : p.provider === "azure" ? "Azure" : "Cloud";
-    const rows = [
-      ...(p.networkName ? [["Network", p.networkName]] : []),
-      ["Provider", prov],
-      ...(p.place ? [["Location", p.place]] : []),
-      ["Region", p.region],
-      ["CIDR", p.cidr || "—"],
-      ["Subnets", p.subnets],
-      ["Resources", p.resources],
-      ["Gateways", p.gateways],
-      ["Tiers", p.tiers || "—"],
-    ]
-      .map(([k, v]) => `<div class="map-pop-row"><span>${k}</span><b>${v}</b></div>`)
-      .join("");
-    new maplibregl.Popup({ closeButton: true, maxWidth: "260px", className: "map-pop" })
-      .setLngLat(e.lngLat)
-      .setHTML(
-        `<div class="map-pop-head" style="border-color:${p.color}">
-           <span class="map-pop-dot" style="background:${p.color}"></span>${p.name}
-         </div>${rows}`,
-      )
-      .addTo(map);
+  // --- HTML markers: 3D cubes (networks) and atoms (boundaries) -----------
+
+  const AWS_ICON =
+    '<svg viewBox="0 0 64 40"><text x="32" y="24" text-anchor="middle" font-size="20" font-weight="800" fill="#fff" font-family="Arial,Helvetica,sans-serif">aws</text><path d="M12 31 q20 9 40 0" stroke="#fff" stroke-width="3.4" fill="none" stroke-linecap="round"/></svg>';
+  const AZURE_ICON =
+    '<svg viewBox="0 0 64 64"><path d="M30 10 h12 l16 44 h-13 l-9-26 -10 26 H10 z" fill="#fff"/></svg>';
+
+  function providerIcon(provider) {
+    return provider === "azure" ? AZURE_ICON : AWS_ICON;
+  }
+
+  // A CSS 3D rotating cube with the provider icon on its faces + a label.
+  function cubeMarkerEl(p) {
+    const el = document.createElement("div");
+    el.className = "map-marker map-cube-wrap";
+    const icon = providerIcon(p.provider);
+    const face = (cls) => `<div class="cf ${cls}">${icon}</div>`;
+    el.innerHTML =
+      `<div class="map-cube" style="--cube:${p.color}">` +
+      face("cf-front") +
+      face("cf-back") +
+      face("cf-right") +
+      face("cf-left") +
+      face("cf-top") +
+      face("cf-bottom") +
+      `</div><div class="map-marker-label">${p.name}</div>`;
+    return el;
+  }
+
+  // A CSS 3D animated atom (nucleus + orbiting electrons) with a label.
+  function atomMarkerEl(g) {
+    const el = document.createElement("div");
+    el.className = "map-marker map-atom-wrap";
+    const orbit = (cls, spin) =>
+      `<div class="orbit ${cls}"><div class="ring"></div><div class="orb-spin ${spin}"><span class="electron"></span></div></div>`;
+    el.innerHTML =
+      `<div class="map-atom" style="--atom:${g.color}">` +
+      `<div class="nucleus"></div>` +
+      orbit("o1", "s1") +
+      orbit("o2", "s2") +
+      orbit("o3", "s3") +
+      `</div><div class="map-marker-label">${g.name}<span class="map-marker-sub">${g.type} · ${g.author}</span></div>`;
+    return el;
   }
 
   function applySatellite() {
@@ -409,57 +447,51 @@
 
   // --- zoom-to-drill (Google-Earth style hand-off to holographic view) ---
 
-  // Find the plotted VPC nearest the current map center (degrees of lng/lat).
+  // Find the placed item (cube or atom) nearest the map centre (deg lng/lat).
   function nearestCluster() {
-    if (!lastPoints.length) return null;
+    if (!placedItems.length) return null;
     const c = map.getCenter();
     let best = null,
       bd = Infinity;
-    lastPoints.forEach((f) => {
-      const [lng, lat] = f.geometry.coordinates;
-      const d = Math.hypot(lng - c.lng, lat - c.lat);
+    placedItems.forEach((it) => {
+      const d = Math.hypot(it.coord[0] - c.lng, it.coord[1] - c.lat);
       if (d < bd) {
         bd = d;
-        best = f;
+        best = it;
       }
     });
-    return best ? { feature: best, dist: bd } : null;
+    return best ? { item: best, dist: bd } : null;
   }
 
   function onZoom(e) {
     if (drilling || !map) return;
     // Only react to real user zoom gestures (wheel / pinch / double-click).
-    // Programmatic camera moves (fit, flyTo, the re-arm zoom-out) have no
-    // originalEvent — ignoring them prevents an instant re-drill loop when
-    // returning to the map.
+    // Programmatic camera moves have no originalEvent — ignoring them prevents
+    // an instant re-drill loop when returning to the map.
     if (!e || !e.originalEvent) return;
     if (map.getZoom() < ZOOM_DRILL) return;
     const near = nearestCluster();
-    if (!near || near.dist > 8) return; // not actually over a network
-    triggerDrill(near.feature);
+    if (!near || near.dist > 3) return; // must be zoomed right onto a marker
+    triggerDrill(near.item);
   }
 
-  function triggerDrill(feature) {
+  function triggerDrill(item) {
     drilling = true;
-    const p = feature.properties || {};
     if (warp) {
-      warp.querySelector(".map-warp-label").textContent =
-        "Entering holographic view — " + (p.networkName || p.name || "network");
+      warp.querySelector(".map-warp-label").textContent = "Entering holographic view — " + (item.label || "");
       warp.classList.add("is-on");
     }
-    // If we're diving into a network other than the one currently loaded,
-    // load it first so the holographic view shows the right topology.
-    const raw = networkRaw[p.networkId];
-    if (raw && p.networkId !== "__current" && window.AwsApp && window.AwsApp.load) {
-      window.AwsApp.load(raw);
+    // Load the right payload so the holographic view shows the right scene:
+    // a network → 3D city; a guild boundary → holographic boundary view.
+    let raw = null;
+    if (item.kind === "network") raw = networkRaw[item.networkId];
+    else if (item.kind === "boundary") {
+      const g = guilds.find((x) => x.id === item.guildId);
+      raw = g && g.raw;
     }
-    // Fall toward the cluster, then hand off to the holographic (3D) view.
-    map.flyTo({
-      center: feature.geometry.coordinates,
-      zoom: Math.max(map.getZoom() + 1.5, 8.5),
-      pitch: 55,
-      duration: 950,
-    });
+    if (raw && window.AwsApp && window.AwsApp.load) window.AwsApp.load(raw);
+
+    map.flyTo({ center: item.coord, zoom: Math.max(map.getZoom() + 1.4, ZOOM_DRILL + 1), pitch: 55, duration: 950 });
     setTimeout(() => {
       if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("3d");
     }, 900);
@@ -523,27 +555,59 @@
     if (els.fitBtn) els.fitBtn.addEventListener("click", () => fit());
   }
 
-  // The map renders a fixed fleet (the EXTRA_FILES networks), not the currently
-  // loaded network — so callers may pass data, but it's intentionally ignored.
+  // The map renders a fixed fleet (the EXTRA_FILES networks as 3D cubes) plus
+  // the guild boundaries (as 3D atoms) — not the currently loaded network — so
+  // callers may pass data, but it's intentionally ignored.
   function render() {
-    if (!ready || !map || !map.getSource("aws-vpcs")) return;
-    if (!extrasLoaded) {
-      loadExtras(); // fetch the fleet once, then re-render when ready
-      return;
-    }
+    if (!ready || !map || !map.getSource("aws-links")) return;
+    if (!extrasLoaded) loadExtras(); // fetch the fleet once, then re-render
+    if (!guildsLoaded) loadGuilds(); // fetch the guild boundaries once
+    if (!extrasLoaded && !guildsLoaded) return;
+
+    // Clear previous markers.
+    markers.forEach((m) => m.remove());
+    markers = [];
+    placedItems = [];
     networkRaw = {};
-    extras.forEach((n) => (networkRaw[n.id] = n.raw));
+
+    // Networks → rotating cubes (one per VPC), plus their flow links.
     const { points, lines } = buildFeatures(extras);
-    lastPoints = points.features;
-    map.getSource("aws-vpcs").setData(points);
+    extras.forEach((n) => (networkRaw[n.id] = n.raw));
     map.getSource("aws-links").setData(lines);
-    if (els.empty) els.empty.hidden = points.features.length > 0;
-    // Auto-fit only once per visit — so the camera doesn't jump on re-renders,
-    // which made the networks look like they were moving around.
-    if (points.features.length && !hasFitted) {
-      fit(points.features);
+    points.features.forEach((f) => {
+      const p = f.properties;
+      const m = new maplibregl.Marker({ element: cubeMarkerEl(p), anchor: "bottom" })
+        .setLngLat(f.geometry.coordinates)
+        .addTo(map);
+      m.getElement().addEventListener("click", () => approach(f.geometry.coordinates));
+      markers.push(m);
+      placedItems.push({ coord: f.geometry.coordinates, kind: "network", networkId: p.networkId, label: p.networkName || p.name });
+    });
+
+    // Guild boundaries → animated atoms across the USA.
+    guilds.forEach((g) => {
+      const m = new maplibregl.Marker({ element: atomMarkerEl(g), anchor: "bottom" })
+        .setLngLat(g.coord)
+        .addTo(map);
+      m.getElement().addEventListener("click", () => approach(g.coord));
+      markers.push(m);
+      placedItems.push({ coord: g.coord, kind: "boundary", guildId: g.id, label: g.name });
+    });
+
+    lastPoints = placedItems.map((it) => ({ geometry: { coordinates: it.coord } }));
+    if (els.empty) els.empty.hidden = placedItems.length > 0;
+    if (placedItems.length && !hasFitted) {
+      fit(lastPoints);
       hasFitted = true;
     }
+  }
+
+  // Click a marker to fly closer (just shy of the drill threshold) — the user
+  // then keeps zooming to fall into the holographic view.
+  function approach(coord) {
+    if (!map) return;
+    drilling = false;
+    map.flyTo({ center: coord, zoom: ZOOM_DRILL - 0.8, duration: 1100, essential: true });
   }
 
   function toggleSatellite() {
@@ -569,7 +633,7 @@
     // Swapping the base style drops our sources/layers — re-add them on reload.
     map.setStyle(theme === "light" ? LIGHT_STYLE : BASE_STYLE);
     map.once("styledata", () => {
-      if (!map.getSource("aws-vpcs")) addLayers();
+      if (!map.getSource("aws-links")) addLayers();
       applySatellite();
       render();
     });

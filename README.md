@@ -22,11 +22,16 @@ anchors** override this: AWS networks are pinned to **Cochabamba, Bolivia** and
 Azure networks to **Austin, Texas** (configurable via `PROVIDER_ANCHORS` in
 `map.js`).
 
-**Zoom-to-drill:** keep zooming into a network's cluster and, past a zoom
-threshold, the map "falls into" the scene and hands off to that network's
-**holographic (3D) view** — the same way Google Earth transitions from
-satellite to street level. Switching back to the **Map** tab zooms back out and
-re-arms the effect.
+**Markers:** each network is a **3D rotating cube** branded with its provider
+(AWS / Azure) icon; each **guild boundary** (from `data/guild-catalog.json`) is
+a **3D animated atom** (nucleus + orbiting electrons), coloured by assessment
+type (STIG/CVE/CIS/NIST/custom) and scattered across US cities.
+
+**Zoom-to-drill:** click a marker to fly closer, then keep zooming — past a
+(deliberately high) zoom threshold the map "falls into" the scene and hands off
+to that item's **holographic (3D) view**: a network opens its 3D topology, a
+guild boundary opens its holographic assessment. Switching back to the **Map**
+tab zooms back out and re-arms the effect.
 
 It reuses the same **keyless** map stack OSIRIS uses, so **no API keys are
 required**:

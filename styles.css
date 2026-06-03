@@ -308,6 +308,7 @@ body.theme-day .voice-popover-row input[type="range"] {
   border-top: 2px dashed #5ad0ff;
   display: inline-block;
 }
+.map-glyph { display: inline-block; width: 12px; text-align: center; color: #9b8cff; }
 
 .map-empty {
   position: absolute;
@@ -398,6 +399,113 @@ body.theme-day .voice-popover-row input[type="range"] {
 .map-pop-dot { width: 10px; height: 10px; border-radius: 50%; }
 .map-pop-row { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; }
 .map-pop-row span { color: #9aa4b2; }
+
+/* ---- 3D marker labels (shared by cubes + atoms) ---- */
+.map-marker { display: flex; flex-direction: column; align-items: center; cursor: pointer; will-change: transform; }
+.map-marker-label {
+  margin-top: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #eef4ff;
+  text-shadow: 0 1px 4px #000, 0 0 2px #000;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+}
+.map-marker-sub { font-size: 9px; font-weight: 500; color: #aeb9c9; letter-spacing: 0.02em; }
+.map-marker:hover .map-cube,
+.map-marker:hover .map-atom { filter: brightness(1.25) drop-shadow(0 0 8px var(--cube, var(--atom))); }
+
+/* ---- Network cube (rotating, provider icon on each face) ---- */
+.map-cube-wrap { perspective: 260px; }
+.map-cube {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  transform-style: preserve-3d;
+  animation: cube-spin 7s linear infinite;
+}
+.map-cube .cf {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--cube) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cube) 90%, white 10%);
+  box-shadow: inset 0 0 14px rgba(255, 255, 255, 0.28);
+  backface-visibility: visible;
+}
+.map-cube .cf svg { width: 74%; height: 74%; opacity: 0.95; }
+.map-cube .cf-front  { transform: translateZ(19px); }
+.map-cube .cf-back   { transform: rotateY(180deg) translateZ(19px); }
+.map-cube .cf-right  { transform: rotateY(90deg) translateZ(19px); }
+.map-cube .cf-left   { transform: rotateY(-90deg) translateZ(19px); }
+.map-cube .cf-top    { transform: rotateX(90deg) translateZ(19px); background: color-mix(in srgb, var(--cube) 88%, white 12%); }
+.map-cube .cf-bottom { transform: rotateX(-90deg) translateZ(19px); }
+@keyframes cube-spin {
+  from { transform: rotateX(-24deg) rotateY(0deg); }
+  to   { transform: rotateX(-24deg) rotateY(360deg); }
+}
+
+/* ---- Boundary atom (nucleus + orbiting electrons) ---- */
+.map-atom-wrap { perspective: 300px; }
+.map-atom {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  transform-style: preserve-3d;
+  animation: atom-rotate 12s linear infinite;
+}
+.map-atom .nucleus {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 35% 30%, #fff, var(--atom) 70%);
+  box-shadow: 0 0 12px var(--atom), 0 0 4px #fff;
+  animation: nucleus-pulse 1.8s ease-in-out infinite;
+}
+.map-atom .orbit { position: absolute; inset: 0; transform-style: preserve-3d; }
+.map-atom .orbit.o1 { transform: rotateX(74deg) rotateY(0deg); }
+.map-atom .orbit.o2 { transform: rotateX(74deg) rotateY(60deg); }
+.map-atom .orbit.o3 { transform: rotateX(74deg) rotateY(120deg); }
+.map-atom .ring {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid color-mix(in srgb, var(--atom) 55%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--atom) 40%, transparent);
+}
+.map-atom .orb-spin { position: absolute; inset: 0; }
+.map-atom .orb-spin.s1 { animation: orb-spin 2.0s linear infinite; }
+.map-atom .orb-spin.s2 { animation: orb-spin 2.8s linear infinite reverse; }
+.map-atom .orb-spin.s3 { animation: orb-spin 3.4s linear infinite; }
+.map-atom .electron {
+  position: absolute;
+  top: -3px;
+  left: calc(50% - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 7px #fff, 0 0 12px var(--atom);
+}
+@keyframes atom-rotate { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }
+@keyframes orb-spin { from { transform: rotateZ(0deg); } to { transform: rotateZ(360deg); } }
+@keyframes nucleus-pulse {
+  0%, 100% { box-shadow: 0 0 10px var(--atom), 0 0 4px #fff; }
+  50% { box-shadow: 0 0 18px var(--atom), 0 0 7px #fff; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-cube, .map-atom, .orb-spin, .nucleus { animation: none !important; }
+}
 
 .hint-3d {
   background: rgba(7, 16, 31, 0.78);
