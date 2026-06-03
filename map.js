@@ -381,11 +381,13 @@
       `<div class="orbit ${cls}"><div class="ring"></div><div class="orb-spin ${spin}"><span class="electron"></span></div></div>`;
     el.innerHTML =
       `<div class="map-atom" style="--atom:${g.color}">` +
+      `<div class="atom-spin">` +
       `<div class="nucleus"></div>` +
       orbit("o1", "s1") +
       orbit("o2", "s2") +
       orbit("o3", "s3") +
-      `</div><div class="map-marker-label">${g.name}<span class="map-marker-sub">${g.type} · ${g.author}</span></div>`;
+      `</div></div>` +
+      `<div class="map-marker-label">${g.name}<span class="map-marker-sub">${g.type} · ${g.author}</span></div>`;
     return el;
   }
 

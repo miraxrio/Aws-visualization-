@@ -451,37 +451,43 @@ body.theme-day .voice-popover-row input[type="range"] {
   to   { transform: rotateX(-24deg) rotateY(360deg); }
 }
 
-/* ---- Boundary atom: true 3D (preserve-3d cage, electrons orbit through Z) ---- */
-.map-atom-wrap { perspective: 460px; }
+/* ---- Boundary atom: true 3D wireframe sphere (3 orthogonal orbit rings) ---- */
+.map-atom-wrap { perspective: 240px; perspective-origin: 50% 42%; }
 .map-atom {
   position: relative;
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   transform-style: preserve-3d;
-  transform: rotateX(16deg);
-  /* Slow 3D tumble. The three orbit planes sit at different orientations, so
-     the atom never goes fully edge-on the way coplanar rings did. */
-  animation: atom-tumble 20s linear infinite;
+  /* Diagonal viewing angle so all three orthogonal rings read as distinct
+     ellipses (none edge-on). */
+  transform: rotateX(-22deg) rotateY(20deg);
+}
+/* The cage tumbles about a tilted axis, so no ring stays edge-on and the atom
+   never collapses to a flat sprite. */
+.map-atom .atom-spin {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  animation: atom-tumble 14s linear infinite;
 }
 /* Shaded sphere nucleus (highlight + core + dark terminator). */
 .map-atom .nucleus {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle at 33% 28%, #ffffff 0%, var(--atom) 44%, color-mix(in srgb, var(--atom) 42%, #000) 100%);
-  box-shadow: inset -3px -3px 6px rgba(0, 0, 0, 0.55), inset 2px 2px 5px rgba(255, 255, 255, 0.4), 0 0 16px var(--atom);
+  background: radial-gradient(circle at 33% 28%, #ffffff 0%, var(--atom) 46%, color-mix(in srgb, var(--atom) 40%, #000) 100%);
+  box-shadow: inset -3px -3px 7px rgba(0, 0, 0, 0.6), inset 2px 2px 5px rgba(255, 255, 255, 0.45), 0 0 16px var(--atom);
   animation: nucleus-pulse 2s ease-in-out infinite;
 }
-/* Three great-circle orbit planes at distinct 3D orientations (not coplanar,
-   not all flat) so the cage looks spherical. */
+/* Three mutually-perpendicular great circles = a sphere cage. */
 .map-atom .orbit { position: absolute; inset: 0; transform-style: preserve-3d; }
-.map-atom .orbit.o1 { transform: rotateY(72deg); }
-.map-atom .orbit.o2 { transform: rotateX(72deg); }
-.map-atom .orbit.o3 { transform: rotateZ(56deg) rotateX(72deg); }
+.map-atom .orbit.o1 { transform: rotateX(0deg); }   /* faces viewer */
+.map-atom .orbit.o2 { transform: rotateX(90deg); }  /* horizontal hoop */
+.map-atom .orbit.o3 { transform: rotateY(90deg); }  /* side hoop */
 .map-atom .ring {
   position: absolute;
   inset: 0;
@@ -489,33 +495,33 @@ body.theme-day .voice-popover-row input[type="range"] {
   border-radius: 50%;
   box-shadow: 0 0 8px color-mix(in srgb, var(--atom) 45%, transparent);
 }
-/* The spinner rotates in the orbit's *local* (tilted) plane, so the electron
-   travels through Z — passing in front of and behind the nucleus. */
+/* Spinner rotates in each ring's own (tilted) plane, so the electron travels
+   through Z — passing in front of and behind the nucleus. */
 .map-atom .orb-spin { position: absolute; inset: 0; transform-style: preserve-3d; }
 .map-atom .orb-spin.s1 { animation: orb-spin 2.0s linear infinite; }
 .map-atom .orb-spin.s2 { animation: orb-spin 2.7s linear infinite reverse; }
 .map-atom .orb-spin.s3 { animation: orb-spin 3.3s linear infinite; }
 .map-atom .electron {
   position: absolute;
-  top: -4px;
-  left: calc(50% - 4px);
-  width: 8px;
-  height: 8px;
+  top: -4.5px;
+  left: calc(50% - 4.5px);
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #fff, #d6e6ff 72%);
   box-shadow: 0 0 8px #fff, 0 0 15px var(--atom);
 }
 @keyframes atom-tumble {
-  from { transform: rotateX(16deg) rotateY(0deg); }
-  to   { transform: rotateX(16deg) rotateY(360deg); }
+  from { transform: rotate3d(1, 1.6, 0.2, 0deg); }
+  to   { transform: rotate3d(1, 1.6, 0.2, 360deg); }
 }
 @keyframes orb-spin { from { transform: rotateZ(0deg); } to { transform: rotateZ(360deg); } }
 @keyframes nucleus-pulse {
-  0%, 100% { box-shadow: inset -3px -3px 6px rgba(0,0,0,0.55), inset 2px 2px 5px rgba(255,255,255,0.4), 0 0 12px var(--atom); }
-  50% { box-shadow: inset -3px -3px 6px rgba(0,0,0,0.55), inset 2px 2px 5px rgba(255,255,255,0.4), 0 0 20px var(--atom); }
+  0%, 100% { box-shadow: inset -3px -3px 7px rgba(0,0,0,0.6), inset 2px 2px 5px rgba(255,255,255,0.45), 0 0 12px var(--atom); }
+  50% { box-shadow: inset -3px -3px 7px rgba(0,0,0,0.6), inset 2px 2px 5px rgba(255,255,255,0.45), 0 0 21px var(--atom); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .map-cube, .map-atom, .orb-spin, .nucleus { animation: none !important; }
+  .map-cube, .map-atom .atom-spin, .orb-spin, .nucleus { animation: none !important; }
 }
 
 .hint-3d {
