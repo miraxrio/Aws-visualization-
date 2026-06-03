@@ -347,8 +347,13 @@
     return best ? { feature: best, dist: bd } : null;
   }
 
-  function onZoom() {
+  function onZoom(e) {
     if (drilling || !map) return;
+    // Only react to real user zoom gestures (wheel / pinch / double-click).
+    // Programmatic camera moves (fit, flyTo, the re-arm zoom-out) have no
+    // originalEvent — ignoring them prevents an instant re-drill loop when
+    // returning to the map.
+    if (!e || !e.originalEvent) return;
     if (map.getZoom() < ZOOM_DRILL) return;
     const near = nearestCluster();
     if (!near || near.dist > 8) return; // not actually over a network
@@ -376,18 +381,16 @@
   }
 
   // Re-arm after returning to the map: clear the warp, level the camera and
-  // zoom back out so we don't instantly re-trigger at the leftover zoom level.
+  // zoom back out so the leftover drill zoom isn't left on screen. Drilling
+  // only re-triggers on a fresh user zoom gesture, so no race to guard here.
   function armDrill() {
     if (!ready || !map) return;
-    drilling = true;
+    drilling = false;
     if (warp) warp.classList.remove("is-on");
     try {
       map.easeTo({ pitch: 0, duration: 0 });
     } catch (_) {}
     fit();
-    const done = () => (drilling = false);
-    map.once("moveend", done);
-    setTimeout(done, 1300); // fallback if no movement occurs
   }
 
   // --- public API --------------------------------------------------------
