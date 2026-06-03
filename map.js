@@ -19,6 +19,21 @@
   const COLOR_AZURE = "#2f9bff";
   const COLOR_OTHER = "#9aa4b2";
 
+  // Named city anchors. When a provider has an anchor here, its networks are
+  // pinned to that city on the map instead of being placed by region code.
+  const PLACES = {
+    cochabamba: { coord: [-66.1568, -17.3935], name: "Cochabamba, Bolivia" },
+    austin: { coord: [-97.7431, 30.2672], name: "Austin, Texas" },
+  };
+  const PROVIDER_ANCHORS = {
+    aws: { coord: PLACES.cochabamba.coord, place: PLACES.cochabamba.name },
+    azure: { coord: PLACES.austin.coord, place: PLACES.austin.name },
+  };
+
+  // Past this zoom, zooming into a network's cluster drills into its
+  // holographic (3D) view — Google-Earth-style "fall into the scene".
+  const ZOOM_DRILL = 6.5;
+
   // Region → [lng, lat]. Approximate location of each cloud region's datacenter
   // cluster — accurate enough to place a network on the right city.
   const AWS_REGIONS = {
@@ -70,6 +85,9 @@
   let satellite = false;
   let projection = "globe";
   let lastData = null;
+  let lastPoints = [];
+  let drilling = false;
+  let warp = null;
   let els = {};
 
   // --- region resolution -------------------------------------------------
@@ -113,18 +131,24 @@
       const firstAz = (vpc.subnets || []).find((s) => s.az) || {};
       const r = resolveRegion(vpc.region || fallbackRegion, firstAz.az);
       if (!r) return; // no location — skip, surfaced via the empty hint
-      const gkey = r.label;
+      // A provider anchor (e.g. AWS→Cochabamba, Azure→Austin) overrides the
+      // region's geographic coordinate and groups every VPC of that provider
+      // at one city.
+      const anchor = PROVIDER_ANCHORS[r.provider];
+      const baseCoord = anchor ? anchor.coord : r.coord;
+      const gkey = anchor ? "@" + r.provider : r.label;
+      const place = anchor ? anchor.place : "";
       if (!groups.has(gkey)) groups.set(gkey, []);
       const idx = groups.get(gkey).length;
       groups.get(gkey).push(vpc);
-      resolved.push({ vpc, r, gkey, idx });
+      resolved.push({ vpc, r, gkey, idx, baseCoord, place });
     });
     resolved.forEach((e) => (e.total = groups.get(e.gkey).length));
 
     const centerOf = new Map(); // vpc.id -> [lng,lat]
     const points = resolved.map((e) => {
-      const { vpc, r, idx, total } = e;
-      const coord = spread(r.coord, idx, total);
+      const { vpc, r, idx, total, baseCoord, place } = e;
+      const coord = spread(baseCoord, idx, total);
       centerOf.set(vpc.id, coord);
       const subnets = vpc.subnets || [];
       const tiers = [...new Set(subnets.map((s) => s.tier).filter(Boolean))];
@@ -137,6 +161,7 @@
           name: vpc.name || vpc.id || "VPC",
           provider: r.provider,
           region: r.label,
+          place: place || "",
           cidr: vpc.cidr || "",
           color,
           subnets: subnets.length,
@@ -252,6 +277,7 @@
     const prov = p.provider === "aws" ? "AWS" : p.provider === "azure" ? "Azure" : "Cloud";
     const rows = [
       ["Provider", prov],
+      ...(p.place ? [["Location", p.place]] : []),
       ["Region", p.region],
       ["CIDR", p.cidr || "—"],
       ["Subnets", p.subnets],
@@ -302,6 +328,68 @@
     map.fitBounds(b, { padding: 90, maxZoom: 5, duration: 800 });
   }
 
+  // --- zoom-to-drill (Google-Earth style hand-off to holographic view) ---
+
+  // Find the plotted VPC nearest the current map center (degrees of lng/lat).
+  function nearestCluster() {
+    if (!lastPoints.length) return null;
+    const c = map.getCenter();
+    let best = null,
+      bd = Infinity;
+    lastPoints.forEach((f) => {
+      const [lng, lat] = f.geometry.coordinates;
+      const d = Math.hypot(lng - c.lng, lat - c.lat);
+      if (d < bd) {
+        bd = d;
+        best = f;
+      }
+    });
+    return best ? { feature: best, dist: bd } : null;
+  }
+
+  function onZoom() {
+    if (drilling || !map) return;
+    if (map.getZoom() < ZOOM_DRILL) return;
+    const near = nearestCluster();
+    if (!near || near.dist > 8) return; // not actually over a network
+    triggerDrill(near.feature);
+  }
+
+  function triggerDrill(feature) {
+    drilling = true;
+    const p = feature.properties || {};
+    if (warp) {
+      warp.querySelector(".map-warp-label").textContent =
+        "Entering holographic view — " + (p.name || "network");
+      warp.classList.add("is-on");
+    }
+    // Fall toward the cluster, then hand off to the holographic (3D) view.
+    map.flyTo({
+      center: feature.geometry.coordinates,
+      zoom: Math.max(map.getZoom() + 1.5, 8.5),
+      pitch: 55,
+      duration: 950,
+    });
+    setTimeout(() => {
+      if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("3d");
+    }, 900);
+  }
+
+  // Re-arm after returning to the map: clear the warp, level the camera and
+  // zoom back out so we don't instantly re-trigger at the leftover zoom level.
+  function armDrill() {
+    if (!ready || !map) return;
+    drilling = true;
+    if (warp) warp.classList.remove("is-on");
+    try {
+      map.easeTo({ pitch: 0, duration: 0 });
+    } catch (_) {}
+    fit();
+    const done = () => (drilling = false);
+    map.once("moveend", done);
+    setTimeout(done, 1300); // fallback if no movement occurs
+  }
+
   // --- public API --------------------------------------------------------
 
   function init(container) {
@@ -313,6 +401,13 @@
       fitBtn: document.getElementById("map-fit"),
     };
     const canvas = container.querySelector("#map-canvas") || container;
+
+    // Transition overlay used during the zoom-to-drill hand-off.
+    warp = document.createElement("div");
+    warp.className = "map-warp";
+    warp.innerHTML = '<div class="map-warp-label"></div>';
+    container.appendChild(warp);
+
     map = new maplibregl.Map({
       container: canvas,
       style: theme === "light" ? LIGHT_STYLE : BASE_STYLE,
@@ -332,6 +427,8 @@
       if (lastData) render(lastData);
     });
 
+    map.on("zoom", onZoom);
+
     if (els.styleBtn) els.styleBtn.addEventListener("click", toggleSatellite);
     if (els.projBtn) els.projBtn.addEventListener("click", toggleProjection);
     if (els.fitBtn) els.fitBtn.addEventListener("click", () => fit());
@@ -341,6 +438,7 @@
     lastData = data;
     if (!ready || !map || !map.getSource("aws-vpcs")) return;
     const { points, lines } = buildFeatures(data);
+    lastPoints = points.features;
     map.getSource("aws-vpcs").setData(points);
     map.getSource("aws-links").setData(lines);
     if (els.empty) els.empty.hidden = points.features.length > 0;
@@ -385,6 +483,7 @@
     render,
     resize,
     setTheme,
+    armDrill,
     isReady: () => ready,
   };
 })();

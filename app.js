@@ -534,6 +534,9 @@
           if (!window.AwsMap.isReady()) window.AwsMap.init(els.stageMap);
           window.AwsMap.resize();
           if (currentData) window.AwsMap.render(currentData);
+          // Re-arm the zoom-to-drill hand-off and zoom back out, so returning
+          // from the holographic view doesn't instantly re-trigger.
+          if (window.AwsMap.armDrill) window.AwsMap.armDrill();
         } else if (attempts > 0) {
           setTimeout(() => tryInitMap(attempts - 1), 120);
         } else {

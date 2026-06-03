@@ -14,10 +14,20 @@ button, which opens the running OSIRIS instance (defaults to
 ### Map view (OSIRIS-style globe, no API keys)
 
 The Visualizer's **Map** tab renders your loaded network onto a MapLibre GL
-globe, tying each VPC / VNet to the real-world coordinates of its `region`
-(both AWS — `us-east-1`, … — and Azure — `eastus`, … — region codes are
-supported). It reuses the same **keyless** map stack OSIRIS uses, so **no API
-keys are required**:
+globe. By default networks are placed by their `region` code (both AWS —
+`us-east-1`, … — and Azure — `eastus`, … — are supported), but **provider
+anchors** override this: AWS networks are pinned to **Cochabamba, Bolivia** and
+Azure networks to **Austin, Texas** (configurable via `PROVIDER_ANCHORS` in
+`map.js`).
+
+**Zoom-to-drill:** keep zooming into a network's cluster and, past a zoom
+threshold, the map "falls into" the scene and hands off to that network's
+**holographic (3D) view** — the same way Google Earth transitions from
+satellite to street level. Switching back to the **Map** tab zooms back out and
+re-arms the effect.
+
+It reuses the same **keyless** map stack OSIRIS uses, so **no API keys are
+required**:
 
 - **MapLibre GL JS** — WebGL globe engine
 - **CARTO dark-matter / positron** — base map styles (keyless)
