@@ -452,56 +452,60 @@ body.theme-day .voice-popover-row input[type="range"] {
 }
 
 /* ---- Boundary atom (nucleus + orbiting electrons) ---- */
-.map-atom-wrap { perspective: 300px; }
+.map-atom-wrap { perspective: 360px; }
 .map-atom {
   position: relative;
-  width: 50px;
-  height: 50px;
-  transform-style: preserve-3d;
-  animation: atom-rotate 12s linear infinite;
+  width: 52px;
+  height: 52px;
+  /* Gentle in-plane spin of the whole atom — rotateZ never goes edge-on, so
+     the atom can't disappear the way a rotateY/rotateX tilt would. */
+  animation: atom-rotate 18s linear infinite;
 }
 .map-atom .nucleus {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 13px;
-  height: 13px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle at 35% 30%, #fff, var(--atom) 70%);
-  box-shadow: 0 0 12px var(--atom), 0 0 4px #fff;
+  background: radial-gradient(circle at 34% 30%, #fff, var(--atom) 62%, color-mix(in srgb, var(--atom) 60%, black) 100%);
+  box-shadow: 0 0 14px var(--atom), 0 0 5px #fff;
   animation: nucleus-pulse 1.8s ease-in-out infinite;
+  z-index: 2;
 }
-.map-atom .orbit { position: absolute; inset: 0; transform-style: preserve-3d; }
-.map-atom .orbit.o1 { transform: rotateX(74deg) rotateY(0deg); }
-.map-atom .orbit.o2 { transform: rotateX(74deg) rotateY(60deg); }
-.map-atom .orbit.o3 { transform: rotateX(74deg) rotateY(120deg); }
+/* Each orbit is an upright circle squished into an ellipse (scaleY) and turned
+   to a different in-plane angle — together they read as a 3D atom cage. */
+.map-atom .orbit { position: absolute; inset: 0; }
+.map-atom .orbit.o1 { transform: rotate(0deg) scaleY(0.46); }
+.map-atom .orbit.o2 { transform: rotate(60deg) scaleY(0.46); }
+.map-atom .orbit.o3 { transform: rotate(120deg) scaleY(0.46); }
 .map-atom .ring {
   position: absolute;
   inset: 0;
-  border: 1.5px solid color-mix(in srgb, var(--atom) 55%, transparent);
+  border: 2px solid color-mix(in srgb, var(--atom) 70%, transparent);
   border-radius: 50%;
-  box-shadow: 0 0 6px color-mix(in srgb, var(--atom) 40%, transparent);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--atom) 45%, transparent);
 }
 .map-atom .orb-spin { position: absolute; inset: 0; }
-.map-atom .orb-spin.s1 { animation: orb-spin 2.0s linear infinite; }
-.map-atom .orb-spin.s2 { animation: orb-spin 2.8s linear infinite reverse; }
-.map-atom .orb-spin.s3 { animation: orb-spin 3.4s linear infinite; }
+.map-atom .orb-spin.s1 { animation: orb-spin 1.9s linear infinite; }
+.map-atom .orb-spin.s2 { animation: orb-spin 2.6s linear infinite reverse; }
+.map-atom .orb-spin.s3 { animation: orb-spin 3.2s linear infinite; }
 .map-atom .electron {
   position: absolute;
-  top: -3px;
-  left: calc(50% - 3px);
-  width: 6px;
-  height: 6px;
+  top: -3.5px;
+  left: calc(50% - 3.5px);
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 7px #fff, 0 0 12px var(--atom);
+  box-shadow: 0 0 7px #fff, 0 0 13px var(--atom);
 }
-@keyframes atom-rotate { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }
-@keyframes orb-spin { from { transform: rotateZ(0deg); } to { transform: rotateZ(360deg); } }
+@keyframes atom-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes orb-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes nucleus-pulse {
-  0%, 100% { box-shadow: 0 0 10px var(--atom), 0 0 4px #fff; }
-  50% { box-shadow: 0 0 18px var(--atom), 0 0 7px #fff; }
+  0%, 100% { box-shadow: 0 0 11px var(--atom), 0 0 4px #fff; }
+  50% { box-shadow: 0 0 19px var(--atom), 0 0 8px #fff; }
 }
 @media (prefers-reduced-motion: reduce) {
   .map-cube, .map-atom, .orb-spin, .nucleus { animation: none !important; }

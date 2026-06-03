@@ -155,26 +155,11 @@
   // --- data -> GeoJSON ---------------------------------------------------
 
   // Small deterministic string hash (FNV-ish) for stable, content-derived
-  // placement that never depends on load order or how many networks are shown.
-  function hashStr(s) {
-    let h = 2166136261;
-    for (let i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
-  }
-
-  // Offset a network's cluster around its city anchor so several networks
-  // sharing one city (e.g. two AWS fleets at Cochabamba) don't stack. The
-  // offset is derived from the network's own content, so a network lands in
-  // the exact same spot every time — whether it's the loaded one or a fleet
-  // member, and regardless of how many others are on the map.
-  function networkOffset(net) {
-    const h = hashStr(sigOf(net.data) || net.name || net.id || "");
-    const ang = (h % 360) * (Math.PI / 180);
-    const r = 0.7 + (h % 5) * 0.18; // 0.70°–1.42°, stable per network
-    return [Math.cos(ang) * r, Math.sin(ang) * r * 0.7];
+  // The fleet shows exactly one network per provider city, so each network
+  // sits directly on its city anchor (no offset). Per-VPC fanning is handled by
+  // spread(), which only separates multiple VPCs of the same network.
+  function networkOffset() {
+    return [0, 0];
   }
 
   // Build GeoJSON for an array of networks: [{ id, name, data }].
@@ -339,16 +324,6 @@
     }
     if (ready) render();
   }
-
-  // Fingerprint a network by its contents — used to give each network a stable,
-  // content-derived position (see networkOffset).
-  const sigOf = (data) => {
-    try {
-      return JSON.stringify(data && data.vpcs ? data.vpcs : data);
-    } catch (_) {
-      return "";
-    }
-  };
 
   // --- map layers --------------------------------------------------------
 
