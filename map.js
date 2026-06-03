@@ -373,16 +373,18 @@
     return el;
   }
 
-  // A CSS 3D animated atom (nucleus + orbiting electrons) with a label.
+  // A CSS 3D animated atom: a real 3D ball nucleus (built like the network
+  // cubes — 6 faces pushed out in Z, but round) inside a tumbling orbit cage.
   function atomMarkerEl(g) {
     const el = document.createElement("div");
     el.className = "map-marker map-atom-wrap";
     const orbit = (cls, spin) =>
       `<div class="orbit ${cls}"><div class="ring"></div><div class="orb-spin ${spin}"><span class="electron"></span></div></div>`;
+    const ballFaces = '<i class="nf"></i><i class="nf"></i><i class="nf"></i><i class="nf"></i><i class="nf"></i><i class="nf"></i>';
     el.innerHTML =
       `<div class="map-atom" style="--atom:${g.color}">` +
-      `<div class="atom-spin">` +
-      `<div class="nucleus"></div>` +
+      `<div class="nucleus">${ballFaces}</div>` +
+      `<div class="atom-cage">` +
       orbit("o1", "s1") +
       orbit("o2", "s2") +
       orbit("o3", "s3") +
