@@ -1,0 +1,9 @@
+{
+  "_comment": "Controls what the Map view shows. Edit this file to add/remove items — no code change needed. networks: network JSON files (each VPC -> a 3D cube). guildCatalog: path to a guild catalog whose entries become atoms (or null to disable). boundaries: optional list of boundary files shown directly as atoms, as path strings or objects { file, name, assessmentType, author, mapCity, mapLocation, stats }. Placement honors mapLocation/mapCity in the data; see BACKEND-DATA-EXAMPLES.md.",
+  "networks": [
+    "complex-network.json",
+    "azure-network.json"
+  ],
+  "guildCatalog": "data/guild-catalog.json",
+  "boundaries": []
+}

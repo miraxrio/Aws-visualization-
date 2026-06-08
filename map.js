@@ -37,7 +37,11 @@
 
   // Guild boundaries (compliance assessments) loaded from the catalog and
   // scattered across US cities, each shown as an animated atom.
-  const GUILD_FILE = "data/guild-catalog.json";
+  // The fleet (which networks + boundaries appear on the map) is data-driven:
+  // edit data/map-fleet.json — no code change needed. These are the fallbacks
+  // used only when the manifest is missing.
+  const MANIFEST_FILE = "data/map-fleet.json";
+  const DEFAULT_GUILD_FILE = "data/guild-catalog.json";
   const GUILD_CITIES = [
     { coord: [-122.3321, 47.6062], name: "Seattle, WA" },
     { coord: [-73.9857, 40.7484], name: "New York, NY" },
@@ -148,13 +152,12 @@
   let projection = "globe";
   // Other network files in the repo to show on the map alongside whatever's
   // loaded, so the map is a fleet view rather than a single-network view.
-  const EXTRA_FILES = ["complex-network.json", "azure-network.json"];
+  const DEFAULT_NETWORK_FILES = ["complex-network.json", "azure-network.json"];
 
   let lastPoints = [];
   let extras = [];
-  let extrasLoaded = false;
   let guilds = []; // [{ id, name, type, author, coord, cityName, data, raw }]
-  let guildsLoaded = false;
+  let fleetLoaded = false;
   let networkRaw = {}; // networkId -> raw payload, for drill-to-load
   let markers = []; // live maplibregl.Marker instances (cubes + atoms)
   let placedItems = []; // { coord, kind:'network'|'boundary', ... } for drill detection
@@ -303,73 +306,124 @@
     return null;
   }
 
-  // Fetch the fixed fleet of network files once. The map always shows exactly
-  // these networks (one cluster per provider city), regardless of what's
-  // loaded in the rest of the app — keeps the map stable and unambiguous.
-  async function loadExtras() {
-    if (extrasLoaded) return;
-    extrasLoaded = true;
-    await Promise.all(
-      EXTRA_FILES.map(async (file) => {
-        try {
-          const res = await fetch(file);
-          if (!res.ok) return;
-          const raw = await res.json();
-          const n = normalizeNetwork(raw);
-          if (n && n.data && (n.data.vpcs || []).length) {
-            extras.push({ id: file, name: n.name, data: n.data, raw });
-          }
-        } catch (_) {
-          /* offline / missing file — skip */
-        }
-      }),
-    );
+  // Load the whole fleet once, driven by data/map-fleet.json. The manifest
+  // lists which network files and which boundaries/guild-catalog appear on the
+  // map, so adding items needs no code change. Falls back to the built-in
+  // defaults if the manifest is absent.
+  async function loadFleet() {
+    if (fleetLoaded) return;
+    fleetLoaded = true;
+
+    let networkFiles = DEFAULT_NETWORK_FILES;
+    let guildFile = DEFAULT_GUILD_FILE;
+    let boundaryEntries = [];
+    try {
+      const res = await fetch(MANIFEST_FILE);
+      if (res.ok) {
+        const m = await res.json();
+        if (Array.isArray(m.networks)) networkFiles = m.networks;
+        if (typeof m.guildCatalog === "string") guildFile = m.guildCatalog;
+        else if (m.guildCatalog === null || m.guildCatalog === false) guildFile = null;
+        if (Array.isArray(m.boundaries)) boundaryEntries = m.boundaries;
+      }
+    } catch (_) {
+      /* no manifest — use defaults */
+    }
+
+    await Promise.all(networkFiles.map(loadNetworkFile));
+    if (guildFile) await loadGuildCatalog(guildFile);
+    await loadBoundaryEntries(boundaryEntries);
     if (ready) render();
   }
 
-  // Fetch the guild catalog once and scatter its boundaries across US cities.
-  async function loadGuilds() {
-    if (guildsLoaded) return;
-    guildsLoaded = true;
+  // Load one network file into `extras` (a 3D cube cluster).
+  async function loadNetworkFile(file) {
     try {
-      const res = await fetch(GUILD_FILE);
-      if (res.ok) {
-        const cat = (await res.json()).catalog || [];
-        // Cache each referenced data file so a drill can load the boundary.
-        const fileCache = {};
-        await Promise.all(
-          [...new Set(cat.map((e) => e.dataFile).filter(Boolean))].map(async (f) => {
-            try {
-              const r = await fetch(f);
-              if (r.ok) fileCache[f] = await r.json();
-            } catch (_) {
-              /* skip */
-            }
-          }),
-        );
-        cat.forEach((e, i) => {
-          // Data-driven location wins: catalog entry first, then the boundary
-          // file itself; otherwise fall back to a US city by catalog order.
-          const raw = fileCache[e.dataFile] || null;
-          const explicit = resolveLocation(e) || resolveLocation(raw);
-          const fallback = GUILD_CITIES[i % GUILD_CITIES.length];
-          guilds.push({
-            id: e.id,
-            name: e.name,
-            type: e.assessmentType || "custom",
-            author: e.author || "Guild",
-            color: ASSESSMENT_COLORS[e.assessmentType] || ASSESSMENT_COLORS.custom,
-            coord: explicit || fallback.coord,
-            cityName: e.mapCity || (raw && raw.mapCity) || fallback.name,
-            stats: e.stats || {},
-            raw,
-          });
-        });
+      const res = await fetch(file);
+      if (!res.ok) return;
+      const raw = await res.json();
+      const n = normalizeNetwork(raw);
+      if (n && n.data && (n.data.vpcs || []).length) {
+        extras.push({ id: file, name: n.name, data: n.data, raw });
       }
+    } catch (_) {
+      /* offline / missing file — skip */
+    }
+  }
+
+  // Load a guild-catalog file; each catalog entry becomes an atom.
+  async function loadGuildCatalog(file) {
+    try {
+      const res = await fetch(file);
+      if (!res.ok) return;
+      const cat = (await res.json()).catalog || [];
+      const fileCache = {};
+      await Promise.all(
+        [...new Set(cat.map((e) => e.dataFile).filter(Boolean))].map(async (f) => {
+          try {
+            const r = await fetch(f);
+            if (r.ok) fileCache[f] = await r.json();
+          } catch (_) {
+            /* skip */
+          }
+        }),
+      );
+      cat.forEach((e) => pushGuild(e, fileCache[e.dataFile] || null));
     } catch (_) {
       /* offline — skip */
     }
-    if (ready) render();
+  }
+
+  // Load boundary files listed directly in the manifest (an alternative to the
+  // catalog). Each entry is a path string, or { file, name, assessmentType,
+  // author, mapCity, mapLocation, stats, id }. Fetched in parallel, pushed in
+  // order so fallback city assignment stays deterministic.
+  async function loadBoundaryEntries(entries) {
+    const loaded = await Promise.all(
+      entries.map(async (entry) => {
+        const e = typeof entry === "string" ? { dataFile: entry } : { ...entry, dataFile: entry.file || entry.dataFile };
+        let raw = null;
+        try {
+          const r = await fetch(e.dataFile);
+          if (r.ok) raw = await r.json();
+        } catch (_) {
+          /* skip */
+        }
+        return { e, raw };
+      }),
+    );
+    loaded.forEach(({ e, raw }) =>
+      pushGuild(
+        {
+          id: e.id || e.dataFile,
+          name: e.name || (raw && (raw.label || raw.name)) || e.dataFile,
+          assessmentType: e.assessmentType,
+          author: e.author,
+          mapCity: e.mapCity,
+          mapLocation: e.mapLocation,
+          stats: e.stats,
+        },
+        raw,
+      ),
+    );
+  }
+
+  // Turn a catalog/boundary entry into an atom on the map. Data-driven location
+  // wins (entry, then boundary file); else a US city by add-order.
+  function pushGuild(e, raw) {
+    const explicit = resolveLocation(e) || resolveLocation(raw);
+    const fallback = GUILD_CITIES[guilds.length % GUILD_CITIES.length];
+    guilds.push({
+      id: e.id,
+      name: e.name,
+      type: e.assessmentType || "custom",
+      author: e.author || "Guild",
+      color: ASSESSMENT_COLORS[e.assessmentType] || ASSESSMENT_COLORS.custom,
+      coord: explicit || fallback.coord,
+      cityName: e.mapCity || (raw && raw.mapCity) || fallback.name,
+      stats: e.stats || {},
+      raw,
+    });
   }
 
   // --- map layers --------------------------------------------------------
@@ -581,14 +635,12 @@
     if (els.fitBtn) els.fitBtn.addEventListener("click", () => fit());
   }
 
-  // The map renders a fixed fleet (the EXTRA_FILES networks as 3D cubes) plus
-  // the guild boundaries (as 3D atoms) — not the currently loaded network — so
-  // callers may pass data, but it's intentionally ignored.
+  // The map renders the fleet from data/map-fleet.json (networks as 3D cubes,
+  // boundaries as 3D atoms) — not the currently loaded network — so callers may
+  // pass data, but it's intentionally ignored.
   function render() {
     if (!ready || !map || !map.getSource("aws-links")) return;
-    if (!extrasLoaded) loadExtras(); // fetch the fleet once, then re-render
-    if (!guildsLoaded) loadGuilds(); // fetch the guild boundaries once
-    if (!extrasLoaded && !guildsLoaded) return;
+    if (!fleetLoaded) loadFleet(); // fetch the fleet once, then re-render
 
     // Clear previous markers.
     markers.forEach((m) => m.remove());

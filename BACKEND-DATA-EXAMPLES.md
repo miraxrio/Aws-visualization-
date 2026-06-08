@@ -7,14 +7,23 @@ three shapes the **Map** view uses:
 2. **Azure network** — rendered as a 3D **cube** anchored at **Austin**.
 3. **Guild boundary** — rendered as a 3D **atom** scattered across US cities.
 
-> **How the Map picks files.** The Map shows a *fixed fleet*:
-> - Networks: `complex-network.json` (AWS) and `azure-network.json` (Azure).
-> - Boundaries: every entry in `data/guild-catalog.json` (each entry points to a
->   boundary file via `dataFile`).
+> **How the Map picks files.** The fleet is **data-driven** via
+> [`data/map-fleet.json`](data/map-fleet.json) — edit that one file to add or
+> remove items, **no code change needed**:
+> ```json
+> {
+>   "networks": ["complex-network.json", "azure-network.json"],
+>   "guildCatalog": "data/guild-catalog.json",
+>   "boundaries": []
+> }
+> ```
+> - **`networks`** — network JSON files; each VPC becomes a 3D cube.
+> - **`guildCatalog`** — path to a guild catalog whose entries become atoms
+>   (set to `null` to disable the catalog).
+> - **`boundaries`** — optional boundary files shown directly as atoms (an
+>   alternative to the catalog); see §4.
 >
-> To put new data on the map, either **overwrite those files**, or tell us the
-> new filenames and we'll add them to the fleet list (`EXTRA_FILES` /
-> `GUILD_FILE` in `map.js`).
+> Add a file to the repo, list it here, done.
 
 ---
 
@@ -325,6 +334,28 @@ sets the atom **colour**; `author` is the guild name shown under the atom.
 
 Drilling an atom loads its `dataFile` into the holographic assessment view (a
 `dataFile` that is a *network* opens the 3D network view instead).
+
+**Alternative — skip the catalog.** You can also list boundaries directly in the
+manifest's `boundaries` array (each as a path string, or an object with
+metadata). These render as atoms just like catalog entries:
+
+```json
+{
+  "networks": ["complex-network.json"],
+  "guildCatalog": null,
+  "boundaries": [
+    "data/checkout-service-q2.json",
+    {
+      "file": "data/kernel-cve-feed.json",
+      "name": "Kernel CVE feed",
+      "assessmentType": "CVE",
+      "author": "FleetSec",
+      "mapCity": "Denver",
+      "stats": { "totalHolons": 12, "passRate": 40 }
+    }
+  ]
+}
+```
 
 ---
 
