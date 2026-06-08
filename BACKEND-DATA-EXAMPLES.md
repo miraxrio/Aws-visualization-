@@ -20,14 +20,16 @@ three shapes the **Map** view uses:
 
 ## 1. AWS network
 
-Provider is detected from the **`region`** code: an AWS-style code
-(`us-east-1`, `us-west-2`, `eu-west-1`, …) → AWS cube at Cochabamba. Each
-**VPC** becomes one cube; `flows` become dashed links between cubes.
+Each **VPC** becomes one cube; `flows` become dashed links between cubes.
+Placement uses **`mapLocation`** / **`mapCity`** if present (see §5); otherwise
+it falls back to the provider derived from the **`region`** code (AWS-style
+codes like `us-east-1` → cube at Cochabamba).
 
 ```json
 {
   "name": "Acme Cloud — Production",
   "region": "us-east-1",
+  "mapCity": "Cochabamba",
   "vpcs": [
     {
       "id": "vpc-prod",
@@ -78,6 +80,7 @@ uses the Azure form (`eastus-1`).
 {
   "name": "Contoso Retail — Azure Platform",
   "region": "eastus",
+  "mapLocation": [-97.7431, 30.2672],
   "vpcs": [
     {
       "id": "vnet-prod",
@@ -298,6 +301,7 @@ sets the atom **colour**; `author` is the guild name shown under the atom.
       "description": "Full boundary snapshot of the checkout service.",
       "assessmentType": "custom",
       "author": "Acme Compliance",
+      "mapCity": "Denver",
       "publishedAt": "2026-05-19T06:00:00Z",
       "status": "published",
       "version": "1.0.1",
@@ -319,8 +323,32 @@ sets the atom **colour**; `author` is the guild name shown under the atom.
 | `NIST`   | blue `#38bdf8` |
 | `custom` | amber `#f59e0b` |
 
-Atoms are spread across US cities (Seattle, New York, Chicago, Denver, Atlanta,
-San Francisco, Miami, Boston) in catalog order — so list them in the order you
-want them placed. Drilling an atom loads its `dataFile` into the holographic
-assessment view (a `dataFile` that is a *network* opens the 3D network view
-instead).
+Drilling an atom loads its `dataFile` into the holographic assessment view (a
+`dataFile` that is a *network* opens the 3D network view instead).
+
+---
+
+## 5. Map location (where each item is placed)
+
+Every network and boundary can carry its **own** map location. Use either:
+
+- **`"mapLocation": [lng, lat]`** — exact coordinates (note: **longitude first**,
+  GeoJSON order), or
+- **`"mapCity": "Austin"`** — a named city from the list below.
+
+**Where the fields go:**
+- **Network** → at the top level (applies to all its VPCs), and/or per-VPC
+  (a VPC field overrides the network field).
+- **Boundary** → on the **guild-catalog entry** (preferred), or on the boundary
+  file itself.
+
+**Precedence (first match wins):**
+1. `mapLocation` → 2. `mapCity` → 3. *fallback*: networks use the provider
+   region (AWS → Cochabamba, Azure → Austin); boundaries cycle US cities in
+   catalog order.
+
+**Known `mapCity` names:** Cochabamba, Austin, Seattle, New York, Chicago,
+Denver, Atlanta, San Francisco, Miami, Boston, Washington DC, Dallas,
+Los Angeles, London, Sao Paulo, Sydney, Singapore, Tokyo, Frankfurt, Dublin.
+Anything not on this list → use `mapLocation` coordinates. (Need more named
+cities? Send the list and we'll add them.)

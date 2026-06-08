@@ -57,6 +57,45 @@
     custom: "#f59e0b",
   };
 
+  // Named cities for the data-driven "mapCity" field. "mapLocation":[lng,lat]
+  // is the general escape hatch for anywhere not listed here.
+  const CITIES = {
+    cochabamba: [-66.12364872691643, -17.415331697386176],
+    austin: [-97.7431, 30.2672],
+    seattle: [-122.3321, 47.6062],
+    "new york": [-73.9857, 40.7484],
+    chicago: [-87.6298, 41.8781],
+    denver: [-104.9903, 39.7392],
+    atlanta: [-84.388, 33.749],
+    "san francisco": [-122.4194, 37.7749],
+    miami: [-80.1918, 25.7617],
+    boston: [-71.0589, 42.3601],
+    "washington dc": [-77.0369, 38.9072],
+    dallas: [-96.797, 32.7767],
+    "los angeles": [-118.2437, 34.0522],
+    london: [-0.1276, 51.5072],
+    "sao paulo": [-46.6333, -23.5505],
+    sydney: [151.2093, -33.8688],
+    singapore: [103.8198, 1.3521],
+    tokyo: [139.6917, 35.6895],
+    frankfurt: [8.6821, 50.1109],
+    dublin: [-6.2603, 53.3498],
+  };
+
+  // Read a data-driven location off any object: "mapLocation":[lng,lat] wins,
+  // else "mapCity":"Austin". Returns [lng,lat] or null.
+  function resolveLocation(o) {
+    if (!o || typeof o !== "object") return null;
+    const ml = o.mapLocation;
+    if (Array.isArray(ml) && ml.length === 2 && Number.isFinite(ml[0]) && Number.isFinite(ml[1])) {
+      return [ml[0], ml[1]];
+    }
+    if (typeof o.mapCity === "string" && CITIES[o.mapCity.trim().toLowerCase()]) {
+      return CITIES[o.mapCity.trim().toLowerCase()].slice();
+    }
+    return null;
+  }
+
   // Region → [lng, lat]. Approximate location of each cloud region's datacenter
   // cluster — accurate enough to place a network on the right city.
   const AWS_REGIONS = {
@@ -174,16 +213,20 @@
       const off = networkOffset(net);
 
       // Group this network's VPCs by city/region so they fan out together.
+      // A data-driven location ("mapLocation"/"mapCity") on the VPC or the
+      // network overrides the region-derived city anchor.
+      const netLoc = resolveLocation(data);
       const groups = new Map();
       const resolved = [];
       vpcs.forEach((vpc) => {
         const firstAz = (vpc.subnets || []).find((s) => s.az) || {};
-        const r = resolveRegion(vpc.region || fallbackRegion, firstAz.az);
-        if (!r) return;
+        const r = resolveRegion(vpc.region || fallbackRegion, firstAz.az) || { provider: "other", label: vpc.region || "" };
+        const explicit = resolveLocation(vpc) || netLoc;
         const anchor = PROVIDER_ANCHORS[r.provider];
-        const cityCoord = anchor ? anchor.coord : r.coord;
-        const place = anchor ? anchor.place : "";
-        const gkey = anchor ? "@" + r.provider : r.label;
+        const cityCoord = explicit || (anchor ? anchor.coord : r.coord);
+        if (!cityCoord) return; // no region match and no explicit location — skip
+        const place = explicit ? vpc.mapCity || data.mapCity || "Custom location" : anchor ? anchor.place : "";
+        const gkey = explicit ? "loc:" + cityCoord.join(",") : anchor ? "@" + r.provider : r.label;
         if (!groups.has(gkey)) groups.set(gkey, []);
         const idx = groups.get(gkey).length;
         groups.get(gkey).push(vpc);
@@ -305,17 +348,21 @@
           }),
         );
         cat.forEach((e, i) => {
-          const city = GUILD_CITIES[i % GUILD_CITIES.length];
+          // Data-driven location wins: catalog entry first, then the boundary
+          // file itself; otherwise fall back to a US city by catalog order.
+          const raw = fileCache[e.dataFile] || null;
+          const explicit = resolveLocation(e) || resolveLocation(raw);
+          const fallback = GUILD_CITIES[i % GUILD_CITIES.length];
           guilds.push({
             id: e.id,
             name: e.name,
             type: e.assessmentType || "custom",
             author: e.author || "Guild",
             color: ASSESSMENT_COLORS[e.assessmentType] || ASSESSMENT_COLORS.custom,
-            coord: city.coord,
-            cityName: city.name,
+            coord: explicit || fallback.coord,
+            cityName: e.mapCity || (raw && raw.mapCity) || fallback.name,
             stats: e.stats || {},
-            raw: fileCache[e.dataFile] || null,
+            raw,
           });
         });
       }
