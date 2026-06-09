@@ -1,0 +1,83 @@
+{
+  "org": "acme",
+  "source": "zerobias",
+  "name": "Acme Production — ZeroBias import",
+  "region": "us-east-1",
+  "networks": [
+    { "id": "net-prod", "name": "Production", "cidr": "10.0.0.0/16", "region": "us-east-1" }
+  ],
+  "segments": [
+    { "id": "seg-dmz",  "networkId": "net-prod", "name": "DMZ / Public",  "cidr": "10.0.1.0/24",  "vlanId": 10, "zone": "us-east-1a" },
+    { "id": "seg-app",  "networkId": "net-prod", "name": "App / Private",  "cidr": "10.0.11.0/24", "vlanId": 20, "zone": "us-east-1a" },
+    { "id": "seg-data", "networkId": "net-prod", "name": "Data",          "cidr": "10.0.21.0/24", "vlanId": 30, "zone": "us-east-1a" }
+  ],
+  "assets": [
+    {
+      "id": "edge-fw", "name": "edge-fw-1", "type": "FIREWALL", "criticality": "HIGH", "status": "ACTIVE",
+      "networkInterfaces": [
+        { "deviceName": "eth0", "macAddress": "02:11:22:33:44:01",
+          "ipInterface": [ { "address": "10.0.1.5", "netmask": "255.255.255.0", "gateway": "10.0.1.1", "hostname": "edge-fw-1", "ipVersion": "IPV4" } ] }
+      ],
+      "firewallRules": [
+        { "protocol": "TCP", "portRange": "443", "addresses": ["0.0.0.0/0"], "action": "ALLOW" },
+        { "protocol": "TCP", "portRange": "80",  "addresses": ["0.0.0.0/0"], "action": "ALLOW" }
+      ],
+      "endpoints": [ { "address": "10.0.1.5", "port": 443, "ipProtocol": "TCP", "hostname": "edge-fw-1" } ]
+    },
+    {
+      "id": "web-alb", "name": "web-alb", "type": "UNKNOWN", "status": "ACTIVE", "segmentId": "seg-dmz",
+      "networkInterfaces": [
+        { "deviceName": "eth0", "ipInterface": [ { "address": "10.0.1.20", "netmask": "255.255.255.0", "gateway": "10.0.1.1", "hostname": "web-alb" } ] }
+      ],
+      "firewallRules": [ { "protocol": "TCP", "portRange": "443", "addresses": ["0.0.0.0/0"], "action": "ALLOW" } ],
+      "endpoints": [ { "address": "10.0.1.20", "port": 443, "ipProtocol": "TCP", "hostname": "web-alb" } ]
+    },
+    {
+      "id": "api-1", "name": "api-svc-1", "type": "UNKNOWN", "status": "ACTIVE", "segmentId": "seg-app",
+      "networkInterfaces": [
+        { "deviceName": "eth0", "ipInterface": [ { "address": "10.0.11.31", "netmask": "255.255.255.0", "gateway": "10.0.11.1", "hostname": "api-svc-1" } ] }
+      ],
+      "ipRoutes": [ { "destination": "0.0.0.0", "genmask": "0.0.0.0", "gateway": "10.0.11.1", "iface": "eth0" } ],
+      "endpoints": [ { "address": "10.0.11.31", "port": 8080, "ipProtocol": "TCP", "hostname": "api-svc-1" } ]
+    },
+    {
+      "id": "api-2", "name": "api-svc-2", "type": "UNKNOWN", "status": "ACTIVE", "segmentId": "seg-app",
+      "networkInterfaces": [
+        { "deviceName": "eth0", "ipInterface": [ { "address": "10.0.11.32", "netmask": "255.255.255.0", "gateway": "10.0.11.1", "hostname": "api-svc-2" } ] }
+      ],
+      "ipRoutes": [ { "destination": "0.0.0.0", "genmask": "0.0.0.0", "gateway": "10.0.11.1", "iface": "eth0" } ],
+      "endpoints": [ { "address": "10.0.11.32", "port": 8080, "ipProtocol": "TCP", "hostname": "api-svc-2" } ]
+    },
+    {
+      "id": "pg-primary", "name": "pg-primary", "type": "UNKNOWN", "criticality": "HIGH", "status": "ACTIVE", "segmentId": "seg-data",
+      "networkInterfaces": [
+        { "deviceName": "eth0", "ipInterface": [ { "address": "10.0.21.10", "netmask": "255.255.255.0", "hostname": "pg-primary" } ] }
+      ],
+      "endpoints": [ { "address": "10.0.21.10", "port": 5432, "ipProtocol": "TCP", "hostname": "pg-primary" } ]
+    },
+    {
+      "id": "redis-cache", "name": "redis-cache", "type": "UNKNOWN", "status": "ACTIVE", "segmentId": "seg-data",
+      "networkInterfaces": [
+        { "deviceName": "eth0", "ipInterface": [ { "address": "10.0.21.20", "netmask": "255.255.255.0", "hostname": "redis-cache" } ] }
+      ],
+      "endpoints": [ { "address": "10.0.21.20", "port": 6379, "ipProtocol": "TCP", "hostname": "redis-cache" } ]
+    }
+  ],
+  "relationships": [
+    { "from": "edge-fw", "to": "web-alb", "protocol": "TCP", "port": 443, "label": "HTTPS 443" },
+    { "from": "web-alb", "to": "api-1", "protocol": "TCP", "port": 8080, "label": "HTTP 8080" },
+    { "from": "web-alb", "to": "api-2", "protocol": "TCP", "port": 8080, "label": "HTTP 8080" },
+    { "from": "api-1", "to": "pg-primary", "protocol": "TCP", "port": 5432, "label": "5432" },
+    { "from": "api-2", "to": "pg-primary", "protocol": "TCP", "port": 5432, "label": "5432" },
+    { "from": "api-1", "to": "redis-cache", "protocol": "TCP", "port": 6379, "label": "6379 cache" }
+  ],
+  "accounts": [
+    { "id": "u-alice", "name": "alice", "type": "USER", "principalType": "USER", "status": "ACTIVE",
+      "permissionSets": [ { "resourceId": "pg-primary", "allow": ["READ", "WRITE"], "deny": [] } ] },
+    { "id": "svc-deploy", "name": "svc-deploy", "type": "SERVICE", "principalType": "SERVICE_ACCOUNT", "status": "ACTIVE",
+      "permissionSets": [
+        { "resourceId": "api-1", "allow": ["DEPLOY"], "deny": [] },
+        { "resourceId": "api-2", "allow": ["DEPLOY"], "deny": [] }
+      ] }
+  ]
+}

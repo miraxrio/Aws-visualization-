@@ -1,0 +1,148 @@
+{
+  "name": "Acme Production — ZeroBias import",
+  "region": "us-east-1",
+  "vpcs": [
+    {
+      "id": "net-prod",
+      "name": "Production",
+      "cidr": "10.0.0.0/16",
+      "region": "us-east-1",
+      "subnets": [
+        {
+          "id": "seg-dmz",
+          "name": "DMZ / Public",
+          "cidr": "10.0.1.0/24",
+          "tier": "public",
+          "az": "us-east-1a"
+        },
+        {
+          "id": "seg-app",
+          "name": "App / Private",
+          "cidr": "10.0.11.0/24",
+          "tier": "private",
+          "az": "us-east-1a"
+        },
+        {
+          "id": "seg-data",
+          "name": "Data",
+          "cidr": "10.0.21.0/24",
+          "tier": "data",
+          "az": "us-east-1a"
+        }
+      ],
+      "gateways": [
+        {
+          "id": "igw-net-prod",
+          "type": "igw",
+          "name": "Internet Gateway"
+        },
+        {
+          "id": "nat-seg-dmz",
+          "type": "nat",
+          "name": "NAT us-east-1a",
+          "subnet": "seg-dmz"
+        }
+      ],
+      "resources": [
+        {
+          "id": "edge-fw",
+          "type": "waf",
+          "name": "edge-fw-1",
+          "subnet": "seg-dmz"
+        },
+        {
+          "id": "web-alb",
+          "type": "alb",
+          "name": "web-alb",
+          "subnet": "seg-dmz"
+        },
+        {
+          "id": "api-1",
+          "type": "ecs",
+          "name": "api-svc-1",
+          "subnet": "seg-app"
+        },
+        {
+          "id": "api-2",
+          "type": "ecs",
+          "name": "api-svc-2",
+          "subnet": "seg-app"
+        },
+        {
+          "id": "pg-primary",
+          "type": "rds",
+          "name": "pg-primary",
+          "subnet": "seg-data"
+        },
+        {
+          "id": "redis-cache",
+          "type": "redis",
+          "name": "redis-cache",
+          "subnet": "seg-data"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "from": "nat-seg-dmz",
+      "to": "igw-net-prod",
+      "label": "0.0.0.0/0",
+      "kind": "egress"
+    },
+    {
+      "from": "api-1",
+      "to": "nat-seg-dmz",
+      "label": "egress",
+      "kind": "egress"
+    },
+    {
+      "from": "api-2",
+      "to": "nat-seg-dmz",
+      "label": "egress",
+      "kind": "egress"
+    },
+    {
+      "from": "internet",
+      "to": "edge-fw",
+      "label": ":443",
+      "kind": "internet"
+    },
+    {
+      "from": "internet",
+      "to": "web-alb",
+      "label": ":443",
+      "kind": "internet"
+    },
+    {
+      "from": "edge-fw",
+      "to": "web-alb",
+      "label": "HTTPS 443"
+    },
+    {
+      "from": "web-alb",
+      "to": "api-1",
+      "label": "HTTP 8080"
+    },
+    {
+      "from": "web-alb",
+      "to": "api-2",
+      "label": "HTTP 8080"
+    },
+    {
+      "from": "api-1",
+      "to": "pg-primary",
+      "label": "5432"
+    },
+    {
+      "from": "api-2",
+      "to": "pg-primary",
+      "label": "5432"
+    },
+    {
+      "from": "api-1",
+      "to": "redis-cache",
+      "label": "6379 cache"
+    }
+  ]
+}
