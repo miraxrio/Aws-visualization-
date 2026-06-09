@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AWS Network Visualizer</title>
   <link rel="stylesheet" href="styles.css" />
+  <!-- MapLibre GL JS (keyless WebGL globe) — same engine OSIRIS uses for its map -->
+  <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" defer></script>
   <script type="importmap">
     {
       "imports": {
@@ -16,26 +19,38 @@
   <script src="https://d3js.org/d3.v7.min.js" defer></script>
   <script src="explanations.js" defer></script>
   <script src="visualizer.js" defer></script>
+  <script src="catalog.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="builder.js" defer></script>
+  <script type="module" src="ontology/entity-classes.js"></script>
+  <script type="module" src="ontology/entity-renderer.js"></script>
+  <script type="module" src="ontology/assembly.js"></script>
   <script type="module" src="viz3d.js"></script>
+  <script src="map.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
+      <button id="sidebar-toggle" class="btn ghost icon-only" title="Toggle Guild Catalog" aria-label="Toggle Guild Catalog">☰</button>
       <span class="brand-mark"></span>
       <h1>AWS Network Visualizer</h1>
     </div>
     <div class="controls">
       <div class="seg" role="group" aria-label="View mode">
         <button id="mode-2d" class="seg-btn is-active" aria-pressed="true">2D</button>
-        <button id="mode-3d" class="seg-btn" aria-pressed="false">3D</button>
+        <button id="mode-3d" class="seg-btn" aria-pressed="false">Holographic View</button>
+        <button id="mode-map" class="seg-btn" aria-pressed="false">Map</button>
       </div>
       <label class="btn" for="file-input">
         <span>Import network</span>
         <input id="file-input" type="file" accept="application/json,.json" hidden />
       </label>
+      <a class="btn primary" href="wizard.html" id="new-integration-btn">New Integration</a>
+      <a class="btn ghost" href="http://localhost:3000" id="osiris-link" target="_blank" rel="noopener" title="Open the OSIRIS global intelligence dashboard. Run it locally with: cd osiris && npm install && npm run dev">🌐 Global Intel</a>
       <button id="load-sample" class="btn ghost">Load sample</button>
+      <button id="load-boundary" class="btn ghost">Load boundary</button>
       <button id="start-tour" class="btn primary">Start tour</button>
+      <button id="builder-btn" class="btn ghost" aria-pressed="false">Builder</button>
       <button id="explore-btn" class="btn ghost mode-3d-only" hidden>Explore</button>
       <button id="attack-btn" class="btn ghost mode-3d-only" hidden>Simulate attack</button>
       <button id="toggle-flow" class="btn ghost">Pause traffic</button>
@@ -48,9 +63,94 @@
   </header>
 
   <main class="layout">
+    <aside class="catalog-sidebar" id="catalog-sidebar" hidden aria-label="Guild Catalog">
+      <div class="catalog-head">
+        <h2>Guild Catalog</h2>
+        <button class="tour-btn" id="catalog-close" title="Hide catalog" aria-label="Hide catalog">×</button>
+      </div>
+      <div class="catalog-search">
+        <input id="catalog-search-input" type="search" placeholder="Search name or tag…" aria-label="Search catalog" />
+        <select id="catalog-filter">
+          <option value="ALL">All types</option>
+          <option value="STIG">STIG</option>
+          <option value="CVE">CVE</option>
+          <option value="CIS">CIS</option>
+          <option value="NIST">NIST</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="catalog-search">
+        <select id="catalog-provider-filter" aria-label="Filter by provider">
+          <option value="ALL">All providers</option>
+          <option value="aws">AWS</option>
+          <option value="azure">Azure</option>
+          <option value="gcp">GCP</option>
+          <option value="on-prem">On-Prem</option>
+        </select>
+      </div>
+      <div class="catalog-list" id="catalog-list"></div>
+      <div class="catalog-drafts">
+        <h3>My Drafts</h3>
+        <div class="catalog-drafts-list" id="catalog-drafts-list">
+          <p class="muted small">No drafts yet — build one from the New Integration wizard.</p>
+        </div>
+      </div>
+      <div class="catalog-global">
+        <a href="#" id="catalog-global-link">Global Catalog →</a>
+      </div>
+    </aside>
+
     <section class="stage" id="stage">
+      <div class="holo-breadcrumb" id="holo-breadcrumb" hidden>
+        <button class="holo-crumb" data-level="0">Boundary</button>
+        <span class="holo-crumb-sep">›</span>
+        <button class="holo-crumb" id="holo-crumb-holonic" data-level="1" hidden></button>
+        <span class="holo-crumb-sep" id="holo-crumb-sep-2" hidden>›</span>
+        <button class="holo-crumb" id="holo-crumb-holon" data-level="2" hidden></button>
+        <button class="holo-back" id="holo-back" hidden>← Back</button>
+        <button class="holo-exit" id="holo-exit" title="Close boundary and return to network view">× Exit boundary</button>
+      </div>
+      <div class="asm-filter-bar" id="asm-filter-bar" hidden role="group" aria-label="Assembly level filter">
+        <button class="asm-pill is-active" data-asm="all">All</button>
+        <button class="asm-pill" data-asm="0" title="Atom — smallest indivisible unit">⬥ Atoms</button>
+        <button class="asm-pill" data-asm="1" title="Component — assembly of atoms">◈ Components</button>
+        <button class="asm-pill" data-asm="2" title="Subsystem — assembly of components">◉ Subsystems</button>
+        <button class="asm-pill" data-asm="3" title="System — complete functional system">⬡ Systems</button>
+        <button class="asm-pill" data-asm="4" title="System of Systems — highest assembly">⊕ SoS</button>
+      </div>
+      <div class="holo-view-hint" id="holo-view-hint" hidden></div>
+      <div class="holo-hover-tip" id="holo-hover-tip" hidden></div>
       <svg id="diagram" role="img" aria-label="AWS network diagram"></svg>
       <div class="stage-3d" id="stage-3d" hidden aria-label="AWS network city (3D)"></div>
+      <div class="stage-map" id="stage-map" hidden aria-label="Geographic map of AWS / Azure networks">
+        <div class="map-canvas" id="map-canvas"></div>
+        <div class="map-controls" id="map-controls">
+          <button class="btn ghost btn-sm" id="map-style-toggle" title="Toggle satellite imagery">🛰️ Satellite</button>
+          <button class="btn ghost btn-sm" id="map-proj-toggle" title="Toggle globe / flat projection">🗺️ Flat</button>
+          <button class="btn ghost btn-sm" id="map-fit" title="Zoom to fit all networks">⤢ Fit networks</button>
+        </div>
+        <div class="map-drill-hint" id="map-drill-hint">⤓ Zoom into a network to enter its holographic view</div>
+        <div class="map-legend" id="map-legend">
+          <div><span class="map-dot map-aws"></span> AWS network (cube) · Cochabamba</div>
+          <div><span class="map-dot map-azure"></span> Azure network (cube) · Austin</div>
+          <div><span class="map-glyph">⚛</span> Guild boundary (atom) · USA</div>
+          <div><span class="map-line"></span> Cross-cloud link</div>
+        </div>
+        <div class="map-empty" id="map-empty" hidden>
+          Load a network with <code>region</code> fields to plot it on the globe.
+        </div>
+      </div>
+      <div class="stage-holo" id="stage-holo" hidden aria-label="Holographic assessment view (3D)"></div>
+      <div class="holo-watermark" id="holo-watermark" hidden>Holographic Assessment Principle</div>
+      <div class="holo-starfield" id="holo-starfield" hidden></div>
+      <div class="holo-detail" id="holo-detail" hidden>
+        <div class="holo-detail-head">
+          <h3 id="holo-detail-title">Holon</h3>
+          <button class="tour-btn" id="holo-detail-close" aria-label="Close detail">×</button>
+        </div>
+        <div class="holo-detail-body" id="holo-detail-body"></div>
+      </div>
+      <div class="holo-toast" id="holo-toast" hidden></div>
       <div class="legend">
         <div><span class="dot internet"></span> Internet</div>
         <div><span class="dot public"></span> Public subnet</div>
@@ -64,6 +164,40 @@
       <div class="hint hint-3d" id="hint-3d" hidden>
         <strong>Drag</strong> to orbit · <strong>scroll</strong> to zoom · <strong>right-drag</strong> to pan
       </div>
+      <aside class="builder-drawer" id="builder-drawer" hidden aria-label="Service inventory">
+        <div class="builder-head">
+          <div>
+            <div class="panel-eyebrow" id="builder-eyebrow">AWS inventory</div>
+            <h3 class="builder-title">Drag onto a subnet</h3>
+            <p class="muted builder-sub" id="builder-sub">
+              Pick a service and drop it on a highlighted subnet. We'll wire it into the existing network and simulate the new traffic.
+            </p>
+          </div>
+          <button class="tour-btn" id="builder-close" aria-label="Close inventory">
+            <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+          </button>
+        </div>
+        <div class="builder-actions">
+          <button class="btn ghost btn-sm" id="builder-reset" title="Revert to imported network">Reset</button>
+          <button class="btn ghost btn-sm" id="builder-undo" title="Undo last addition">Undo</button>
+        </div>
+        <div class="builder-inventory" id="builder-inventory"></div>
+      </aside>
+
+      <div class="sim-hud" id="sim-hud" hidden>
+        <div class="sim-hud-head">
+          <span class="sim-hud-icon" id="sim-hud-icon">+</span>
+          <div class="sim-hud-titles">
+            <div class="sim-hud-name" id="sim-hud-name">Simulating</div>
+            <div class="sim-hud-where" id="sim-hud-where">in subnet</div>
+          </div>
+          <button class="tour-btn" id="sim-hud-close" aria-label="Dismiss">
+            <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+          </button>
+        </div>
+        <ul class="sim-hud-flows" id="sim-hud-flows"></ul>
+      </div>
+
       <div class="explore-hud" id="explore-hud" hidden>
         <div class="explore-help">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move ·

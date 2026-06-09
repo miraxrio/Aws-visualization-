@@ -7,6 +7,8 @@
     resetZoom: document.getElementById("reset-zoom"),
     mode2d: document.getElementById("mode-2d"),
     mode3d: document.getElementById("mode-3d"),
+    modeMap: document.getElementById("mode-map"),
+    stageMap: document.getElementById("stage-map"),
     exploreBtn: document.getElementById("explore-btn"),
     exploreHud: document.getElementById("explore-hud"),
     attackBtn: document.getElementById("attack-btn"),
@@ -68,12 +70,38 @@
   window.AwsMode = {
     is3D: () => mode === "3d",
     current: () => mode,
+    // Forward so callers always hit the live setMode — the holographic
+    // view monkey-patches this further down the file, and a direct ref
+    // would point at the pre-patch version.
+    set: (next) => setMode(next),
+  };
+
+  // Exposed so builder.js can read the live network and push edits back
+  // through the same render pipeline (so it stays in sync with 3D, the
+  // sidebar summary, brand detection, etc.).
+  window.AwsApp = {
+    getData: () => currentData,
+    applyData: (data, opts) => applyVersionData(data, opts),
+    detectCloud: (data) => detectCloud(data || currentData),
+    // Load a full network payload (single- or multi-version) — used by the
+    // map view to drill into one of the fleet's networks.
+    load: (data) => loadData(data),
   };
 
   function loadData(data) {
+    // Boundary (holographic) schema, or any holons-shaped payload that we
+    // can wrap into one (e.g. data/sample-holons.json which only declares
+    // "holons" + "holonics" at the top level).
+    const wrapped = tryWrapAsBoundary(data);
+    if (wrapped) {
+      loadBoundary(wrapped);
+      return;
+    }
+
     // Multi-version network: { name, versions: [{ id, name, author, timestamp,
     // status, note, data: { vpcs, flows, ... } }, ...] }
     if (data && Array.isArray(data.versions) && data.versions.length) {
+      exitBoundaryMode();
       currentVersions = data.versions;
       networkName = data.name || null;
       const latest = currentVersions[currentVersions.length - 1];
@@ -92,9 +120,10 @@
 
     // Single-version network (the original schema): top-level vpcs/flows
     if (!data || !data.vpcs) {
-      alert("That JSON doesn't look like a network topology — expected a top-level 'vpcs' array (or a 'versions' array).");
+      alert("That JSON doesn't look like a network topology — expected a top-level 'vpcs' array, a 'versions' array, or a holographic boundary.");
       return;
     }
+    exitBoundaryMode();
     currentVersions = null;
     currentVersionId = null;
     networkName = data.name || null;
@@ -119,6 +148,9 @@
     AwsViz.render(data, enriched);
     if (window.AwsViz3D && window.AwsViz3D.isReady()) {
       window.AwsViz3D.render(data, opts);
+    }
+    if (window.AwsMap && window.AwsMap.isReady()) {
+      window.AwsMap.render(data);
     }
     updateSummary(data);
     updateBrandFor(data);
@@ -446,17 +478,22 @@
   function setMode(next) {
     if (next === mode) return;
     mode = next;
-    document.body.classList.toggle("mode-3d", mode === "3d");
-    els.mode2d.classList.toggle("is-active", mode === "2d");
-    els.mode3d.classList.toggle("is-active", mode === "3d");
-    els.mode2d.setAttribute("aria-pressed", mode === "2d" ? "true" : "false");
-    els.mode3d.setAttribute("aria-pressed", mode === "3d" ? "true" : "false");
-    els.diagram.style.display = mode === "2d" ? "" : "none";
-    els.stage3d.hidden = mode !== "3d";
-    els.hint3d.hidden = mode !== "3d";
-    els.exploreBtn.hidden = mode !== "3d";
-    els.attackBtn.hidden = mode !== "3d";
-    if (mode !== "3d") {
+    const is2d = mode === "2d", is3d = mode === "3d", isMap = mode === "map";
+    document.body.classList.toggle("mode-3d", is3d);
+    document.body.classList.toggle("mode-map", isMap);
+    els.mode2d.classList.toggle("is-active", is2d);
+    els.mode3d.classList.toggle("is-active", is3d);
+    if (els.modeMap) els.modeMap.classList.toggle("is-active", isMap);
+    els.mode2d.setAttribute("aria-pressed", is2d ? "true" : "false");
+    els.mode3d.setAttribute("aria-pressed", is3d ? "true" : "false");
+    if (els.modeMap) els.modeMap.setAttribute("aria-pressed", isMap ? "true" : "false");
+    els.diagram.style.display = is2d ? "" : "none";
+    els.stage3d.hidden = !is3d;
+    if (els.stageMap) els.stageMap.hidden = !isMap;
+    els.hint3d.hidden = !is3d;
+    els.exploreBtn.hidden = !is3d;
+    els.attackBtn.hidden = !is3d;
+    if (!is3d) {
       if (window.AwsViz3D && window.AwsViz3D.isExploring()) {
         window.AwsViz3D.exitExplore();
         els.exploreHud.hidden = true;
@@ -488,10 +525,35 @@
       };
       tryInit();
     }
+
+    if (isMap) {
+      // Lazy-init the geographic map. MapLibre GL is loaded from a CDN and may
+      // not be ready yet on a slow connection.
+      const tryInitMap = (attempts = 25) => {
+        if (window.AwsMap && window.maplibregl) {
+          // Seed the theme before init() builds the map so the initial base
+          // style matches; setTheme is a no-op (just records the value) until ready.
+          if (window.AwsMap.setTheme) window.AwsMap.setTheme(theme);
+          if (!window.AwsMap.isReady()) window.AwsMap.init(els.stageMap);
+          window.AwsMap.resize();
+          if (currentData) window.AwsMap.render(currentData);
+          // Re-arm the zoom-to-drill hand-off and zoom back out, so returning
+          // from the holographic view doesn't instantly re-trigger.
+          if (window.AwsMap.armDrill) window.AwsMap.armDrill();
+        } else if (attempts > 0) {
+          setTimeout(() => tryInitMap(attempts - 1), 120);
+        } else {
+          alert("Map view couldn't load — MapLibre GL failed to load (you may be offline).");
+          setMode("2d");
+        }
+      };
+      tryInitMap();
+    }
   }
 
   els.mode2d.addEventListener("click", () => setMode("2d"));
   els.mode3d.addEventListener("click", () => setMode("3d"));
+  if (els.modeMap) els.modeMap.addEventListener("click", () => setMode("map"));
 
   // ---- Boundary slider + highlight toggle ----
   // The slider snaps to each snapshot index. Each scrub silently swaps the
@@ -533,6 +595,9 @@
       theme === "day" ? "Switch to night theme" : "Switch to day theme");
     if (window.AwsViz3D && window.AwsViz3D.setTheme) {
       window.AwsViz3D.setTheme(theme);
+    }
+    if (window.AwsMap && window.AwsMap.isReady()) {
+      window.AwsMap.setTheme(theme);
     }
   }
 
@@ -1187,8 +1252,582 @@
     ],
   };
 
+  // ============================================================
+  //   Holographic (boundary) mode wiring
+  // ============================================================
+
+  let currentBoundary = null;
+  // ZoomLevel — 0 = Holonic Control View, 1 = Holonic View, 2 = Holon Detail.
+  let ZoomLevel = 0;
+  let currentHolonicId = null;
+  let currentHolonId = null;
+
+  window.AwsHoloApp = {
+    getLevel: () => ZoomLevel,
+    getHolonicId: () => currentHolonicId,
+    getHolonId: () => currentHolonId,
+    getBoundary: () => currentBoundary,
+    setLevel: (lvl, holonicId, holonId) => holoNavigate(lvl, holonicId, holonId),
+  };
+
+  /**
+   * Try to normalise an arbitrary payload into a boundary object so the
+   * holographic renderer can display it. Returns null when the data
+   * doesn't look holographic at all.
+   * @param {*} data
+   * @returns {object|null}
+   */
+  function tryWrapAsBoundary(data) {
+    if (!data || typeof data !== "object") return null;
+    if (data.entityType === "boundary") return data;
+    const hasHolons = Array.isArray(data.holons);
+    const hasHolonics = Array.isArray(data.holonics);
+    const hasLoose = Array.isArray(data.loose_holons);
+    if (!hasHolons && !hasHolonics && !hasLoose) return null;
+    return {
+      id: data.id || "boundary-imported",
+      entityType: "boundary",
+      label: data.label || data.name || "Imported holons",
+      environment: data.environment || "dev",
+      role: data.role || "supplier",
+      snapshotAt: data.snapshotAt || new Date().toISOString(),
+      schemaVersion: data.schemaVersion || "1.0.0",
+      holonics: data.holonics || [],
+      loose_holons: data.loose_holons || data.holons || [],
+      meta: data.meta || {},
+    };
+  }
+
+  /**
+   * Render a boundary (holographic) snapshot. Switches the stage from the
+   * legacy AWS diagram to the holographic 2D/3D pipeline.
+   * @param {object} data
+   */
+  function loadBoundary(data) {
+    currentBoundary = data;
+    currentData = null;
+    currentVersions = null;
+    currentVersionId = null;
+    networkName = data.label || null;
+    document.body.classList.add("mode-holographic");
+    els.timelinePanel.hidden = true;
+    els.boundaryPanel.hidden = true;
+    if (els.holoBreadcrumb) els.holoBreadcrumb.hidden = false;
+    if (els.holoWatermark) els.holoWatermark.hidden = false;
+    if (els.holoStarfield) els.holoStarfield.hidden = false;
+    if (els.asmFilterBar) els.asmFilterBar.hidden = false;
+    if (els.holoViewHint) els.holoViewHint.hidden = false;
+    if (window.AwsHoloViz) window.AwsHoloViz.reset();
+    ZoomLevel = 0;
+    currentHolonicId = null;
+    currentHolonId = null;
+    // Toggle the right stage so 2D ↔ 3D works regardless of prior mode.
+    if (els.stage3d) els.stage3d.hidden = true;
+    if (els.stageHolo) els.stageHolo.hidden = mode !== "3d";
+    els.diagram.style.display = mode === "2d" ? "" : "none";
+    if (mode === "2d") {
+      window.AwsHoloViz.renderHolonicControlView(data);
+    } else {
+      ensureHolo3DReady().then(() => {
+        if (window.AwsHoloViz3D) window.AwsHoloViz3D.renderHolonicControlView(data);
+      });
+    }
+    updateBoundarySummary(data);
+    updateBreadcrumb();
+    fadeHint();
+    document.title = `${data.label || "Holographic boundary"} — Visualizer`;
+  }
+
+  /**
+   * Tear down boundary mode visuals when the user loads a legacy network.
+   */
+  function exitBoundaryMode() {
+    currentBoundary = null;
+    ZoomLevel = 0;
+    currentHolonicId = null;
+    currentHolonId = null;
+    document.body.classList.remove("mode-holographic");
+    if (els.holoBreadcrumb) els.holoBreadcrumb.hidden = true;
+    if (els.holoWatermark) els.holoWatermark.hidden = true;
+    if (els.holoStarfield) els.holoStarfield.hidden = true;
+    if (els.holoDetail) els.holoDetail.hidden = true;
+    if (els.asmFilterBar) els.asmFilterBar.hidden = true;
+    if (els.holoViewHint) els.holoViewHint.hidden = true;
+    document.body.classList.remove("holo-l0", "holo-l1", "holo-l2");
+    // Hide the holographic 3D stage and restore the legacy stage(s) for
+    // the current viewing mode, otherwise the boundary spheres linger on
+    // top of the AWS view after the user clicks "Exit boundary".
+    if (els.stageHolo) els.stageHolo.hidden = true;
+    els.diagram.style.display = mode === "2d" ? "" : "none";
+    if (els.stage3d) els.stage3d.hidden = mode !== "3d";
+  }
+
+  /**
+   * Lazy-init the holographic 3D scene the first time the user enters it.
+   * @returns {Promise<void>}
+   */
+  function ensureHolo3DReady() {
+    return new Promise((resolve) => {
+      const tryInit = (n = 30) => {
+        if (window.AwsHoloViz3D) {
+          if (!window.AwsHoloViz3D.isReady()) {
+            window.AwsHoloViz3D.init(els.stageHolo);
+          }
+          resolve();
+        } else if (n > 0) {
+          setTimeout(() => tryInit(n - 1), 80);
+        } else {
+          resolve();
+        }
+      };
+      tryInit();
+    });
+  }
+
+  /**
+   * Drive both the 2D and 3D holographic renderers to the requested level.
+   * @param {0|1|2} lvl
+   * @param {string|null} holonicId
+   * @param {string|null} holonId
+   */
+  function holoNavigate(lvl, holonicId, holonId) {
+    if (!currentBoundary) return;
+    ZoomLevel = lvl;
+    currentHolonicId = holonicId || null;
+    currentHolonId = holonId || null;
+    if (mode === "2d") {
+      if (lvl === 0) window.AwsHoloViz.renderHolonicControlView(currentBoundary);
+      else if (lvl === 1) window.AwsHoloViz.renderHolonicView(holonicId, currentBoundary);
+      else window.AwsHoloViz.renderHolonDetailView(holonId, currentBoundary);
+    } else if (window.AwsHoloViz3D && window.AwsHoloViz3D.isReady()) {
+      if (lvl === 0) window.AwsHoloViz3D.renderHolonicControlView(currentBoundary);
+      else if (lvl === 1) window.AwsHoloViz3D.renderHolonicView(holonicId, currentBoundary);
+      else window.AwsHoloViz3D.renderHolonDetailView(holonId, currentBoundary);
+    }
+    if (lvl !== 2 && els.holoDetail) els.holoDetail.hidden = true;
+    updateBreadcrumb();
+  }
+
+  /**
+   * Refresh the boundary > holonic > holon breadcrumb to reflect the
+   * current ZoomLevel.
+   */
+  function updateBreadcrumb() {
+    if (!els.holoBreadcrumb || !currentBoundary) return;
+    const sep2 = document.getElementById("holo-crumb-sep-2");
+    const crumbHolonic = document.getElementById("holo-crumb-holonic");
+    const crumbHolon = document.getElementById("holo-crumb-holon");
+    const back = document.getElementById("holo-back");
+
+    if (ZoomLevel >= 1 && currentHolonicId) {
+      const hc = window.AwsHoloViz.findHolonic(currentHolonicId);
+      crumbHolonic.textContent = (hc && hc.label) || currentHolonicId;
+      crumbHolonic.hidden = false;
+    } else {
+      crumbHolonic.hidden = true;
+    }
+    if (ZoomLevel >= 2 && currentHolonId) {
+      const h = window.AwsHoloViz.findHolon(currentHolonId);
+      crumbHolon.textContent = (h && h.label) || currentHolonId;
+      crumbHolon.hidden = false;
+      sep2.hidden = false;
+    } else {
+      crumbHolon.hidden = true;
+      sep2.hidden = true;
+    }
+    back.hidden = ZoomLevel === 0;
+
+    // Body class drives the CSS background swap (starfield ↔ quantum tint).
+    document.body.classList.remove("holo-l0", "holo-l1", "holo-l2");
+    document.body.classList.add(`holo-l${ZoomLevel}`);
+
+    if (els.holoViewHint) {
+      const hints = {
+        0: "<b>Holonic Control View</b> · each sphere is a holonic — click one to expand its holons",
+        1: "<b>Holonic View</b> · holons orbiting their cluster — click one for full detail",
+        2: "<b>Holon Detail</b> · see the panel on the right · Back returns to the cluster",
+      };
+      els.holoViewHint.innerHTML = hints[ZoomLevel] || "";
+    }
+  }
+
+  /**
+   * Update the sidebar summary so the user sees the boundary's identity.
+   * @param {object} data
+   */
+  function updateBoundarySummary(data) {
+    els.netName.textContent = data.label || "Holographic boundary";
+    const passCount = (data.loose_holons || []).filter((h) => h.status === "pass").length;
+    els.netMeta.textContent =
+      `${(data.holonics || []).length} holonics · ${(data.loose_holons || []).length} holons · ` +
+      `${passCount} pass · env=${data.environment || "—"} · role=${data.role || "—"}`;
+    const heading = document.querySelector(".brand h1");
+    if (heading) heading.textContent = "Holographic Assessment Visualizer";
+  }
+
+  // Render Level-2 detail panel.
+  function renderHolonDetail(holon) {
+    if (!els.holoDetail || !holon) return;
+    els.holoDetail.hidden = false;
+    document.getElementById("holo-detail-title").textContent = holon.label || holon.id;
+    const hashShort = (holon.hash || "").slice(0, 12) + (holon.hash ? "…" : "");
+    const refs = (holon.meta && holon.meta.references) || [];
+    const chain = (holon.provenance && holon.provenance.chain) || [];
+    const lockIcon = holon.immutable
+      ? '<span class="holo-badge lock" title="Immutable evidence">🔒 immutable</span>'
+      : '<span class="holo-badge warn" title="Source can still be re-written">⚠️ mutable</span>';
+    const body = document.getElementById("holo-detail-body");
+    body.innerHTML = `
+      <dl class="holo-dl">
+        ${ontologyRow(holon)}
+        <dt>Assessment</dt><dd>${esc(holon.assessmentType)} · ${esc(holon.subtype)}</dd>
+        <dt>Target</dt><dd>${esc(holon.target || "—")}</dd>
+        <dt>Status</dt><dd><span class="status-pill status-${esc(holon.status)}">${esc(holon.status)}</span></dd>
+        <dt>Severity</dt><dd><span class="sev-pill sev-${esc(holon.severity)}">${esc(holon.severity)}</span></dd>
+        <dt>Score</dt><dd>${esc(String(Math.round(holon.score || 0)))}/100</dd>
+        <dt>Timestamp</dt><dd>${esc(holon.timestamp || "—")}</dd>
+        <dt>Hash</dt><dd>
+          <code class="holo-hash" id="holo-hash">${esc(hashShort)}</code>
+          ${lockIcon}
+          <button class="btn ghost holo-mini" id="holo-copy-hash" type="button" data-hash="${esc(holon.hash || "")}">Copy Hash</button>
+        </dd>
+        <dt>Source</dt><dd>${esc(holon.source || "—")}</dd>
+        <dt>Collected by</dt><dd>${esc(holon.provenance && holon.provenance.collectedBy || "—")}</dd>
+        <dt>Verified at</dt><dd>${esc(holon.provenance && holon.provenance.verifiedAt || "unverified")}</dd>
+        ${chain.length ? `<dt>Chain</dt><dd>${chain.map((c) => `<code>${esc(c)}</code>`).join(" → ")}</dd>` : ""}
+      </dl>
+      ${assemblySection(holon)}
+      <div class="holo-desc">
+        <h4>Description</h4>
+        <p>${esc(holon.meta && holon.meta.description || "—")}</p>
+      </div>
+      ${holon.meta && holon.meta.remediation ? `<div class="holo-desc"><h4>Remediation</h4><p>${esc(holon.meta.remediation)}</p></div>` : ""}
+      ${refs.length ? `<div class="holo-desc"><h4>References</h4><ul>${refs.map((u) => `<li><a target="_blank" rel="noopener" href="${esc(u)}">${esc(u)}</a></li>`).join("")}</ul></div>` : ""}
+    `;
+    const btn = document.getElementById("holo-copy-hash");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        const fullHash = btn.getAttribute("data-hash") || "";
+        navigator.clipboard.writeText(fullHash).then(() => showHoloToast("Hash copied to clipboard"));
+      });
+    }
+    body.querySelectorAll("[data-nav-entity]").forEach((el) => {
+      el.addEventListener("click", () => navigateToEntity(el.getAttribute("data-nav-entity")));
+    });
+  }
+
+  /**
+   * Build the ontology row (entityClass + provider badge) for the detail panel.
+   * @param {object} entity
+   * @returns {string}
+   */
+  function ontologyRow(entity) {
+    if (!entity.entityClass) return "";
+    const r = window.OntologyRenderer;
+    const badge = r ? r.getProviderBadge(entity.provider, entity.providerType) : entity.provider;
+    const icon = r ? r.getRenderProps(entity.entityClass).icon : "◯";
+    return `<dt>Class</dt><dd>${esc(icon)} ${esc(entity.entityClass)} <span class="ont-cat">${esc(entity.entityCategory || "")}</span></dd>
+      <dt>Provider</dt><dd><span class="ont-provider-chip prov-${esc(entity.provider || "agnostic")}">${esc(badge)}</span></dd>`;
+  }
+
+  /**
+   * Build the ASSEMBLY section: level badge, context, clickable children,
+   * and a clickable parent link.
+   * @param {object} entity
+   * @returns {string}
+   */
+  function assemblySection(entity) {
+    if (entity.assemblyLevel == null) return "";
+    const a = window.OntologyAssembly;
+    const label = a ? a.getAssemblyLabel(entity.assemblyLevel) : `Level ${entity.assemblyLevel}`;
+    const icon = ["⬥", "◈", "◉", "⬡", "⊕"][entity.assemblyLevel] || "⬥";
+    const kids = entity.atomicChildren || [];
+    const childLinks = kids.length
+      ? kids.map((id) => `<button class="asm-link" data-nav-entity="${esc(id)}">${esc(entityLabel(id))}</button>`).join(" ")
+      : '<span class="muted small">none (atomic)</span>';
+    const parent = entity.assembledInto
+      ? `<button class="asm-link" data-nav-entity="${esc(entity.assembledInto)}">${esc(entityLabel(entity.assembledInto))}</button>`
+      : '<span class="muted small">none (top level)</span>';
+    return `
+      <div class="holo-desc asm-section">
+        <h4>Assembly</h4>
+        <dl class="holo-dl">
+          <dt>Level</dt><dd><span class="asm-badge-pill asm-${entity.assemblyLevel}">${icon} ${entity.assemblyLevel}</span> ${esc(label)}</dd>
+          <dt>Context</dt><dd>${esc(entity.assemblyContext || "—")}</dd>
+          <dt>Children</dt><dd class="asm-link-list">${childLinks}</dd>
+          <dt>Part of</dt><dd>${parent}</dd>
+        </dl>
+      </div>`;
+  }
+
+  /**
+   * Resolve an entity id to a display label from the active boundary.
+   * @param {string} id
+   * @returns {string}
+   */
+  function entityLabel(id) {
+    if (!currentBoundary || !window.AwsHoloViz) return id;
+    const all = window.AwsHoloViz.allEntities ? window.AwsHoloViz.allEntities() : [];
+    const e = all.find((x) => x.id === id);
+    return (e && e.label) || id;
+  }
+
+  /**
+   * Navigate the visualizer to a given entity id, choosing the right zoom
+   * level based on whether it is a holonic or a holon.
+   * @param {string} id
+   */
+  function navigateToEntity(id) {
+    if (!currentBoundary) return;
+    const hc = (currentBoundary.holonics || []).find((x) => x.id === id);
+    if (hc) { holoNavigate(1, id, null); return; }
+    const holon = (currentBoundary.loose_holons || []).find((x) => x.id === id);
+    if (holon) {
+      const owning = (currentBoundary.holonics || []).find((x) => (x.holons || []).includes(id));
+      holoNavigate(2, owning ? owning.id : currentHolonicId, id);
+    } else {
+      showHoloToast(`${entityLabel(id)} is an assembly node (not directly rendered).`);
+    }
+  }
+
+  /**
+   * Show a transient toast notification.
+   * @param {string} msg
+   */
+  function showHoloToast(msg) {
+    if (!els.holoToast) return;
+    els.holoToast.textContent = msg;
+    els.holoToast.hidden = false;
+    clearTimeout(els.holoToast._t);
+    els.holoToast._t = setTimeout(() => { els.holoToast.hidden = true; }, 2200);
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // Cache DOM refs for the new boundary UI.
+  els.holoBreadcrumb = document.getElementById("holo-breadcrumb");
+  els.holoWatermark = document.getElementById("holo-watermark");
+  els.holoStarfield = document.getElementById("holo-starfield");
+  els.holoDetail = document.getElementById("holo-detail");
+  els.holoToast = document.getElementById("holo-toast");
+  els.stageHolo = document.getElementById("stage-holo");
+  els.catalogSidebar = document.getElementById("catalog-sidebar");
+  els.sidebarToggle = document.getElementById("sidebar-toggle");
+  els.loadBoundary = document.getElementById("load-boundary");
+  els.asmFilterBar = document.getElementById("asm-filter-bar");
+  els.holoViewHint = document.getElementById("holo-view-hint");
+
+  // Assembly-level filter toolbar (multi-select pills).
+  const asmSelected = new Set();
+  if (els.asmFilterBar) {
+    els.asmFilterBar.addEventListener("click", (e) => {
+      const pill = e.target.closest(".asm-pill");
+      if (!pill) return;
+      const v = pill.getAttribute("data-asm");
+      if (v === "all") {
+        asmSelected.clear();
+        els.asmFilterBar.querySelectorAll(".asm-pill").forEach((p) => p.classList.remove("is-active"));
+        pill.classList.add("is-active");
+      } else {
+        const lvl = Number(v);
+        if (asmSelected.has(lvl)) asmSelected.delete(lvl);
+        else asmSelected.add(lvl);
+        pill.classList.toggle("is-active", asmSelected.has(lvl));
+        const allPill = els.asmFilterBar.querySelector('[data-asm="all"]');
+        if (allPill) allPill.classList.toggle("is-active", asmSelected.size === 0);
+      }
+      applyAssemblyFilterBothViews(asmSelected.size ? asmSelected : null);
+    });
+  }
+
+  /**
+   * Apply the assembly-level filter to whichever view is active (the 2D
+   * SVG nodes and/or the 3D holographic meshes).
+   * @param {Set<number>|null} sel
+   */
+  function applyAssemblyFilterBothViews(sel) {
+    if (window.AwsHoloViz && window.AwsHoloViz.applyAssemblyFilter) {
+      window.AwsHoloViz.applyAssemblyFilter(sel);
+    }
+    if (window.AwsHoloViz3D && window.AwsHoloViz3D.isReady() && window.AwsHoloViz3D.applyAssemblyFilter) {
+      window.AwsHoloViz3D.applyAssemblyFilter(sel);
+    }
+  }
+
+  // Wire up breadcrumb navigation.
+  if (els.holoBreadcrumb) {
+    els.holoBreadcrumb.addEventListener("click", (e) => {
+      const t = e.target.closest("[data-level]");
+      if (!t) return;
+      const lvl = Number(t.getAttribute("data-level"));
+      if (lvl === 0) holoNavigate(0, null, null);
+      else if (lvl === 1 && currentHolonicId) holoNavigate(1, currentHolonicId, null);
+      else if (lvl === 2 && currentHolonId) holoNavigate(2, currentHolonicId, currentHolonId);
+    });
+    const back = document.getElementById("holo-back");
+    if (back) back.addEventListener("click", () => {
+      if (ZoomLevel === 2) holoNavigate(1, currentHolonicId, null);
+      else if (ZoomLevel === 1) holoNavigate(0, null, null);
+    });
+    const exit = document.getElementById("holo-exit");
+    if (exit) exit.addEventListener("click", async () => {
+      exitBoundaryMode();
+      try {
+        const res = await fetch("sample-network.json");
+        if (res.ok) { loadData(await res.json()); return; }
+      } catch (_) { /* offline / file:// */ }
+      if (typeof EMBEDDED_SAMPLE !== "undefined") loadData(EMBEDDED_SAMPLE);
+      showHoloToast("Returned to network view");
+    });
+  }
+  if (els.holoDetail) {
+    const close = document.getElementById("holo-detail-close");
+    if (close) close.addEventListener("click", () => { els.holoDetail.hidden = true; });
+  }
+
+  // Catalog sidebar toggle.
+  if (els.sidebarToggle && els.catalogSidebar) {
+    els.sidebarToggle.addEventListener("click", () => {
+      els.catalogSidebar.hidden = !els.catalogSidebar.hidden;
+      document.body.classList.toggle("sidebar-open", !els.catalogSidebar.hidden);
+    });
+    const closeBtn = document.getElementById("catalog-close");
+    if (closeBtn) closeBtn.addEventListener("click", () => {
+      els.catalogSidebar.hidden = true;
+      document.body.classList.remove("sidebar-open");
+    });
+  }
+
+  // Load boundary button — fetches the sample boundary JSON.
+  if (els.loadBoundary) {
+    els.loadBoundary.addEventListener("click", async () => {
+      try {
+        const res = await fetch("data/sample-boundary.json");
+        const data = await res.json();
+        loadData(data);
+      } catch (err) {
+        alert("Could not load sample boundary: " + err.message);
+      }
+    });
+  }
+
+  // Hook holographic renderer events into the app shell.
+  if (window.AwsHoloViz) {
+    window.AwsHoloViz.onLevelChange = (lvl, holonicId, holonId) => {
+      ZoomLevel = lvl;
+      currentHolonicId = holonicId;
+      currentHolonId = holonId;
+      updateBreadcrumb();
+      if (lvl !== 2 && els.holoDetail) els.holoDetail.hidden = true;
+      // Mirror in 3D if active.
+      if (mode === "3d" && window.AwsHoloViz3D && window.AwsHoloViz3D.isReady()) {
+        if (lvl === 0) window.AwsHoloViz3D.renderHolonicControlView(currentBoundary);
+        else if (lvl === 1) window.AwsHoloViz3D.renderHolonicView(holonicId, currentBoundary);
+        else window.AwsHoloViz3D.renderHolonDetailView(holonId, currentBoundary);
+      }
+    };
+    window.AwsHoloViz.onSelectHolon = (holon) => {
+      currentHolonId = holon.id;
+      renderHolonDetail(holon);
+      updateBreadcrumb();
+    };
+  }
+  // The 3D module loads asynchronously; poll briefly until it's there.
+  (function bindHolo3DEvents(retries) {
+    if (window.AwsHoloViz3D) {
+      window.AwsHoloViz3D.onLevelChange = (lvl, holonicId, holonId) => {
+        ZoomLevel = lvl;
+        currentHolonicId = holonicId;
+        currentHolonId = holonId;
+        updateBreadcrumb();
+        if (lvl !== 2 && els.holoDetail) els.holoDetail.hidden = true;
+        if (mode === "2d" && window.AwsHoloViz) {
+          if (lvl === 0) window.AwsHoloViz.renderHolonicControlView(currentBoundary);
+          else if (lvl === 1) window.AwsHoloViz.renderHolonicView(holonicId, currentBoundary);
+          else window.AwsHoloViz.renderHolonDetailView(holonId, currentBoundary);
+        }
+      };
+      window.AwsHoloViz3D.onSelectHolon = (holon) => {
+        currentHolonId = holon.id;
+        renderHolonDetail(holon);
+        updateBreadcrumb();
+      };
+    } else if (retries > 0) {
+      setTimeout(() => bindHolo3DEvents(retries - 1), 100);
+    }
+  })(30);
+
+  // Patch setMode so it also routes holographic data correctly between stages.
+  const _origSetMode = setMode;
+  setMode = function (next) {
+    _origSetMode(next);
+    // Show / hide holographic stages alongside the legacy stage-3d toggling.
+    if (els.stageHolo) {
+      const showHolo = currentBoundary && next === "3d";
+      els.stageHolo.hidden = !showHolo;
+      // The legacy AWS 3D city is for legacy AWS data only.
+      if (currentBoundary) els.stage3d.hidden = true;
+    }
+    if (currentBoundary) {
+      els.diagram.style.display = next === "2d" ? "" : "none";
+      if (next === "3d") {
+        ensureHolo3DReady().then(() => {
+          if (ZoomLevel === 0) window.AwsHoloViz3D.renderHolonicControlView(currentBoundary);
+          else if (ZoomLevel === 1) window.AwsHoloViz3D.renderHolonicView(currentHolonicId, currentBoundary);
+          else window.AwsHoloViz3D.renderHolonDetailView(currentHolonId, currentBoundary);
+        });
+      } else if (next === "2d") {
+        if (ZoomLevel === 0) window.AwsHoloViz.renderHolonicControlView(currentBoundary);
+        else if (ZoomLevel === 1) window.AwsHoloViz.renderHolonicView(currentHolonicId, currentBoundary);
+        else window.AwsHoloViz.renderHolonDetailView(currentHolonId, currentBoundary);
+      }
+    }
+  };
+
+  // Catalog: wire up the catalog renderer once both this script and
+  // catalog.js have loaded.
+  if (window.AwsCatalog) {
+    window.AwsCatalog.mount({
+      onLoad: (data) => loadData(data),
+      onToast: showHoloToast,
+    });
+  } else {
+    document.addEventListener("DOMContentLoaded", () => {
+      if (window.AwsCatalog) {
+        window.AwsCatalog.mount({
+          onLoad: (data) => loadData(data),
+          onToast: showHoloToast,
+        });
+      }
+    });
+  }
+
+  // Wizard → Visualizer handoff. When the user clicks "Load into Visualizer"
+  // in the wizard, the generated JSON is parked in sessionStorage; on the
+  // next page load we pick it up and route it through loadData.
+  function consumeWizardHandoff() {
+    try {
+      const raw = sessionStorage.getItem("holo-wizard-pending");
+      if (!raw) return false;
+      sessionStorage.removeItem("holo-wizard-pending");
+      const data = JSON.parse(raw);
+      loadData(data);
+      showHoloToast("Loaded wizard integration.");
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Auto-load the sample on first paint so the page never starts empty.
   window.addEventListener("DOMContentLoaded", async () => {
+    if (consumeWizardHandoff()) return;
     try {
       const res = await fetch("sample-network.json");
       if (res.ok) {

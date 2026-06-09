@@ -1,0 +1,16 @@
+# OSIRIS (vendored Next.js app) build & dependency artifacts
+osiris/node_modules/
+osiris/.next/
+osiris/out/
+osiris/build/
+osiris/.vercel/
+
+# Environment files (never commit secrets / API keys)
+.env
+.env.local
+osiris/.env
+osiris/.env*.local
+
+# OS / editor noise
+.DS_Store
+*.log

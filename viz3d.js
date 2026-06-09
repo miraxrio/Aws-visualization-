@@ -4057,3 +4057,1173 @@ window.AwsViz3D = {
   })),
   isReady: () => initialized,
 };
+
+// ============================================================
+//  Holographic Assessment Principle — 3D renderer
+// ============================================================
+// Independent scene/renderer pipeline so the 3D holographic view stays
+// distinct from the AWS "city" 3D view above. Mounts on its own canvas
+// inside #stage-holo when init() is called.
+
+const HOLO_STATUS_COLOR = {
+  pass: 0x22c55e,
+  fail: 0xef4444,
+  "partial-fail": 0xf97316,
+  pending: 0xa3a3a3,
+  unknown: 0x6b7280,
+};
+const HOLO_SEVERITY_RADIUS = {
+  critical: 1.5,
+  high: 1.2,
+  medium: 0.9,
+  low: 0.6,
+  info: 0.4,
+};
+// Target camera distances per zoom level — dollying between them on
+// navigation gives the "zoom into the element" feel.
+const HOLO_LEVEL_DISTANCE = { 0: 32, 1: 26, 2: 18 };
+
+const holo = {
+  initialized: false,
+  scene: null,
+  camera: null,
+  renderer: null,
+  group: null,
+  orbitGroup: null,
+  labels: [],
+  container: null,
+  raf: null,
+  rotate: true,
+  drag: { active: false, x: 0, y: 0, rotX: 0.0, rotY: 0.0 },
+  state: { level: 0, holonicId: null, holonId: null },
+  boundary: null,
+  pulseMesh: null,
+  starfield: null,
+  hoverPause: false,
+  raycaster: null,
+  pointer: null,
+  clickables: new Map(),
+  camTween: null,
+  orbiters: [],
+  orbitEdges: [],
+  asmFilter: null,
+  quantumField: null,
+};
+
+/**
+ * Initialise the holographic 3D scene inside a container element.
+ * Safe to call multiple times — re-init is a no-op.
+ * @param {HTMLElement} container
+ */
+function holoInit(container) {
+  if (holo.initialized) return;
+  holo.container = container;
+  holo.scene = new THREE.Scene();
+  // No scene background — the renderer clears with alpha 0 so the CSS
+  // nebula gradients on .stage / .stage-holo show through the canvas.
+  holo.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+  // Bird's-eye angle so the ring sits in the middle of the viewport
+  // instead of slumping to the bottom. lookAt is re-applied every frame
+  // (in holoAnimate) so wheel zoom and drag don't drift the framing.
+  holo.camera.position.set(0, 18, 24);
+  holo.camera.lookAt(0, 1.5, 0);
+  holo.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  holo.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  holo.renderer.setClearColor(0x000000, 0);
+  container.appendChild(holo.renderer.domElement);
+
+  holo.group = new THREE.Group();
+  holo.scene.add(holo.group);
+
+  const ambient = new THREE.AmbientLight(0xb6c8ff, 1.0);
+  holo.scene.add(ambient);
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(10, 22, 12);
+  holo.scene.add(dir);
+  const rim = new THREE.PointLight(0x88aaff, 1.6, 220);
+  rim.position.set(-12, 10, -10);
+  holo.scene.add(rim);
+  const fill = new THREE.PointLight(0xffd6a3, 0.8, 200);
+  fill.position.set(14, -2, 14);
+  holo.scene.add(fill);
+
+  holo.starfield = makeStarfield(2000);
+  holo.scene.add(holo.starfield);
+
+  // Quantum-realm electric field shown at Level 1+ in place of stars.
+  holo.quantumField = makeQuantumField(900);
+  holo.quantumField.visible = false;
+  holo.scene.add(holo.quantumField);
+
+  holo.raycaster = new THREE.Raycaster();
+  holo.pointer = new THREE.Vector2();
+
+  attachHoloPointer();
+  holoResize();
+  const ro = new ResizeObserver(() => holoResize());
+  ro.observe(container);
+
+  holo.initialized = true;
+  holoAnimate();
+}
+
+/**
+ * Build a particle starfield by allocating random 3D points on a unit sphere.
+ * @param {number} count
+ * @returns {THREE.Points}
+ */
+function makeStarfield(count) {
+  const geom = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const u = Math.random() * 2 - 1;
+    const t = Math.random() * Math.PI * 2;
+    const r = 320 + Math.random() * 60;
+    const s = Math.sqrt(1 - u * u);
+    positions[i * 3] = r * s * Math.cos(t);
+    positions[i * 3 + 1] = r * u;
+    positions[i * 3 + 2] = r * s * Math.sin(t);
+  }
+  geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xcfe0ff,
+    map: ensureHoloGlowTexture(),
+    size: 6,
+    transparent: true,
+    opacity: 0.85,
+    sizeAttenuation: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  return new THREE.Points(geom, mat);
+}
+
+/**
+ * Build the quantum-realm electric field — a dense cloud of cyan-blue
+ * particles that jitter around their base position to suggest crackling
+ * energy. Replaces the starfield at Level 1+ in the holographic view.
+ * @param {number} count
+ * @returns {THREE.Points}
+ */
+function makeQuantumField(count) {
+  const geom = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const base = new Float32Array(count * 3);
+  const phase = new Float32Array(count);
+  const speed = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const r = 60 + Math.random() * 220;
+    const u = Math.random() * 2 - 1;
+    const t = Math.random() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    const x = r * s * Math.cos(t);
+    const y = r * u;
+    const z = r * s * Math.sin(t);
+    positions[i * 3] = base[i * 3] = x;
+    positions[i * 3 + 1] = base[i * 3 + 1] = y;
+    positions[i * 3 + 2] = base[i * 3 + 2] = z;
+    phase[i] = Math.random() * Math.PI * 2;
+    speed[i] = 0.4 + Math.random() * 1.8;
+  }
+  geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0x6ad6ff,
+    map: ensureHoloGlowTexture(),
+    size: 5.5,
+    transparent: true,
+    opacity: 0.85,
+    sizeAttenuation: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const pts = new THREE.Points(geom, mat);
+  pts.userData = { base, phase, speed };
+  return pts;
+}
+
+/**
+ * Swap the in-scene backdrop between the starfield (Level 0) and the
+ * jittering quantum field (Level 1+). The body class is toggled by
+ * app.js so CSS overlays react in lockstep.
+ * @param {boolean} active true → quantum field
+ */
+function setQuantumBackground(active) {
+  if (holo.starfield) holo.starfield.visible = !active;
+  if (holo.quantumField) holo.quantumField.visible = !!active;
+}
+
+/**
+ * Resize the holographic renderer to its container's current size.
+ */
+function holoResize() {
+  if (!holo.container || !holo.renderer || !holo.camera) return;
+  const w = holo.container.clientWidth || 800;
+  const h = holo.container.clientHeight || 600;
+  holo.camera.aspect = w / h;
+  holo.camera.updateProjectionMatrix();
+  holo.renderer.setSize(w, h, false);
+}
+
+/**
+ * Bind manual drag-to-rotate, click-to-select, and hover pause to the canvas.
+ * Replaces OrbitControls (which is unavailable in this Three.js build for
+ * holographic mode by design).
+ */
+function attachHoloPointer() {
+  const dom = holo.renderer.domElement;
+  dom.addEventListener("mousedown", (e) => {
+    holo.drag.active = true;
+    holo.drag.x = e.clientX;
+    holo.drag.y = e.clientY;
+  });
+  window.addEventListener("mouseup", () => { holo.drag.active = false; });
+  window.addEventListener("mousemove", (e) => {
+    if (!holo.drag.active) return;
+    const dx = e.clientX - holo.drag.x;
+    const dy = e.clientY - holo.drag.y;
+    holo.drag.rotY += dx * 0.005;
+    holo.drag.rotX = Math.max(-1.1, Math.min(1.1, holo.drag.rotX + dy * 0.005));
+    holo.drag.x = e.clientX;
+    holo.drag.y = e.clientY;
+  });
+  dom.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const z = holo.camera.position.length();
+    const next = Math.max(10, Math.min(120, z + e.deltaY * 0.05));
+    holo.camera.position.setLength(next);
+    holo.camera.lookAt(0, 1.5, 0);
+  }, { passive: false });
+  dom.addEventListener("mouseenter", () => { holo.hoverPause = true; });
+  dom.addEventListener("mouseleave", () => {
+    holo.hoverPause = false;
+    const tip = document.getElementById("holo-hover-tip");
+    if (tip) tip.hidden = true;
+  });
+  dom.addEventListener("click", onHoloClick);
+  dom.addEventListener("pointermove", onHoloHover);
+}
+
+/**
+ * Hover handler: raycast against clickable spheres and pop a tooltip near
+ * the cursor with the entity's name, status, score, and provenance hint.
+ * Works at Level 0 (holonics) and Level 1 (holons).
+ * @param {PointerEvent} ev
+ */
+function onHoloHover(ev) {
+  const tip = document.getElementById("holo-hover-tip");
+  if (!tip || !holo.boundary) return;
+  const rect = holo.renderer.domElement.getBoundingClientRect();
+  holo.pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  holo.pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  holo.raycaster.setFromCamera(holo.pointer, holo.camera);
+  const meshes = [];
+  holo.clickables.forEach((entry) => { if (entry.mesh) meshes.push(entry.mesh); });
+  const hits = holo.raycaster.intersectObjects(meshes, false);
+  if (!hits.length) { tip.hidden = true; return; }
+  const id = hits[0].object.userData && hits[0].object.userData.holoId;
+  const entity = lookupHoloEntity(id);
+  if (!entity) { tip.hidden = true; return; }
+  tip.innerHTML = renderHoloHoverTip(entity);
+  tip.hidden = false;
+  // Position near cursor but keep inside the container.
+  const stage = holo.container;
+  const sRect = stage.getBoundingClientRect();
+  const x = ev.clientX - sRect.left + 14;
+  const y = ev.clientY - sRect.top + 14;
+  const tipRect = tip.getBoundingClientRect();
+  const maxX = sRect.width - tipRect.width - 8;
+  const maxY = sRect.height - tipRect.height - 8;
+  tip.style.left = Math.max(8, Math.min(x, maxX)) + "px";
+  tip.style.top  = Math.max(8, Math.min(y, maxY)) + "px";
+}
+
+/**
+ * Resolve a hovered/clicked id to its full holonic or holon entity in the
+ * loaded boundary.
+ * @param {string} id
+ * @returns {object|null}
+ */
+function lookupHoloEntity(id) {
+  if (!id || !holo.boundary) return null;
+  const hc = (holo.boundary.holonics || []).find((x) => x.id === id);
+  if (hc) return hc;
+  return (holo.boundary.loose_holons || []).find((x) => x.id === id) || null;
+}
+
+/**
+ * Build the inner HTML for the hover tooltip from an entity.
+ * @param {object} e
+ * @returns {string}
+ */
+function renderHoloHoverTip(e) {
+  const status = e.aggregateStatus || e.status || "unknown";
+  const score = e.aggregateScore != null ? e.aggregateScore : e.score;
+  const r = typeof window !== "undefined" ? window.OntologyRenderer : null;
+  const icon = r ? r.getRenderProps(e.entityClass || "").icon : "◯";
+  const cls = e.entityClass || "";
+  const provider = e.provider && e.provider !== "agnostic" ? e.provider.toUpperCase() : "";
+  const sub = e.aggregateStatus
+    ? `${(e.holons || []).length} holons · ${Math.round(score || 0)}/100`
+    : `${e.severity || ""} · ${Math.round(score || 0)}/100`;
+  const desc = (e.meta && e.meta.description) || e.assemblyContext || "";
+  const safe = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `
+    <div class="hht-head">
+      <span class="hht-icon">${safe(icon)}</span>
+      <div>
+        <div class="hht-title">${safe(e.label || e.id)}</div>
+        <div class="hht-sub status-${safe(status)}">${safe(sub)}</div>
+      </div>
+    </div>
+    <div class="hht-meta">
+      <span class="hht-chip">${safe(cls)}</span>
+      ${provider ? `<span class="hht-chip">${safe(provider)}</span>` : ""}
+      <span class="hht-chip status-${safe(status)}">${safe(status)}</span>
+    </div>
+    ${desc ? `<div class="hht-desc">${safe(desc)}</div>` : ""}
+  `;
+}
+
+/**
+ * Map a click to the topmost clickable mesh (holonic sphere or holon node).
+ * Dispatches the corresponding navigation.
+ * @param {MouseEvent} ev
+ */
+function onHoloClick(ev) {
+  const rect = holo.renderer.domElement.getBoundingClientRect();
+  holo.pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  holo.pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  holo.raycaster.setFromCamera(holo.pointer, holo.camera);
+  const meshes = [];
+  holo.clickables.forEach((entry) => { if (entry.mesh) meshes.push(entry.mesh); });
+  const hits = holo.raycaster.intersectObjects(meshes, false);
+  if (!hits.length) return;
+  const top = hits[0].object;
+  const id = top.userData && top.userData.holoId;
+  const kind = top.userData && top.userData.holoKind;
+  if (!id) return;
+  if (kind === "holonic") holoNavigate(1, id, null);
+  else if (kind === "holon") holoNavigate(2, holo.state.holonicId, id);
+}
+
+/**
+ * Run the holographic animation loop. Rotates the cluster on load, pauses
+ * on hover, and pulses the selected holon at Level 2.
+ */
+function holoAnimate() {
+  if (!holo.initialized) return;
+  const now = performance.now();
+  if (holo.rotate && !holo.hoverPause && holo.state.level === 0) {
+    holo.drag.rotY += 0.0025;
+  }
+  // Smooth camera dolly when navigating between levels.
+  if (holo.camTween) {
+    const e = Math.min(1, (now - holo.camTween.start) / holo.camTween.dur);
+    const k = e < 0.5 ? 4 * e * e * e : 1 - Math.pow(-2 * e + 2, 3) / 2; // easeInOutCubic
+    const len = holo.camTween.fromLen + (holo.camTween.toLen - holo.camTween.fromLen) * k;
+    holo.camera.position.setLength(len);
+    if (e >= 1) holo.camTween = null;
+  }
+  // Level 0 holonic spheres gently breathe (per-sphere phase) so the
+  // overview feels alive rather than static.
+  if (holo.state.level === 0) {
+    holo.group.traverse((c) => {
+      if (c.userData && c.userData.holoKind === "holonic" && c.userData.breathePhase != null) {
+        c.scale.setScalar(1 + 0.05 * Math.sin(now / 650 + c.userData.breathePhase));
+      }
+    });
+  }
+  // Child holons orbit the boundary centre like electrons, each on its own
+  // great-circle path at its rendered radius. Advance only while the cursor
+  // is outside the canvas (paused on hover); always re-sync edges so they
+  // keep spanning their holons. Glows twinkle and edges pulse energy.
+  if (holo.state.level === 1 && holo.orbiters.length) {
+    holo.orbiters.forEach((o) => {
+      if (!holo.hoverPause) o.angle += o.speed;
+      o.satellite.setRotationFromAxisAngle(o.axis, o.angle);
+      const glow = o.mesh.userData.glowSprite;
+      if (glow) glow.material.opacity = 0.7 + 0.25 * (0.5 + 0.5 * Math.sin(now / 420 + o.phase));
+    });
+    holo.orbitEdges.forEach((e, k) => {
+      e.tube.material.opacity = 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(now / 320 + k * 1.3));
+      e.tube.material.emissiveIntensity = 0.7 + 0.6 * (0.5 + 0.5 * Math.sin(now / 320 + k * 1.3));
+    });
+    updateOrbitEdges();
+  }
+  // Keep the ring framed in the viewport even after wheel-zoom or drag.
+  // Looking slightly above origin pushes the ring upward in the frame so
+  // it doesn't sit at the bottom edge.
+  holo.camera.lookAt(0, 1.5, 0);
+  holo.group.rotation.x = holo.drag.rotX;
+  holo.group.rotation.y = holo.drag.rotY;
+  if (holo.pulseMesh) {
+    const t = (Math.sin(now / 380) + 1) / 2;
+    const s = 1.0 + 0.12 * t;
+    holo.pulseMesh.scale.setScalar(s);
+    // Pulse the additive glow sprite alongside the core so the selected
+    // holon reads as a beacon rather than just a sphere with a wobble.
+    const glow = holo.pulseMesh.userData && holo.pulseMesh.userData.glowSprite;
+    const baseScale = holo.pulseMesh.userData && holo.pulseMesh.userData.baseGlowScale;
+    if (glow && baseScale) {
+      const pulseScale = baseScale * (1.6 + 0.35 * t);
+      glow.scale.set(pulseScale, pulseScale, 1);
+      glow.material.opacity = 0.9 + 0.1 * t;
+    }
+    // Billboard the selection ring to the camera and pulse its scale so
+    // it reads as a "target lock" reticle.
+    holo.group.traverse((c) => {
+      if (!c.userData || !c.userData.holoPulseRing) return;
+      c.lookAt(holo.camera.position);
+      const rs = 1.0 + 0.18 * t;
+      c.scale.setScalar(rs);
+      c.material.opacity = 0.65 + 0.3 * t;
+    });
+  }
+  if (holo.starfield && holo.starfield.visible) holo.starfield.rotation.y += 0.0003;
+  // Quantum field: every particle jitters around its base position so the
+  // backdrop looks like a crackling energy haze.
+  if (holo.quantumField && holo.quantumField.visible) {
+    const attr = holo.quantumField.geometry.attributes.position;
+    const ud = holo.quantumField.userData;
+    const t = now / 700;
+    for (let i = 0; i < ud.phase.length; i++) {
+      const j = i * 3;
+      const p = ud.phase[i];
+      const sp = ud.speed[i];
+      attr.array[j]     = ud.base[j]     + Math.sin(t * sp + p) * 7;
+      attr.array[j + 1] = ud.base[j + 1] + Math.sin(t * sp + p + 1.7) * 7;
+      attr.array[j + 2] = ud.base[j + 2] + Math.cos(t * sp + p) * 7;
+    }
+    attr.needsUpdate = true;
+    holo.quantumField.rotation.y += 0.0009;
+    holo.quantumField.rotation.x = Math.sin(now / 4500) * 0.12;
+  }
+  // Refresh world matrices so floating labels/badges track the orbiting
+  // holons this frame rather than lagging one frame behind. The camera's
+  // inverse must be current too or project() places labels with a stale
+  // (or identity, on frame 1) transform and they never appear.
+  holo.group.updateMatrixWorld(true);
+  holo.camera.updateMatrixWorld();
+  holo.camera.matrixWorldInverse.copy(holo.camera.matrixWorld).invert();
+  updateHoloLabels();
+  holo.renderer.render(holo.scene, holo.camera);
+  holo.raf = requestAnimationFrame(holoAnimate);
+}
+
+/**
+ * Project each tracked label's world position to screen coords and move the
+ * floating <div> element to match. Hidden if behind the camera.
+ */
+function updateHoloLabels() {
+  if (!holo.container) return;
+  const rect = holo.container.getBoundingClientRect();
+  const w = rect.width;
+  const h = rect.height;
+  // Force the ENTIRE scene graph (not just holo.group) to recompute
+  // matrixWorld. Without this, the orbit satellites and quantum field
+  // can lag a frame and the cards drift away from their spheres during
+  // orbit / drag — which read as "cards stick to the camera, not the
+  // object". Camera matrices too: project() needs both current.
+  holo.scene.updateMatrixWorld(true);
+  holo.camera.updateMatrixWorld();
+  holo.camera.matrixWorldInverse.copy(holo.camera.matrixWorld).invert();
+  holo.labels.forEach((entry) => {
+    const parent = entry.parent || holo.group;
+    const v = entry.position.clone().applyMatrix4(parent.matrixWorld);
+    v.project(holo.camera);
+    const inFront = v.z < 1;
+    if (!inFront) {
+      entry.el.style.display = "none";
+      return;
+    }
+    entry.el.style.display = "";
+    const x = (v.x * 0.5 + 0.5) * w;
+    const y = (1 - (v.y * 0.5 + 0.5)) * h;
+    entry.el.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+  });
+}
+
+/**
+ * Clear the holographic scene so the next render starts from empty state.
+ */
+function holoClear() {
+  if (!holo.group) return;
+  while (holo.group.children.length) {
+    const o = holo.group.children[0];
+    holo.group.remove(o);
+    o.traverse((c) => {
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) {
+        const ms = Array.isArray(c.material) ? c.material : [c.material];
+        ms.forEach((m) => m.dispose());
+      }
+    });
+  }
+  holo.clickables.clear();
+  holo.labels.forEach((l) => l.el.remove());
+  holo.labels = [];
+  holo.pulseMesh = null;
+  holo.orbitGroup = null;
+  holo.orbiters = [];
+  holo.orbitEdges = [];
+}
+
+/**
+ * Escape a string for safe HTML interpolation in a label.
+ * @param {*} s
+ * @returns {string}
+ */
+function escHolo(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/**
+ * Add a floating HTML label that follows a world-space position via the
+ * animation loop's projection. `content` may be a plain string or a
+ * { title, sub, status } object for a richer two-line label.
+ * @param {string|{title:string, sub?:string, status?:string}} content
+ * @param {THREE.Vector3} position
+ * @param {THREE.Object3D} [parent]
+ * @returns {HTMLElement}
+ */
+function addHoloLabel(content, position, parent) {
+  const el = document.createElement("div");
+  el.className = "holo-label";
+  if (typeof content === "string") {
+    el.textContent = content;
+  } else {
+    el.innerHTML =
+      `<span class="holo-label-title">${escHolo(content.title)}</span>` +
+      (content.sub
+        ? `<span class="holo-label-sub status-${escHolo(content.status || "unknown")}">${escHolo(content.sub)}</span>`
+        : "");
+  }
+  el.style.position = "absolute";
+  el.style.pointerEvents = "none";
+  holo.container.appendChild(el);
+  holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
+  return el;
+}
+
+/**
+ * Level 0 — every holonic as a translucent sphere arranged in a circle.
+ * @param {object} boundaryData
+ */
+function renderHoloLevel0(boundaryData) {
+  holo.state = { level: 0, holonicId: null, holonId: null };
+  holo.boundary = boundaryData;
+  holoClear();
+  const holonics = boundaryData.holonics || [];
+  const n = Math.max(1, holonics.length);
+  const ringR = Math.max(9, 5 + n * 1.6);
+  holonics.forEach((hc, i) => {
+    const a = (2 * Math.PI * i) / n - Math.PI / 2;
+    const x = Math.cos(a) * ringR;
+    const z = Math.sin(a) * ringR;
+    const radius = 3.6;
+    const color = HOLO_STATUS_COLOR[hc.aggregateStatus] || HOLO_STATUS_COLOR.unknown;
+    // Solid core gives the sphere a clear silhouette against the dark sky.
+    const coreGeom = new THREE.SphereGeometry(radius * 0.78, 32, 24);
+    const coreMat = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.9,
+      roughness: 0.35,
+      metalness: 0.1,
+    });
+    const asmLvl = hc.assemblyLevel != null ? hc.assemblyLevel : 1;
+    const core = new THREE.Mesh(coreGeom, coreMat);
+    core.position.set(x, 0, z);
+    core.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7, asmLevel: asmLvl };
+    holo.group.add(core);
+    // Halo shell adds the "translucent boundary" feel without losing the
+    // core's contrast.
+    const haloGeom = new THREE.SphereGeometry(radius, 32, 24);
+    const haloMat = new THREE.MeshStandardMaterial({
+      color,
+      transparent: true,
+      opacity: 0.32,
+      emissive: color,
+      emissiveIntensity: 0.55,
+      roughness: 0.5,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+    const halo = new THREE.Mesh(haloGeom, haloMat);
+    halo.position.set(x, 0, z);
+    halo.userData = { holoId: hc.id, holoKind: "holonic", breathePhase: i * 0.7 + 0.3, asmLevel: asmLvl };
+    holo.group.add(halo);
+    holo.clickables.set(hc.id, { mesh: core });
+    // One unified card per sphere: icon + label + status. Sits next to
+    // the sphere so the user can read what each glowing orb actually is.
+    addHoloEntityCard(hc, new THREE.Vector3(x, radius + 1.4, z));
+    addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
+      new THREE.Vector3(x + radius * 0.9, radius + 0.3, z));
+  });
+  holoApplyAssemblyFilter(holo.asmFilter);
+  setQuantumBackground(false);
+  holoZoomTo(HOLO_LEVEL_DISTANCE[0]);
+}
+
+/**
+ * Add a small floating assembly-level badge that tracks a world position,
+ * mirroring the 2D node badge. Reuses the label projection loop.
+ * @param {number} level
+ * @param {THREE.Vector3} position
+ */
+function addHoloAssemblyBadge(level, position, parent) {
+  const icons = ["⬥", "◈", "◉", "⬡", "⊕"];
+  const el = document.createElement("div");
+  el.className = `asm-badge-3d asm-${level}`;
+  el.textContent = `${icons[level] || "⬥"} ${level}`;
+  el.style.position = "absolute";
+  el.style.pointerEvents = "none";
+  holo.container.appendChild(el);
+  holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
+}
+
+/**
+ * Add a floating entityClass icon glyph above a holonic or holon, like the
+ * type-pins the legacy 3D city view puts above each AWS / Azure node.
+ * Reads from window.OntologyRenderer.getRenderProps.
+ * @param {object} entity must carry entityClass + status/aggregateStatus
+ * @param {THREE.Vector3} position
+ * @param {THREE.Object3D} [parent]
+ */
+function addHoloEntityIcon(entity, position, parent, size) {
+  if (!entity || !entity.entityClass) return;
+  const r = typeof window !== "undefined" ? window.OntologyRenderer : null;
+  const props = r ? r.getRenderProps(entity.entityClass)
+    : { icon: "◯", baseColor: "#cbd5e1" };
+  const status = entity.status || entity.aggregateStatus || "unknown";
+  const el = document.createElement("div");
+  el.className = `holo-icon status-${status}`;
+  el.textContent = props.icon || "◯";
+  el.style.position = "absolute";
+  el.style.pointerEvents = "none";
+  // White glyph + coloured halo via a CSS var so it stays legible on any
+  // sphere/background — using props.baseColor as the text colour was
+  // invisible for dark classes (e.g. AssessmentControl #4b5563).
+  el.style.color = "#ffffff";
+  el.style.setProperty("--ont-icon-color", props.baseColor || "#cbd5e1");
+  if (size) el.style.fontSize = size + "px";
+  el.title = `${entity.entityClass}${entity.provider && entity.provider !== "agnostic" ? " · " + entity.provider.toUpperCase() : ""}`;
+  holo.container.appendChild(el);
+  holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
+}
+
+// Emoji icons per entityClass — emoji renders reliably across platforms
+// where the geometric Unicode glyphs (⬡ ◈ ◯ …) can ship as thin
+// outlines or fail to render at all.
+const HOLO_CARD_EMOJI = {
+  ComputeInstance: "🖥️",
+  ContainerRuntime: "📦",
+  ServerlessFunction: "⚡",
+  ComputeCluster: "🧮",
+  ObjectStore: "🗂️",
+  BlockVolume: "💽",
+  FileSystem: "📁",
+  DatabaseInstance: "🗄️",
+  VirtualNetwork: "🌐",
+  Subnet: "🕸️",
+  NetworkGateway: "🚪",
+  LoadBalancer: "⚖️",
+  Firewall: "🧱",
+  PrivateEndpoint: "🔗",
+  IdentityPrincipal: "👤",
+  IdentityRole: "🎭",
+  IdentityPolicy: "📜",
+  SecurityControl: "🛡️",
+  VulnerabilityFinding: "⚠️",
+  ComplianceControl: "✅",
+  ThreatIndicator: "🚨",
+  AssessmentBoundary: "🔲",
+  AssessmentControl: "📋",
+  AssessmentFinding: "📍",
+  Guild: "🏛️",
+  Project: "📂",
+  SubProject: "🗃️",
+};
+
+/**
+ * Add an info card overlay (icon + label + status sub-line) anchored next
+ * to a sphere. Replaces the previous separate icon + label glyphs that
+ * were too easy to lose against a bright sphere — the card has its own
+ * dark background and a status-coloured border so it stays legible.
+ * @param {object} entity holon or holonic with entityClass + label
+ * @param {THREE.Vector3} position anchor in `parent`-local space
+ * @param {THREE.Object3D} [parent]
+ */
+function addHoloEntityCard(entity, position, parent) {
+  if (!entity) return;
+  const r = typeof window !== "undefined" ? window.OntologyRenderer : null;
+  const props = r ? r.getRenderProps(entity.entityClass || "")
+    : { icon: "◯", baseColor: "#cbd5e1" };
+  const emoji = HOLO_CARD_EMOJI[entity.entityClass] || "🔹";
+  const status = entity.aggregateStatus || entity.status || "unknown";
+  const score = entity.aggregateScore != null ? entity.aggregateScore : entity.score;
+  const isHolonic = entity.aggregateStatus != null;
+  const parts = [status];
+  if (isHolonic && Array.isArray(entity.holons)) parts.push(`${entity.holons.length} holons`);
+  else if (entity.severity) parts.push(entity.severity);
+  parts.push(`${Math.round(score || 0)}/100`);
+  const el = document.createElement("div");
+  el.className = `holo-card status-${status}`;
+  el.innerHTML = `
+    <div class="holo-card-icon" style="color: ${escHolo(props.baseColor || "#cbd5e1")}">${escHolo(emoji)}</div>
+    <div class="holo-card-text">
+      <div class="holo-card-title">${escHolo(entity.label || entity.id)}</div>
+      <div class="holo-card-sub">${escHolo(parts.join(" · "))}</div>
+    </div>
+  `;
+  el.style.position = "absolute";
+  el.style.pointerEvents = "none";
+  holo.container.appendChild(el);
+  holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
+}
+
+/**
+ * Level 1 — expand a single holonic and render its holons as solid spheres
+ * sized by severity inside a translucent boundary sphere.
+ * @param {string} holonicId
+ * @param {object} boundaryData
+ */
+let holoGlowTexture = null;
+
+/**
+ * Build (once) a soft radial-gradient sprite texture used as the additive
+ * halo behind every holon. Cached on the module so we don't re-create the
+ * canvas + GPU texture on every render.
+ * @returns {THREE.CanvasTexture}
+ */
+function ensureHoloGlowTexture() {
+  if (holoGlowTexture) return holoGlowTexture;
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0.0, "rgba(255,255,255,1.0)");
+  grad.addColorStop(0.18, "rgba(255,255,255,0.75)");
+  grad.addColorStop(0.45, "rgba(255,255,255,0.30)");
+  grad.addColorStop(0.75, "rgba(255,255,255,0.08)");
+  grad.addColorStop(1.0, "rgba(255,255,255,0.0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  holoGlowTexture = new THREE.CanvasTexture(canvas);
+  holoGlowTexture.needsUpdate = true;
+  return holoGlowTexture;
+}
+
+function renderHoloLevel1(holonicId, boundaryData) {
+  holo.state = { level: 1, holonicId, holonId: null };
+  holo.boundary = boundaryData;
+  holoClear();
+  const hc = (boundaryData.holonics || []).find((x) => x.id === holonicId);
+  if (!hc) return;
+  const boundaryR = 10;
+  const boundaryColor = HOLO_STATUS_COLOR[hc.aggregateStatus] || HOLO_STATUS_COLOR.unknown;
+
+  // Whisper-faint solid fill — gives "there's a boundary here" without
+  // hiding what's inside. Additive blending so the shell BRIGHTENS the
+  // pixels behind it rather than tinting them dim.
+  const shellGeom = new THREE.SphereGeometry(boundaryR, 32, 20);
+  const shellMat = new THREE.MeshBasicMaterial({
+    color: boundaryColor,
+    transparent: true,
+    opacity: 0.04,
+    side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const shell = new THREE.Mesh(shellGeom, shellMat);
+  shell.renderOrder = 0;
+  shell.userData = { holoKind: "shell" };
+  holo.group.add(shell);
+
+  // Three orbiting rings (XY, XZ, YZ) make the boundary instantly
+  // readable as a sphere without the busy wire-mesh look — and they
+  // never occlude what's inside.
+  for (let axis = 0; axis < 3; axis++) {
+    const torusGeom = new THREE.TorusGeometry(boundaryR, 0.07, 8, 96);
+    const torusMat = new THREE.MeshBasicMaterial({
+      color: boundaryColor,
+      transparent: true,
+      opacity: 0.65,
+    });
+    const torus = new THREE.Mesh(torusGeom, torusMat);
+    if (axis === 1) torus.rotation.x = Math.PI / 2;
+    if (axis === 2) torus.rotation.y = Math.PI / 2;
+    torus.renderOrder = 1;
+    torus.userData = { holoKind: "shell" };
+    holo.group.add(torus);
+  }
+
+  addHoloLabel(`${hc.label} · ${Math.round(hc.aggregateScore || 0)}/100`,
+    new THREE.Vector3(0, boundaryR + 2, 0));
+
+  // Child holons each get their own satellite group centred at the boundary
+  // centre. Rotating a satellite around an axis perpendicular to its holon
+  // makes that holon orbit the centre at its full rendered radius — a real
+  // great-circle orbit, not a Y-axis spin that collapses polar holons.
+  holo.orbitGroup = new THREE.Group();
+  holo.group.add(holo.orbitGroup);
+  holo.orbiters = [];
+  holo.orbitEdges = [];
+
+  const lookup = buildHoloLookup(boundaryData);
+  const holons = (hc.holons || []).map((id) => lookup.get(id)).filter(Boolean);
+  const positions = fibSphere(holons.length, boundaryR * 0.6);
+  holons.forEach((holon, i) => addHoloOrbiter(holon, positions[i], i));
+  buildOrbitEdges(holons);
+  updateOrbitEdges();
+  holoApplyAssemblyFilter(holo.asmFilter);
+  setQuantumBackground(true);
+  holoZoomTo(HOLO_LEVEL_DISTANCE[1]);
+}
+
+/**
+ * Create a satellite group for one holon and register its orbit. The holon
+ * sits at `pos` inside the satellite; the satellite rotates about an axis
+ * perpendicular to `pos` so the holon revolves at radius |pos|.
+ * @param {object} holon
+ * @param {THREE.Vector3} pos rendered position on the boundary sphere
+ * @param {number} i index (used to vary orbit speed/phase)
+ */
+function addHoloOrbiter(holon, pos, i) {
+  const satellite = new THREE.Group();
+  satellite.userData = { asmLevel: holon.assemblyLevel != null ? holon.assemblyLevel : 0 };
+  holo.orbitGroup.add(satellite);
+  const mesh = addHoloHolon(holon, pos, satellite);
+  // Axis perpendicular to the holon direction → holon stays at full radius.
+  const u = pos.clone().normalize();
+  const ref = Math.abs(u.y) < 0.85 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const axis = new THREE.Vector3().crossVectors(u, ref).normalize();
+  holo.orbiters.push({
+    satellite,
+    mesh,
+    axis,
+    angle: 0,
+    speed: 0.014 + (i % 3) * 0.004,
+    phase: i * 0.9,
+  });
+}
+
+/**
+ * Build glowing tube edges between holons that share the same target. Each
+ * edge stores its two meshes + base length so the animate loop can stretch
+ * and re-orient it as the holons orbit.
+ * @param {object[]} holons
+ */
+function buildOrbitEdges(holons) {
+  const byTarget = new Map();
+  holons.forEach((h) => {
+    if (!h.target) return;
+    const arr = byTarget.get(h.target) || [];
+    arr.push(h.id);
+    byTarget.set(h.target, arr);
+  });
+  byTarget.forEach((ids) => {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = holo.clickables.get(ids[i]);
+        const b = holo.clickables.get(ids[j]);
+        if (!a || !b) continue;
+        const geom = new THREE.CylinderGeometry(0.12, 0.12, 1, 10, 1);
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0x7bc4ff, emissive: 0x7bc4ff, emissiveIntensity: 0.9,
+          transparent: true, opacity: 0.85, roughness: 0.4,
+        });
+        const tube = new THREE.Mesh(geom, mat);
+        holo.orbitGroup.add(tube);
+        holo.orbitEdges.push({ tube, aMesh: a.mesh, bMesh: b.mesh });
+      }
+    }
+  });
+}
+
+/**
+ * Re-position, re-orient, and stretch every orbit edge to span its two
+ * (possibly orbiting) holons. Called each frame at Level 1.
+ */
+function updateOrbitEdges() {
+  const up = new THREE.Vector3(0, 1, 0);
+  holo.orbitEdges.forEach((e) => {
+    // Holon position in orbit-group space = satellite rotation × local pos.
+    const a = e.aMesh.position.clone().applyQuaternion(e.aMesh.parent.quaternion);
+    const b = e.bMesh.position.clone().applyQuaternion(e.bMesh.parent.quaternion);
+    const dir = b.clone().sub(a);
+    const len = Math.max(0.001, dir.length());
+    e.tube.position.copy(a).add(b).multiplyScalar(0.5);
+    e.tube.quaternion.setFromUnitVectors(up, dir.normalize());
+    e.tube.scale.set(1, len, 1);
+  });
+}
+
+/**
+ * Place N points on a sphere using the Fibonacci lattice for even spread.
+ * @param {number} n
+ * @param {number} r
+ * @returns {THREE.Vector3[]}
+ */
+function fibSphere(n, r) {
+  const out = [];
+  const phi = Math.PI * (3 - Math.sqrt(5));
+  const safe = Math.max(1, n);
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (i / (safe - 1 || 1)) * 2;
+    const radius = Math.sqrt(1 - y * y);
+    const theta = phi * i;
+    out.push(new THREE.Vector3(
+      Math.cos(theta) * radius * r,
+      y * r,
+      Math.sin(theta) * radius * r,
+    ));
+  }
+  return out;
+}
+
+/**
+ * Add a solid sphere for a single holon, sized by severity and coloured by
+ * status, with a floating label. Added to `parent` (the holon's satellite
+ * group) so it can revolve around the boundary centre.
+ * @param {object} holon
+ * @param {THREE.Vector3} pos
+ * @param {THREE.Object3D} parent
+ * @returns {THREE.Mesh} the core sphere mesh
+ */
+function addHoloHolon(holon, pos, parent) {
+  const target = parent || holo.group;
+  const radius = HOLO_SEVERITY_RADIUS[holon.severity] || 0.6;
+  const color = HOLO_STATUS_COLOR[holon.status] || HOLO_STATUS_COLOR.unknown;
+
+  // Big additive glow sprite — billboard quad behind the sphere with a
+  // soft radial gradient. Additive blending means the glow BRIGHTENS the
+  // pixels under it instead of tinting them dim, so the holon reads as a
+  // luminous star even against the boundary shell's colour.
+  const glowMat = new THREE.SpriteMaterial({
+    map: ensureHoloGlowTexture(),
+    color,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const glow = new THREE.Sprite(glowMat);
+  const glowScale = Math.max(2.4, radius * 5.5);
+  glow.scale.set(glowScale, glowScale, 1);
+  glow.position.copy(pos);
+  glow.userData = { holoId: holon.id, holoKind: "holon-glow" };
+  glow.renderOrder = 4;
+  target.add(glow);
+
+  // White rim halo gives the holon a crisp silhouette inside the glow.
+  const haloGeom = new THREE.SphereGeometry(radius * 1.35, 18, 14);
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false,
+  });
+  const halo = new THREE.Mesh(haloGeom, haloMat);
+  halo.position.copy(pos);
+  halo.userData = { holoId: holon.id, holoKind: "holon" };
+  halo.renderOrder = 5;
+  target.add(halo);
+
+  // Solid luminous core.
+  const geom = new THREE.SphereGeometry(radius, 28, 20);
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 1.6,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.copy(pos);
+  mesh.userData = { holoId: holon.id, holoKind: "holon", glowSprite: glow, baseGlowScale: glowScale };
+  mesh.renderOrder = 6;
+  target.add(mesh);
+  holo.clickables.set(holon.id, { mesh });
+  // Unified card with icon + label + status — anchored just above the
+  // holon and parented to the satellite so it orbits along with it.
+  addHoloEntityCard(holon, pos.clone().add(new THREE.Vector3(0, radius + 1.2, 0)), target);
+  addHoloAssemblyBadge(holon.assemblyLevel != null ? holon.assemblyLevel : 0,
+    pos.clone().add(new THREE.Vector3(radius + 0.6, radius + 0.6, 0)), target);
+  return mesh;
+}
+
+/**
+ * Index every holon in the boundary (loose + referenced) for O(1) lookups.
+ * @param {object} boundaryData
+ * @returns {Map<string,object>}
+ */
+function buildHoloLookup(boundaryData) {
+  const m = new Map();
+  (boundaryData.loose_holons || []).forEach((h) => m.set(h.id, h));
+  return m;
+}
+
+/**
+ * Level 2 — fade everything except the selected holon, then pulse it with
+ * a slow breathing animation. The detail panel is opened by app.js.
+ * @param {string} holonId
+ * @param {object} boundaryData
+ */
+function renderHoloLevel2(holonId, boundaryData) {
+  if (!holo.state.holonicId) {
+    const owning = (boundaryData.holonics || []).find((hc) => (hc.holons || []).includes(holonId));
+    if (owning) holo.state.holonicId = owning.id;
+  }
+  if (holo.state.holonicId) renderHoloLevel1(holo.state.holonicId, boundaryData);
+  holo.state = { level: 2, holonicId: holo.state.holonicId, holonId };
+  let targetPos = null;
+  let targetParent = null;
+  let targetRadius = 0.6;
+  let targetColor = HOLO_STATUS_COLOR.unknown;
+  holo.group.traverse((c) => {
+    // Skip the boundary shell + wireframe — overriding their opacity to
+    // 0.4 would make the shell appear solid and hide the holons inside.
+    if (c.userData && c.userData.holoKind === "shell") return;
+    const isTarget = c.userData && c.userData.holoId === holonId;
+    if (!c.isMesh && !c.isSprite) return;
+    if (c.material && "opacity" in c.material) {
+      c.material.transparent = true;
+      // Glow sprites: keep the selected one bright (handled by the
+      // pulse loop) and dim the others to a faint hint.
+      if (c.userData && c.userData.holoKind === "holon-glow") {
+        c.material.opacity = isTarget ? 0.95 : 0.2;
+      } else {
+        c.material.opacity = isTarget ? 1.0 : 0.4;
+      }
+    }
+    if (isTarget && c.isMesh && c.userData && c.userData.holoKind === "holon") {
+      holo.pulseMesh = c;
+      targetPos = c.position.clone();
+      targetParent = c.parent;
+      const g = c.geometry && c.geometry.parameters;
+      if (g && g.radius) targetRadius = g.radius;
+      if (c.material && c.material.color) targetColor = c.material.color.getHex();
+    }
+  });
+  if (targetPos) addHoloReticle(targetPos, targetRadius, targetColor, targetParent);
+  holoZoomTo(HOLO_LEVEL_DISTANCE[2]);
+}
+
+/**
+ * Draw a billboarded pulsing ring around the currently selected holon.
+ * The ring is a flat Torus tagged with userData.holoPulseRing so the
+ * animate loop can re-orient and scale it every frame.
+ * @param {THREE.Vector3} pos local position within `parent`
+ * @param {number} radius
+ * @param {number} color
+ * @param {THREE.Object3D} [parent] the holon's satellite group
+ */
+function addHoloReticle(pos, radius, color, parent) {
+  // Torus oriented to face the camera (billboarded in the animate loop).
+  const ringGeom = new THREE.TorusGeometry(radius * 2.1, 0.09, 10, 60);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeom, ringMat);
+  ring.position.copy(pos);
+  ring.userData = { holoPulseRing: true, holoBaseRadius: radius * 2.1, holoColor: color };
+  ring.renderOrder = 7;
+  // Attach to the holon's satellite so the reticle stays locked to it.
+  (parent || holo.orbitGroup || holo.group).add(ring);
+}
+
+/**
+ * Start a smooth camera dolly to a target distance from the origin.
+ * @param {number} targetLen
+ * @param {number} [dur] tween duration in ms
+ */
+function holoZoomTo(targetLen, dur) {
+  holo.camTween = {
+    fromLen: holo.camera.position.length(),
+    toLen: targetLen,
+    start: performance.now(),
+    dur: dur || 650,
+  };
+}
+
+/**
+ * Apply the assembly-level filter in 3D: holonic spheres (Level 0) and
+ * holon satellites (Level 1) whose assemblyLevel is not in the selected
+ * set are hidden. Pass null/empty to show everything.
+ * @param {Set<number>|null} levels
+ */
+function holoApplyAssemblyFilter(levels) {
+  holo.asmFilter = levels && levels.size ? levels : null;
+  const ok = (lvl) => !holo.asmFilter || holo.asmFilter.has(lvl);
+  // Level 0 — holonic core + halo meshes carry userData.asmLevel.
+  holo.group.children.forEach((c) => {
+    if (c.userData && c.userData.holoKind === "holonic" && c.userData.asmLevel != null) {
+      c.visible = ok(c.userData.asmLevel);
+    }
+  });
+  // Level 1 — each holon satellite carries userData.asmLevel.
+  if (holo.orbitGroup) {
+    holo.orbitGroup.children.forEach((c) => {
+      if (c.userData && c.userData.asmLevel != null) c.visible = ok(c.userData.asmLevel);
+    });
+  }
+}
+
+/**
+ * Navigate the holographic 3D view between zoom levels.
+ * @param {0|1|2} level
+ * @param {string|null} holonicId
+ * @param {string|null} holonId
+ */
+function holoNavigate(level, holonicId, holonId) {
+  holo.pulseMesh = null;
+  if (!holo.boundary) return;
+  if (level === 0) renderHoloLevel0(holo.boundary);
+  else if (level === 1) renderHoloLevel1(holonicId, holo.boundary);
+  else renderHoloLevel2(holonId, holo.boundary);
+  if (window.AwsHoloViz3D.onLevelChange) {
+    window.AwsHoloViz3D.onLevelChange(level, holonicId, holonId);
+  }
+  if (level === 2 && window.AwsHoloViz3D.onSelectHolon) {
+    const found = buildHoloLookup(holo.boundary).get(holonId);
+    if (found) window.AwsHoloViz3D.onSelectHolon(found);
+  }
+}
+
+/**
+ * Render the boundary at whatever holographic state we're currently in.
+ * @param {object} boundaryData
+ */
+function holoRender(boundaryData) {
+  holo.boundary = boundaryData;
+  if (holo.state.level === 2 && holo.state.holonId) {
+    renderHoloLevel2(holo.state.holonId, boundaryData);
+  } else if (holo.state.level === 1 && holo.state.holonicId) {
+    renderHoloLevel1(holo.state.holonicId, boundaryData);
+  } else {
+    renderHoloLevel0(boundaryData);
+  }
+}
+
+window.AwsHoloViz3D = {
+  init: holoInit,
+  render: holoRender,
+  navigate: holoNavigate,
+  renderHolonicControlView: renderHoloLevel0,
+  renderHolonicView: renderHoloLevel1,
+  renderHolonDetailView: renderHoloLevel2,
+  applyAssemblyFilter: holoApplyAssemblyFilter,
+  isReady: () => holo.initialized,
+  getState: () => ({ ...holo.state }),
+  onLevelChange: null,
+  onSelectHolon: null,
+};
+

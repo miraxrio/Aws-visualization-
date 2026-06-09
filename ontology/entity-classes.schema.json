@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "entity-class-fields",
+  "title": "Ontology Entity Class Fields",
+  "description": "Reusable ontology fields injected into every entity type",
+  "type": "object",
+  "required": ["entityClass", "entityCategory", "provider", "ontologyVersion"],
+  "properties": {
+    "entityClass": {
+      "type": "string",
+      "description": "Provider-agnostic class from the cyber ontology taxonomy"
+    },
+    "entityCategory": {
+      "type": "string",
+      "enum": ["COMPUTE", "STORAGE", "NETWORK", "IDENTITY", "SECURITY", "ASSESSMENT", "ORGANIZATION"],
+      "description": "Top-level category group in the taxonomy"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["aws", "azure", "gcp", "on-prem", "agnostic"],
+      "description": "Cloud or infrastructure provider"
+    },
+    "providerType": {
+      "type": ["string", "null"],
+      "description": "Provider-specific resource type string"
+    },
+    "providerRegion": {
+      "type": ["string", "null"],
+      "description": "Provider region identifier"
+    },
+    "ontologyVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Version of the ontology spec this entity conforms to"
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "targetId", "direction"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["HOSTS", "CONNECTS_TO", "DEPENDS_ON", "CONTAINS", "ASSESSED_BY", "VIOLATES", "REMEDIATES"]
+          },
+          "targetId": { "type": "string" },
+          "direction": {
+            "type": "string",
+            "enum": ["outbound", "inbound", "bidirectional"]
+          },
+          "label": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "assemblyLevel": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Position in the system-of-systems hierarchy. 0 = atom (smallest unit), 4 = system of systems (highest assembly)."
+    },
+    "assemblyContext": {
+      "type": "string",
+      "description": "Human-readable explanation of why this entity is at this assembly level in this particular boundary context."
+    },
+    "atomicChildren": {
+      "type": ["array", "null"],
+      "description": "IDs of entities at assemblyLevel N-1 that this entity is assembled from. Null for atoms (level 0).",
+      "items": { "type": "string" }
+    },
+    "assembledInto": {
+      "type": ["string", "null"],
+      "description": "ID of the entity at assemblyLevel N+1 that this entity is part of. Null for top-level systems of systems."
+    },
+    "properties": {
+      "type": "object",
+      "description": "Provider-specific free-form properties"
+    }
+  }
+}

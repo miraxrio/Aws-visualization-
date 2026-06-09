@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New Integration Wizard — Holographic Assessment</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="wizard.css" />
+  <script src="wizard.js" defer></script>
+</head>
+<body class="wizard-body">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <h1>New Integration · Holographic Assessment</h1>
+    </div>
+    <div class="controls">
+      <a class="btn ghost" href="index.html">← Back to Visualizer</a>
+    </div>
+  </header>
+
+  <main class="wizard-layout">
+    <nav class="wizard-steps" id="wizard-steps">
+      <button class="wizard-step is-active" data-step="1">1 · Connector Info</button>
+      <button class="wizard-step" data-step="2">2 · Schema Definition</button>
+      <button class="wizard-step" data-step="3">3 · Sample Data</button>
+      <button class="wizard-step" data-step="4">4 · Review &amp; Export</button>
+    </nav>
+
+    <section class="wizard-stage">
+      <!-- Step 1 -->
+      <section class="wizard-pane is-active" id="step-1">
+        <h2>Connector Info</h2>
+        <p class="muted">Tell us about this integration. These fields become the boundary &amp; holonic metadata for every holon you publish.</p>
+
+        <label class="field">
+          <span>Integration name <em>*</em></span>
+          <input type="text" id="w-name" required minlength="3" placeholder="e.g. Container STIG baseline" />
+          <small class="field-error" id="w-name-error" hidden>Name is required (min 3 chars).</small>
+        </label>
+
+        <label class="field">
+          <span>Description</span>
+          <textarea id="w-description" rows="3" placeholder="What does this integration assess?"></textarea>
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Assessment type</span>
+            <select id="w-assessment-type">
+              <option value="STIG">STIG</option>
+              <option value="CVE">CVE</option>
+              <option value="CIS">CIS</option>
+              <option value="NIST">NIST</option>
+              <option value="custom">custom</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Subtype</span>
+            <select id="w-subtype">
+              <option value="container">container</option>
+              <option value="vm">vm</option>
+              <option value="service">service</option>
+              <option value="repo">repo</option>
+              <option value="network">network</option>
+              <option value="custom">custom</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Source system</span>
+            <input type="text" id="w-source" value="0bias" />
+          </label>
+          <label class="field">
+            <span>Environment</span>
+            <select id="w-environment">
+              <option value="dev">dev</option>
+              <option value="uat">uat</option>
+              <option value="staging">staging</option>
+              <option value="prod" selected>prod</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <!-- Step 2 -->
+      <section class="wizard-pane" id="step-2">
+        <h2>Schema Definition</h2>
+        <p class="muted">Add custom fields beyond the standard holon shape. They appear in Step 3 and become part of the exported JSON.</p>
+
+        <div class="schema-builder">
+          <div class="schema-fields" id="schema-fields"></div>
+          <button class="btn ghost" type="button" id="add-field-btn">+ Add Field</button>
+        </div>
+
+        <div class="schema-preview">
+          <h3>Holon JSON preview</h3>
+          <pre id="schema-preview"></pre>
+        </div>
+      </section>
+
+      <!-- Step 3 -->
+      <section class="wizard-pane" id="step-3">
+        <h2>Sample Data</h2>
+        <p class="muted">Define at least one sample holon. Required fields are starred. Custom fields from Step 2 appear under each holon.</p>
+
+        <div id="holons-editor"></div>
+        <button class="btn ghost" type="button" id="add-holon-btn">+ Add another holon</button>
+        <small class="field-error" id="step-3-error" hidden>Add at least one holon before continuing.</small>
+      </section>
+
+      <!-- Step 4 -->
+      <section class="wizard-pane" id="step-4">
+        <h2>Review &amp; Export</h2>
+        <p class="muted">Final JSON — copy, download, load into the visualizer, or save as a draft.</p>
+        <pre id="final-json" class="wizard-final-json"></pre>
+        <div class="wizard-actions">
+          <button class="btn ghost" id="copy-json-btn" type="button">Copy JSON</button>
+          <button class="btn ghost" id="download-json-btn" type="button">Download JSON</button>
+          <button class="btn primary" id="load-into-viz-btn" type="button">Load into Visualizer</button>
+          <button class="btn ghost" id="publish-draft-btn" type="button">Publish to Guild Catalog</button>
+        </div>
+      </section>
+
+      <div class="wizard-footer">
+        <button class="btn ghost" id="prev-step" type="button" disabled>← Previous</button>
+        <span class="wizard-progress" id="wizard-progress">Step 1 of 4</span>
+        <button class="btn primary" id="next-step" type="button">Next →</button>
+      </div>
+    </section>
+
+    <aside class="wizard-side">
+      <div class="panel">
+        <div class="panel-eyebrow">Live Preview</div>
+        <h3>Generated holon JSON</h3>
+        <pre id="live-preview" class="wizard-live-preview"></pre>
+      </div>
+    </aside>
+  </main>
+
+  <div id="wizard-modal" class="wizard-modal" hidden>
+    <div class="wizard-modal-card">
+      <h3 id="wizard-modal-title">Saved as draft</h3>
+      <p id="wizard-modal-body">Guild catalog integration coming soon. Your JSON has been saved locally.</p>
+      <div class="wizard-modal-actions">
+        <button class="btn primary" id="wizard-modal-ok" type="button">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wizard-toast" class="holo-toast" hidden></div>
+</body>
+</html>
