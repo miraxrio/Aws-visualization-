@@ -152,6 +152,11 @@
       <div class="stage-map" id="stage-map" hidden aria-label="Geographic map of AWS / Azure networks">
         <div class="map-canvas" id="map-canvas"></div>
         <div class="map-controls" id="map-controls">
+          <div class="seg map-filter-seg" role="group" aria-label="Filter map by provider">
+            <button class="seg-btn is-active" id="map-filter-all" data-prov="all">All</button>
+            <button class="seg-btn" id="map-filter-aws" data-prov="aws">AWS</button>
+            <button class="seg-btn" id="map-filter-azure" data-prov="azure">Azure</button>
+          </div>
           <button class="btn ghost btn-sm" id="map-style-toggle" title="Toggle satellite imagery">🛰️ Satellite</button>
           <button class="btn ghost btn-sm" id="map-proj-toggle" title="Toggle globe / flat projection">🗺️ Flat</button>
           <button class="btn ghost btn-sm" id="map-fit" title="Zoom to fit all networks">⤢ Fit networks</button>

@@ -538,7 +538,10 @@
           if (window.AwsMap.setTheme) window.AwsMap.setTheme(theme);
           if (!window.AwsMap.isReady()) window.AwsMap.init(els.stageMap);
           window.AwsMap.resize();
-          if (currentData) window.AwsMap.render(currentData);
+          // Always render the fleet view (it shows the ZeroBias connect gate
+          // when disconnected, the fleet when connected) — not gated on a
+          // loaded network, since the app now starts empty.
+          window.AwsMap.render();
           // Re-arm the zoom-to-drill hand-off and zoom back out, so returning
           // from the holographic view doesn't instantly re-trigger.
           if (window.AwsMap.armDrill) window.AwsMap.armDrill();
@@ -1863,18 +1866,10 @@
     }
   }
 
-  // Auto-load the sample on first paint so the page never starts empty.
-  window.addEventListener("DOMContentLoaded", async () => {
-    if (consumeWizardHandoff()) return;
-    try {
-      const res = await fetch("sample-network.json");
-      if (res.ok) {
-        loadData(await res.json());
-        return;
-      }
-    } catch (_) {
-      /* file:// or offline */
-    }
-    loadData(EMBEDDED_SAMPLE);
+  // Start empty until the user connects to ZeroBias (or imports / loads a
+  // network manually). Only the wizard hand-off auto-loads on first paint;
+  // ZeroBias.init() will pull the inventory once the user connects.
+  window.addEventListener("DOMContentLoaded", () => {
+    consumeWizardHandoff();
   });
 })();

@@ -160,11 +160,15 @@
   let fleetLoaded = false;
   let networkRaw = {}; // networkId -> raw payload, for drill-to-load
   let markers = []; // live maplibregl.Marker instances (cubes + atoms)
-  let placedItems = []; // { coord, kind:'network'|'boundary', ... } for drill detection
+  let markerMeta = []; // parallel to markers: { marker, provider } for filtering
+  let placedItems = []; // { coord, kind:'network'|'boundary', provider, ... } for drill / filter
   let drilling = false;
   let warp = null;
   let hasFitted = false; // auto-fit once per map visit, after the fleet loads
+  let providerFilter = "all"; // 'all' | 'aws' | 'azure' — map provider filter
   let els = {};
+
+  const CONNECT_MSG = "Connect to ZeroBias to load the fleet onto the map.";
 
   // --- region resolution -------------------------------------------------
 
@@ -399,6 +403,7 @@
           name: e.name || (raw && (raw.label || raw.name)) || e.dataFile,
           assessmentType: e.assessmentType,
           author: e.author,
+          provider: e.provider,
           mapCity: e.mapCity,
           mapLocation: e.mapLocation,
           stats: e.stats,
@@ -418,6 +423,7 @@
       name: e.name,
       type: e.assessmentType || "custom",
       author: e.author || "Guild",
+      provider: e.provider || (raw && raw.provider) || "agnostic",
       color: ASSESSMENT_COLORS[e.assessmentType] || ASSESSMENT_COLORS.custom,
       coord: explicit || fallback.coord,
       cityName: e.mapCity || (raw && raw.mapCity) || fallback.name,
@@ -600,7 +606,11 @@
       styleBtn: document.getElementById("map-style-toggle"),
       projBtn: document.getElementById("map-proj-toggle"),
       fitBtn: document.getElementById("map-fit"),
+      filAll: document.getElementById("map-filter-all"),
+      filAws: document.getElementById("map-filter-aws"),
+      filAzure: document.getElementById("map-filter-azure"),
     };
+    els.emptyDefault = els.empty ? els.empty.innerHTML : "";
     const canvas = container.querySelector("#map-canvas") || container;
 
     // Transition overlay used during the zoom-to-drill hand-off.
@@ -632,7 +642,10 @@
 
     if (els.styleBtn) els.styleBtn.addEventListener("click", toggleSatellite);
     if (els.projBtn) els.projBtn.addEventListener("click", toggleProjection);
-    if (els.fitBtn) els.fitBtn.addEventListener("click", () => fit());
+    if (els.fitBtn) els.fitBtn.addEventListener("click", () => fit(visiblePoints()));
+    if (els.filAll) els.filAll.addEventListener("click", () => setProviderFilter("all"));
+    if (els.filAws) els.filAws.addEventListener("click", () => setProviderFilter("aws"));
+    if (els.filAzure) els.filAzure.addEventListener("click", () => setProviderFilter("azure"));
   }
 
   // The map renders the fleet from data/map-fleet.json (networks as 3D cubes,
@@ -640,11 +653,27 @@
   // pass data, but it's intentionally ignored.
   function render() {
     if (!ready || !map || !map.getSource("aws-links")) return;
+
+    // Gate the fleet behind the ZeroBias connection: the app starts empty, so
+    // nothing shows on the map until the user connects. When the ZeroBias
+    // module isn't present at all, don't gate (the map still works standalone).
+    const gated = window.ZeroBias && window.ZeroBias.isReady && window.ZeroBias.isReady();
+    const connected = gated ? !!(window.ZeroBias.getState() || {}).connected : true;
+    if (gated && !connected) {
+      markers.forEach((m) => m.remove());
+      markers = []; markerMeta = []; placedItems = []; networkRaw = {};
+      map.getSource("aws-links").setData({ type: "FeatureCollection", features: [] });
+      if (els.empty) { els.empty.innerHTML = CONNECT_MSG; els.empty.hidden = false; }
+      return;
+    }
+    if (els.empty && els.emptyDefault != null) els.empty.innerHTML = els.emptyDefault;
+
     if (!fleetLoaded) loadFleet(); // fetch the fleet once, then re-render
 
     // Clear previous markers.
     markers.forEach((m) => m.remove());
     markers = [];
+    markerMeta = [];
     placedItems = [];
     networkRaw = {};
 
@@ -659,7 +688,8 @@
         .addTo(map);
       m.getElement().addEventListener("click", () => approach(f.geometry.coordinates));
       markers.push(m);
-      placedItems.push({ coord: f.geometry.coordinates, kind: "network", networkId: p.networkId, label: p.networkName || p.name });
+      markerMeta.push({ marker: m, provider: p.provider });
+      placedItems.push({ coord: f.geometry.coordinates, kind: "network", provider: p.provider, networkId: p.networkId, label: p.networkName || p.name });
     });
 
     // Guild boundaries → animated atoms across the USA.
@@ -669,15 +699,53 @@
         .addTo(map);
       m.getElement().addEventListener("click", () => approach(g.coord));
       markers.push(m);
-      placedItems.push({ coord: g.coord, kind: "boundary", guildId: g.id, label: g.name });
+      markerMeta.push({ marker: m, provider: g.provider });
+      placedItems.push({ coord: g.coord, kind: "boundary", provider: g.provider, guildId: g.id, label: g.name });
     });
+
+    // Respect the active provider filter for the freshly-built markers.
+    applyProviderVisibility();
 
     lastPoints = placedItems.map((it) => ({ geometry: { coordinates: it.coord } }));
     if (els.empty) els.empty.hidden = placedItems.length > 0;
     if (placedItems.length && !hasFitted) {
-      fit(lastPoints);
+      fit(visiblePoints());
       hasFitted = true;
     }
+  }
+
+  // --- provider filter (All / AWS / Azure) -------------------------------
+
+  // Show only markers matching the active provider (atoms whose provider is
+  // agnostic / on-prem show only under "All"). Cross-cloud links hide unless
+  // "All" is selected, since a single-provider view can't span both ends.
+  function applyProviderVisibility() {
+    markerMeta.forEach((mm) => {
+      const vis = providerFilter === "all" || mm.provider === providerFilter;
+      const el = mm.marker.getElement();
+      if (el) el.style.display = vis ? "" : "none";
+    });
+    if (map && map.getLayer && map.getLayer("aws-links-line")) {
+      try {
+        map.setLayoutProperty("aws-links-line", "visibility", providerFilter === "all" ? "visible" : "none");
+      } catch (_) {}
+    }
+  }
+
+  function visiblePoints() {
+    return placedItems
+      .filter((it) => providerFilter === "all" || it.provider === providerFilter)
+      .map((it) => ({ geometry: { coordinates: it.coord } }));
+  }
+
+  function setProviderFilter(p) {
+    providerFilter = p === "aws" || p === "azure" ? p : "all";
+    [els.filAll, els.filAws, els.filAzure].forEach((b) => b && b.classList.remove("is-active"));
+    const active = providerFilter === "aws" ? els.filAws : providerFilter === "azure" ? els.filAzure : els.filAll;
+    if (active) active.classList.add("is-active");
+    applyProviderVisibility();
+    const pts = visiblePoints();
+    if (pts.length) fit(pts);
   }
 
   // Click a marker to fly closer (just shy of the drill threshold) — the user

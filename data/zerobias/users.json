@@ -12,7 +12,12 @@
       "mfaEnabled": true,
       "lastLogin": "2026-06-08T22:14:00Z",
       "openTasks": 4,
-      "boundaries": ["boundary-acme-checkout-prod", "boundary-container-stig-baseline", "boundary-three-tier-web-prod", "boundary-contoso-azure-platform"]
+      "boundaries": ["boundary-acme-checkout-prod", "boundary-container-stig-baseline", "boundary-three-tier-web-prod", "boundary-contoso-azure-platform"],
+      "connection": {
+        "host": "api.uat.zerobias.com",
+        "orgId": "65950a83-6687-5cc0-9f79-eca43b0425b0",
+        "boundaryId": "ca36c1d1-0b13-40e1-81c2-4fadc5cdbcc2"
+      }
     },
     {
       "id": "u-alice",

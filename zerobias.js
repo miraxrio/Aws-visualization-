@@ -23,6 +23,7 @@
     users: "data/zerobias/users.json",
     tasks: "data/zerobias/tasks.json",
     inventory: "adapter/sample-aws-inventory.json",
+    creds: "data/zerobias/credentials.local.json", // gitignored, optional
   };
 
   // --- state -------------------------------------------------------------
@@ -38,6 +39,7 @@
   };
   let currentUser = null;
   const data = { org: null, boundaries: [], accounts: [], users: [], tasks: [] };
+  let localCreds = {}; // userId -> apiKey, from the gitignored local file
   let inited = false;
   let dataReady = null; // promise
   let hooks = { onLoadNetwork: null, onToast: null, onFocusHolon: null };
@@ -116,8 +118,8 @@
   function ensureData() {
     if (dataReady) return dataReady;
     dataReady = (async () => {
-      const [orgDoc, usersDoc, tasksDoc] = await Promise.all([
-        fetchJson(SAMPLE.org), fetchJson(SAMPLE.users), fetchJson(SAMPLE.tasks),
+      const [orgDoc, usersDoc, tasksDoc, credsDoc] = await Promise.all([
+        fetchJson(SAMPLE.org), fetchJson(SAMPLE.users), fetchJson(SAMPLE.tasks), fetchJson(SAMPLE.creds),
       ]);
       if (orgDoc) {
         data.org = orgDoc.org || null;
@@ -126,8 +128,12 @@
       }
       if (usersDoc) data.users = usersDoc.users || [];
       if (tasksDoc) data.tasks = tasksDoc.tasks || [];
-      // Restore the previously selected user, if any.
-      if (conn._userId) currentUser = data.users.find((u) => u.id === conn._userId) || null;
+      if (credsDoc) localCreds = credsDoc.credentials || credsDoc || {};
+      // Restore the previously selected user (and re-apply its connection).
+      if (conn._userId) {
+        currentUser = data.users.find((u) => u.id === conn._userId) || null;
+        if (currentUser) applyUserConnection(currentUser);
+      }
     })();
     return dataReady;
   }
@@ -191,27 +197,53 @@
 
   // --- connection actions ------------------------------------------------
 
+  // Apply a user's saved connection target (host/org/boundary, from users.json)
+  // and, if a local API key is configured for that user
+  // (data/zerobias/credentials.local.json — gitignored), wire it in so the
+  // import can go live without re-typing anything.
+  function applyUserConnection(u) {
+    if (!u) return;
+    if (u.connection) {
+      conn.host = u.connection.host || conn.host || DEFAULT_HOST;
+      conn.orgId = u.connection.orgId || conn.orgId || "";
+      conn.boundaryId = u.connection.boundaryId || conn.boundaryId || "";
+    }
+    if (localCreds && localCreds[u.id]) conn.apiKey = localCreds[u.id];
+  }
+
+  function refreshMap() {
+    if (window.AwsMap && window.AwsMap.isReady && window.AwsMap.isReady()) window.AwsMap.render();
+  }
+
+  // Run after any successful connect: refresh panels + the map gate, then pull
+  // the network so the views are no longer empty.
+  function afterConnect() {
+    render();
+    refreshMap();
+    doImport();
+  }
+
   function connect(form) {
     conn.host = (form.host || "").trim() || DEFAULT_HOST;
     conn.orgId = (form.orgId || "").trim();
     conn.boundaryId = (form.boundaryId || "").trim();
-    conn.apiKey = form.apiKey || "";
+    conn.apiKey = form.apiKey || conn.apiKey || "";
     conn.remember = !!form.remember;
     conn.connected = true;
     if (!currentUser && data.users.length) {
       currentUser = data.users.find((u) => u.type === "human") || data.users[0];
     }
     saveConn();
-    render();
     const liveCapable = conn.apiKey && conn.orgId && conn.boundaryId;
-    toast(liveCapable ? "Connected to ZeroBias. Import a network to pull live inventory." : "ZeroBias connected (demo). Add an API key for live data.");
+    toast(liveCapable ? "Connected to ZeroBias — pulling inventory…" : "ZeroBias connected (demo). Add an API key for live data.");
+    afterConnect();
   }
   function continueDemo() {
     conn.connected = true;
     if (!currentUser && data.users.length) currentUser = data.users.find((u) => u.type === "human") || data.users[0];
     saveConn();
-    render();
     toast("Using ZeroBias demo data.");
+    afterConnect();
   }
   function disconnect() {
     conn.apiKey = "";
@@ -220,14 +252,17 @@
     currentUser = null;
     try { localStorage.removeItem(LS_KEY); } catch (_) {}
     render();
+    refreshMap();
     toast("Disconnected from ZeroBias.");
   }
   function selectUser(id) {
     currentUser = data.users.find((u) => u.id === id) || null;
-    if (currentUser) conn.connected = true;
+    if (!currentUser) return;
+    conn.connected = true;
+    applyUserConnection(currentUser);
     saveConn();
-    render();
-    if (currentUser) toast(`Signed in as ${currentUser.name}.`);
+    toast(`Signed in as ${currentUser.name}.`);
+    afterConnect();
   }
 
   // --- rendering: account button + brand state ---------------------------
@@ -257,10 +292,22 @@
     return '<span class="zb-badge zb-badge-off">Not connected</span>';
   }
 
+  // Empty-state call-to-action shown in the panels before the user connects.
+  function connectCtaHtml(text) {
+    return `<div class="zb-cta">
+      <p class="muted small">${esc(text)}</p>
+      <button class="btn primary zb-cta-btn" data-zb-open-modal type="button"><span class="zb-hex">⬡</span> Connect ZeroBias</button>
+    </div>`;
+  }
+
   // --- rendering: sidebar Organization + Boundaries ----------------------
 
   function renderOrgPanel() {
     if (!els.orgBody) return;
+    if (!conn.connected) {
+      els.orgBody.innerHTML = connectCtaHtml("Connect your ZeroBias account to load your organization, boundaries and cloud accounts.");
+      return;
+    }
     const o = data.org;
     if (!o) { els.orgBody.innerHTML = '<p class="muted small">ZeroBias data unavailable.</p>'; return; }
     const frameworks = (o.complianceFrameworks || []).map((f) => `<span class="zb-chip">${esc(f)}</span>`).join("");
@@ -319,6 +366,11 @@
 
   function renderTasksPanel() {
     if (!els.tasksBody) return;
+    if (!conn.connected) {
+      if (els.tasksCount) els.tasksCount.textContent = "0";
+      els.tasksBody.innerHTML = connectCtaHtml("Sign in to ZeroBias to see the tasks assigned to you.");
+      return;
+    }
     const all = data.tasks || [];
     const mine = currentUser ? all.filter((t) => t.assignee === currentUser.id) : all;
     const list = (mine.length ? mine : all).slice();
@@ -358,6 +410,12 @@
 
   function renderMapOverlay() {
     if (!els.mapPanel) return;
+    if (!conn.connected) {
+      els.mapPanel.innerHTML =
+        `<div class="zb-map-head"><span class="zb-hex">⬡</span><div><div class="zb-map-title">ZeroBias</div><div class="zb-map-sub">${statusBadge()}</div></div></div>` +
+        connectCtaHtml("Connect to ZeroBias to load your organization, boundaries and tasks onto the map.");
+      return;
+    }
     const o = data.org;
     const open = (data.tasks || []).filter((t) => t.status !== "done").length;
     const findings = (data.boundaries || []).reduce((n, b) => n + ((b.stats && b.stats.openFindings) || 0), 0);
@@ -409,6 +467,10 @@
     if (els.fOrg && document.activeElement !== els.fOrg) els.fOrg.value = conn.orgId || "";
     if (els.fBoundary && document.activeElement !== els.fBoundary) els.fBoundary.value = conn.boundaryId || "";
     if (els.fRemember) els.fRemember.checked = conn.remember;
+    // Indicate (without echoing) when a key is already loaded for this session.
+    if (els.fApiKey && document.activeElement !== els.fApiKey) {
+      els.fApiKey.placeholder = conn.apiKey ? "•••••••• (key loaded)" : "APIKey …";
+    }
 
     // user picker (sign in as)
     if (els.userPicker) {
@@ -511,6 +573,11 @@
     });
     if (els.demoBtn) els.demoBtn.addEventListener("click", (e) => { e.preventDefault(); continueDemo(); });
     if (els.disconnectBtn) els.disconnectBtn.addEventListener("click", (e) => { e.preventDefault(); disconnect(); });
+    // Any "Connect ZeroBias" CTA (rendered into the panels / map overlay).
+    document.addEventListener("click", (e) => {
+      const t = e.target && e.target.closest && e.target.closest("[data-zb-open-modal]");
+      if (t) { e.preventDefault(); openModal(); }
+    });
     // Close the import menu on outside click / Escape.
     document.addEventListener("click", (e) => {
       if (els.menu && !els.menu.hidden && !els.menu.contains(e.target) && e.target !== els.menuBtn) closeMenu();
@@ -527,7 +594,12 @@
     loadConn();
     cacheEls();
     wire();
-    ensureData().then(render);
+    ensureData().then(() => {
+      render();
+      // Returning user who was already connected: pull their network so the
+      // views aren't empty (a fresh, never-connected load stays empty).
+      if (conn.connected) afterConnect();
+    });
   }
 
   window.ZeroBias = {

@@ -11,6 +11,10 @@ osiris/.vercel/
 osiris/.env
 osiris/.env*.local
 
+# ZeroBias local credentials (API keys) — never commit; loaded at runtime only
+data/zerobias/credentials.local.json
+**/*.local.json
+
 # OS / editor noise
 .DS_Store
 *.log

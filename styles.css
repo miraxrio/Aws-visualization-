@@ -3397,3 +3397,19 @@ body.mode-holographic.mode-3d .stage-holo canvas:hover { cursor: pointer; }
   color: var(--muted);
   margin-top: 2px;
 }
+
+/* Connect call-to-action (panels + map overlay empty states) */
+.zb-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 4px 0 2px;
+}
+.zb-cta p { margin: 0; }
+.zb-cta-btn { background: var(--zb-grad); border-color: transparent; color: #0b1220; font-weight: 700; }
+.map-zb-panel .zb-cta { align-items: stretch; }
+.map-zb-panel .zb-cta-btn { justify-content: center; }
+
+/* Map provider filter segmented control */
+.map-filter-seg .seg-btn { padding: 6px 12px; font-size: 11px; }
