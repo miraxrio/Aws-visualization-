@@ -27,16 +27,57 @@ integration module (`@zerobias-org/module-avigilon-alta-access`):
 | **Logins** | `authType`, `accessCredential.*`; module `auth` + **`audit`** log operations | `schema .../enums/authType.yml`, module `api.yml` |
 | **Tasks** | Not in the open content schema — a platform/workflow concept in the proprietary SDK (~1,200 ops) | `zb` MCP (`@zerobias-com/zerobias-mcp`) |
 
-**Key caveat.** The open schema is **host/interface centric**, not cloud-native:
-`asset.type` is `LAPTOP / DESKTOP / MOBILE / TABLET / FIREWALL / CA / ENTITY /
-UNKNOWN` — there is no first-class `VPC` / `EC2` / `Subnet` class in the public
-schema. Native cloud-resource classes and the AWS/Azure collector modules live
-in ZeroBias's **proprietary `@auditlogic` scope**. This adapter therefore maps
-the *open* evidence model (hosts + interfaces + routes + firewall rules +
-identities) onto the visualizer's VPC/subnet/resource/flow model, inferring the
-cloud structure. When you point `--live` at a tenant that has the cloud modules,
-confirm the exact field/endpoint names (via the `zb` MCP's `zerobias_describe`)
-and adjust the path overrides — the transform itself stays the same.
+**Two access shapes.** The open schema is **host/interface centric**
+(`asset.type` is `LAPTOP / DESKTOP / FIREWALL / …`, no first-class `VPC`/`EC2`).
+But a tenant that has ingested a cloud account exposes **native AWS types** via
+the boundaries **GraphQL** API — confirmed live: `AwsIamUser { name arn
+mfaEnabled awsAccountId }`, and by extension `AwsVpc` / `AwsSubnet` /
+`AwsEc2Instance` / `AwsSecurityGroup` / …. Those map almost 1:1 onto this
+visualizer, so the GraphQL path (below) is the recommended one for AWS
+inventory; the generic asset path is the fallback for non-cloud evidence.
+
+## Native AWS inventory via GraphQL (recommended for AWS)
+
+```bash
+# discover the exact Aws* types your boundary exposes
+ZEROBIAS_API_KEY=… ZEROBIAS_ORG_ID=… ZEROBIAS_BOUNDARY_ID=… \
+  node adapter/cli.js --introspect
+
+# pull inventory and render it
+node adapter/cli.js --graphql --boundary <id> --identity --pretty --out adapter/aws-network.json
+
+# offline: map a saved inventory dump (no network)
+node adapter/cli.js --graphql --in adapter/sample-aws-inventory.json --identity --pretty
+```
+
+Transport (verified): `PUT https://<host>/graphql/boundaries/<boundaryId>?pageSize=<n>`
+with headers `Authorization: APIKey <key>` and `dana-org-id: <org>`, body
+`{ "query": "<graphql>" }`; filters use the DSL `Field(arg: ".eq.value")`.
+Default host `api.uat.zerobias.com` (override with `--host`).
+
+`zb-graphql.sh` is a curl wrapper for the same API — run it where ZeroBias is
+reachable to `introspect`, inspect a `type`, run an arbitrary `q`, or dump the
+whole `inventory` as a file for `--graphql --in`.
+
+**AWS → visualizer mapping:** `AwsVpc`→VPC, `AwsSubnet`→subnet (tier from route
+table / `mapPublicIpOnLaunch` / Name tag), `AwsInternetGateway`/`AwsNatGateway`→
+gateways, `AwsEc2Instance`→`ec2`, `AwsLoadBalancer`→`alb`/`nlb`, `AwsRdsInstance`→
+`rds`/`aurora`, `AwsLambdaFunction`→`lambda`; **flows** from security-group rules
+(internet ingress + SG-to-SG east-west) and the route-table egress chain
+(instance → NAT → IGW); `AwsIamUser` → identity overlay (MFA-disabled users
+flagged).
+
+> Only `AwsIamUser`'s fields are confirmed; the other selection sets use standard
+> AWS field names. Run `--introspect` (and `zb-graphql.sh type AwsSubnet`) against
+> your boundary to confirm, then tweak the selection sets in `zerobias-graphql.js`
+> if a name differs — the mapping is alias-tolerant for the common variants.
+
+### Generic asset path (non-cloud evidence)
+
+The open host/interface/route/firewall/identity model is mapped onto the
+visualizer by inferring cloud structure. Point `--live` at a tenant and confirm
+field/endpoint names via the `zb` MCP's `zerobias_describe`; the transform stays
+the same.
 
 ---
 
@@ -112,8 +153,20 @@ empty set — the rest still renders.
 
 | File | Purpose |
 |------|---------|
-| `zerobias-adapter.js` | pure transform (`transform`, `validate`) — Node + browser |
-| `live.js` | live tenant fetch + `normalize()` to the input contract |
-| `cli.js` | command-line entry point |
-| `sample-zerobias-export.json` | worked example input |
-| `zerobias-network.json` | generated output (load this in the app) |
+| `zerobias-graphql.js` | **AWS path** — boundaries GraphQL client + `awsInventoryToVisualizer()` |
+| `zb-graphql.sh` | curl wrapper (introspect / type / q / inventory) for the same API |
+| `sample-aws-inventory.json` | mock AWS inventory for offline testing |
+| `aws-network.json` | generated AWS output (load this in the app) |
+| `zerobias-adapter.js` | generic transform (`transform`, `validate`) — Node + browser |
+| `live.js` | generic live tenant fetch + `normalize()` |
+| `cli.js` | command-line entry point (both paths) |
+| `sample-zerobias-export.json` / `zerobias-network.json` | generic worked example |
+
+### Heads-up: this web environment can't reach ZeroBias
+
+This Claude Code web environment's egress allowlist blocks `*.zerobias.com`
+(`api.app.zerobias.com` and `api.uat.zerobias.com` both return HTTP 403
+`host_not_allowed`). Run the live `--graphql` / `--introspect` / `zb-graphql.sh`
+commands from a network that can reach ZeroBias, or allowlist the host in the
+environment's network policy. The offline `--graphql --in <file>` path needs no
+network.

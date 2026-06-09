@@ -1,0 +1,42 @@
+{
+  "_comment": "Mock of ZeroBias boundaries-GraphQL output (already normalized to per-type arrays). Mirrors the confirmed AwsIamUser shape + standard AWS fields. Used to unit-test awsInventoryToVisualizer() without network. Replace with real --graphql output once field names are confirmed.",
+  "vpcs": [
+    { "vpcId": "vpc-0a1b2c3d", "cidrBlock": "10.0.0.0/16", "region": "us-east-1", "awsAccountId": "123456789012", "tags": [{ "key": "Name", "value": "prod-vpc" }] }
+  ],
+  "subnets": [
+    { "subnetId": "subnet-pub-a", "vpcId": "vpc-0a1b2c3d", "cidrBlock": "10.0.1.0/24", "availabilityZone": "us-east-1a", "mapPublicIpOnLaunch": true,  "tags": [{ "key": "Name", "value": "public-1a" }] },
+    { "subnetId": "subnet-app-a", "vpcId": "vpc-0a1b2c3d", "cidrBlock": "10.0.11.0/24", "availabilityZone": "us-east-1a", "mapPublicIpOnLaunch": false, "tags": [{ "key": "Name", "value": "app-1a" }] },
+    { "subnetId": "subnet-data-a","vpcId": "vpc-0a1b2c3d", "cidrBlock": "10.0.21.0/24", "availabilityZone": "us-east-1a", "mapPublicIpOnLaunch": false, "tags": [{ "key": "Name", "value": "data-1a" }] }
+  ],
+  "internetGateways": [
+    { "internetGatewayId": "igw-001", "attachments": [{ "vpcId": "vpc-0a1b2c3d" }] }
+  ],
+  "natGateways": [
+    { "natGatewayId": "nat-001", "subnetId": "subnet-pub-a", "vpcId": "vpc-0a1b2c3d" }
+  ],
+  "routeTables": [
+    { "routeTableId": "rtb-pub",  "vpcId": "vpc-0a1b2c3d", "associations": [{ "subnetId": "subnet-pub-a" }], "routes": [{ "destinationCidrBlock": "0.0.0.0/0", "gatewayId": "igw-001" }] },
+    { "routeTableId": "rtb-app",  "vpcId": "vpc-0a1b2c3d", "associations": [{ "subnetId": "subnet-app-a" }], "routes": [{ "destinationCidrBlock": "0.0.0.0/0", "natGatewayId": "nat-001" }] },
+    { "routeTableId": "rtb-data", "vpcId": "vpc-0a1b2c3d", "associations": [{ "subnetId": "subnet-data-a", "main": true }], "routes": [] }
+  ],
+  "instances": [
+    { "instanceId": "i-app1", "subnetId": "subnet-app-a", "vpcId": "vpc-0a1b2c3d", "privateIpAddress": "10.0.11.31", "securityGroupIds": ["sg-app"], "tags": [{ "key": "Name", "value": "api-server-1" }] },
+    { "instanceId": "i-app2", "subnetId": "subnet-app-a", "vpcId": "vpc-0a1b2c3d", "privateIpAddress": "10.0.11.32", "securityGroupIds": ["sg-app"], "tags": [{ "key": "Name", "value": "api-server-2" }] }
+  ],
+  "securityGroups": [
+    { "groupId": "sg-alb", "vpcId": "vpc-0a1b2c3d", "ipPermissions": [{ "fromPort": 443, "toPort": 443, "ipProtocol": "tcp", "ipRanges": [{ "cidrIp": "0.0.0.0/0" }], "userIdGroupPairs": [] }] },
+    { "groupId": "sg-app", "vpcId": "vpc-0a1b2c3d", "ipPermissions": [{ "fromPort": 8080, "toPort": 8080, "ipProtocol": "tcp", "ipRanges": [], "userIdGroupPairs": [{ "groupId": "sg-alb" }] }] },
+    { "groupId": "sg-db",  "vpcId": "vpc-0a1b2c3d", "ipPermissions": [{ "fromPort": 5432, "toPort": 5432, "ipProtocol": "tcp", "ipRanges": [], "userIdGroupPairs": [{ "groupId": "sg-app" }] }] }
+  ],
+  "loadBalancers": [
+    { "loadBalancerArn": "alb-web", "name": "web-alb", "type": "application", "scheme": "internet-facing", "vpcId": "vpc-0a1b2c3d", "subnets": ["subnet-pub-a"], "securityGroupIds": ["sg-alb"] }
+  ],
+  "rds": [
+    { "dbInstanceIdentifier": "prod-postgres", "engine": "postgres", "vpcId": "vpc-0a1b2c3d", "subnetIds": ["subnet-data-a"], "securityGroupIds": ["sg-db"], "tags": [{ "key": "Name", "value": "prod-postgres" }] }
+  ],
+  "lambdas": [],
+  "iamUsers": [
+    { "name": "deploy-bot", "arn": "arn:aws:iam::123456789012:user/deploy-bot", "mfaEnabled": false, "awsAccountId": "123456789012" },
+    { "name": "ci-runner",  "arn": "arn:aws:iam::123456789012:user/ci-runner",  "mfaEnabled": false, "awsAccountId": "123456789012" }
+  ]
+}

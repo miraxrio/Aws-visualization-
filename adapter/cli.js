@@ -14,16 +14,22 @@ const fs = require("fs");
 const path = require("path");
 const { transform, validate } = require("./zerobias-adapter");
 const live = require("./live");
+const graphql = require("./zerobias-graphql");
 
 function parseArgs(argv) {
   const args = { endpoint: {} };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--live") args.live = true;
+    else if (a === "--graphql" || a === "--aws") args.graphql = true;
+    else if (a === "--introspect") args.introspect = true;
     else if (a === "--identity") args.identity = true;
     else if (a === "--pretty") args.pretty = true;
     else if (a === "--in") args.in = argv[++i];
     else if (a === "--out") args.out = argv[++i];
+    else if (a === "--boundary") args.boundary = argv[++i];
+    else if (a === "--host") args.host = argv[++i];
+    else if (a === "--page-size") args.pageSize = Number(argv[++i]);
     else if (a === "--identity-type") args.identityType = argv[++i];
     else if (a === "--endpoint") {
       const [k, v] = String(argv[++i] || "").split("=");
@@ -39,14 +45,19 @@ Usage: node adapter/cli.js [options]
 
   --in <file>          ZeroBias export JSON (default: adapter/sample-zerobias-export.json)
   --out <file>         output network JSON (default: adapter/zerobias-network.json)
-  --live               fetch from a live ZeroBias tenant instead of --in
+  --graphql, --aws     pull native AWS inventory via the ZeroBias boundaries GraphQL API
+  --boundary <id>      boundary id for --graphql (or env ZEROBIAS_BOUNDARY_ID)
+  --host <host>        GraphQL host (default ${graphql.DEFAULT_HOST})
+  --page-size <n>      GraphQL pageSize (default 100)
+  --introspect         list the boundary's GraphQL query fields (discover Aws* types) and exit
+  --live               fetch from a live ZeroBias tenant (generic asset model) instead of --in
   --endpoint k=path    override a live collection path (repeatable)
-  --identity           add the identity/access overlay (principals + permissions)
+  --identity           add the identity/access overlay (principals / IAM users)
   --identity-type <t>  visualizer type for principal nodes (default: ec2)
   --pretty             pretty-print the output
   -h, --help           this message
 
-Live auth (env): ZEROBIAS_API_KEY, ZEROBIAS_ORG_ID, [ZEROBIAS_BASE_URL]`;
+Auth (env): ZEROBIAS_API_KEY, ZEROBIAS_ORG_ID [, ZEROBIAS_BOUNDARY_ID, ZEROBIAS_GQL_HOST]`;
 
 async function main() {
   const args = parseArgs(process.argv);
@@ -56,8 +67,45 @@ async function main() {
   }
 
   const outPath = args.out || path.join(__dirname, "zerobias-network.json");
-  let zb;
+  let net;
 
+  // ---- GraphQL / AWS-inventory path ----
+  if (args.introspect || args.graphql) {
+    const conn = graphql.connFromEnv();
+    if (args.host) conn.host = args.host;
+    if (args.boundary) conn.boundaryId = args.boundary;
+    if (args.pageSize) conn.pageSize = args.pageSize;
+
+    if (args.introspect) {
+      const data = await graphql.gql(conn, graphql.INTROSPECT_FIELDS);
+      const fields = ((data.__schema || {}).queryType || {}).fields || [];
+      const aws = fields.map((f) => f.name).filter((n) => /^Aws/.test(n));
+      console.log(`• ${fields.length} query fields (${aws.length} Aws*):`);
+      console.log("  " + (aws.length ? aws.join("\n  ") : fields.map((f) => f.name).join("\n  ")));
+      return;
+    }
+
+    let raw;
+    if (args.in) {
+      // Treat --in as pre-fetched, per-type inventory JSON (offline testing or
+      // a saved dump). No network needed.
+      raw = JSON.parse(fs.readFileSync(args.in, "utf8"));
+      console.log(`• Loaded AWS inventory: ${path.relative(process.cwd(), args.in)}`);
+    } else {
+      if (!conn.apiKey || !conn.orgId || !conn.boundaryId) {
+        console.error("✗ --graphql needs ZEROBIAS_API_KEY, ZEROBIAS_ORG_ID and --boundary <id> (or ZEROBIAS_BOUNDARY_ID).");
+        process.exit(2);
+      }
+      console.log(`• Querying ${conn.host} boundary ${conn.boundaryId} …`);
+      raw = await graphql.fetchInventory(conn);
+      if (raw._warnings) raw._warnings.forEach((w) => console.warn("  ! " + w));
+    }
+    net = graphql.awsInventoryToVisualizer(raw, { identity: args.identity, identityType: args.identityType });
+    finish(net, outPath, args);
+    return;
+  }
+
+  let zb;
   if (args.live) {
     if (!live.hasCreds()) {
       console.error(
@@ -81,8 +129,11 @@ async function main() {
     console.log(`• Loaded export: ${path.relative(process.cwd(), inPath)}`);
   }
 
-  const net = transform(zb, { identity: args.identity, identityType: args.identityType });
+  net = transform(zb, { identity: args.identity, identityType: args.identityType });
+  finish(net, outPath, args);
+}
 
+function finish(net, outPath, args) {
   const problems = validate(net);
   const counts = net.vpcs.reduce(
     (acc, v) => {

@@ -1,0 +1,147 @@
+{
+  "name": "AWS inventory (ZeroBias)",
+  "region": "us-east-1",
+  "vpcs": [
+    {
+      "id": "vpc-0a1b2c3d",
+      "name": "prod-vpc",
+      "cidr": "10.0.0.0/16",
+      "region": "us-east-1",
+      "subnets": [
+        {
+          "id": "subnet-pub-a",
+          "name": "public-1a",
+          "cidr": "10.0.1.0/24",
+          "tier": "public",
+          "az": "us-east-1a"
+        },
+        {
+          "id": "subnet-app-a",
+          "name": "app-1a",
+          "cidr": "10.0.11.0/24",
+          "tier": "private",
+          "az": "us-east-1a"
+        },
+        {
+          "id": "subnet-data-a",
+          "name": "data-1a",
+          "cidr": "10.0.21.0/24",
+          "tier": "data",
+          "az": "us-east-1a"
+        }
+      ],
+      "gateways": [
+        {
+          "id": "igw-001",
+          "type": "igw",
+          "name": "Internet Gateway"
+        },
+        {
+          "id": "nat-001",
+          "type": "nat",
+          "name": "NAT Gateway",
+          "subnet": "subnet-pub-a"
+        }
+      ],
+      "resources": [
+        {
+          "id": "i-app1",
+          "type": "ec2",
+          "name": "api-server-1",
+          "subnet": "subnet-app-a"
+        },
+        {
+          "id": "i-app2",
+          "type": "ec2",
+          "name": "api-server-2",
+          "subnet": "subnet-app-a"
+        },
+        {
+          "id": "alb-web",
+          "type": "alb",
+          "name": "web-alb",
+          "subnet": "subnet-pub-a"
+        },
+        {
+          "id": "prod-postgres",
+          "type": "rds",
+          "name": "prod-postgres",
+          "subnet": "subnet-data-a"
+        }
+      ]
+    },
+    {
+      "id": "iam",
+      "name": "IAM Users",
+      "subnets": [
+        {
+          "id": "iam-users",
+          "name": "Users",
+          "tier": "private",
+          "az": "global"
+        }
+      ],
+      "gateways": [],
+      "resources": [
+        {
+          "id": "arn:aws:iam::123456789012:user/deploy-bot",
+          "type": "ec2",
+          "name": "deploy-bot ⚠no-MFA",
+          "subnet": "iam-users"
+        },
+        {
+          "id": "arn:aws:iam::123456789012:user/ci-runner",
+          "type": "ec2",
+          "name": "ci-runner ⚠no-MFA",
+          "subnet": "iam-users"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "from": "internet",
+      "to": "alb-web",
+      "label": ":443",
+      "kind": "internet"
+    },
+    {
+      "from": "alb-web",
+      "to": "i-app1",
+      "label": ":8080"
+    },
+    {
+      "from": "alb-web",
+      "to": "i-app2",
+      "label": ":8080"
+    },
+    {
+      "from": "i-app1",
+      "to": "prod-postgres",
+      "label": ":5432"
+    },
+    {
+      "from": "i-app2",
+      "to": "prod-postgres",
+      "label": ":5432"
+    },
+    {
+      "from": "i-app1",
+      "to": "nat-001",
+      "label": "egress",
+      "kind": "egress"
+    },
+    {
+      "from": "nat-001",
+      "to": "igw-001",
+      "label": "0.0.0.0/0",
+      "kind": "egress"
+    },
+    {
+      "from": "i-app2",
+      "to": "nat-001",
+      "label": "egress",
+      "kind": "egress"
+    }
+  ]
+}
