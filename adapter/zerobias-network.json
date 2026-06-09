@@ -1,1 +1,148 @@
-{"name":"AWS inventory (ZeroBias)","region":"us-east-1","vpcs":[{"id":"vpc-0a1b2c3d","name":"prod-vpc","cidr":"10.0.0.0/16","region":"us-east-1","subnets":[{"id":"subnet-pub-a","name":"public-1a","cidr":"10.0.1.0/24","tier":"public","az":"us-east-1a"},{"id":"subnet-app-a","name":"app-1a","cidr":"10.0.11.0/24","tier":"private","az":"us-east-1a"},{"id":"subnet-data-a","name":"data-1a","cidr":"10.0.21.0/24","tier":"data","az":"us-east-1a"}],"gateways":[{"id":"igw-001","type":"igw","name":"Internet Gateway"},{"id":"nat-001","type":"nat","name":"NAT Gateway","subnet":"subnet-pub-a"}],"resources":[{"id":"i-app1","type":"ec2","name":"api-server-1","subnet":"subnet-app-a"},{"id":"i-app2","type":"ec2","name":"api-server-2","subnet":"subnet-app-a"},{"id":"alb-web","type":"alb","name":"web-alb","subnet":"subnet-pub-a"},{"id":"prod-postgres","type":"rds","name":"prod-postgres","subnet":"subnet-data-a"}]}],"flows":[{"from":"internet","to":"alb-web","label":":443","kind":"internet"},{"from":"alb-web","to":"i-app1","label":":8080"},{"from":"alb-web","to":"i-app2","label":":8080"},{"from":"i-app1","to":"prod-postgres","label":":5432"},{"from":"i-app2","to":"prod-postgres","label":":5432"},{"from":"i-app1","to":"nat-001","label":"egress","kind":"egress"},{"from":"nat-001","to":"igw-001","label":"0.0.0.0/0","kind":"egress"},{"from":"i-app2","to":"nat-001","label":"egress","kind":"egress"}]}
+{
+  "name": "Acme Production — ZeroBias import",
+  "region": "us-east-1",
+  "vpcs": [
+    {
+      "id": "net-prod",
+      "name": "Production",
+      "cidr": "10.0.0.0/16",
+      "region": "us-east-1",
+      "subnets": [
+        {
+          "id": "seg-dmz",
+          "name": "DMZ / Public",
+          "cidr": "10.0.1.0/24",
+          "tier": "public",
+          "az": "us-east-1a"
+        },
+        {
+          "id": "seg-app",
+          "name": "App / Private",
+          "cidr": "10.0.11.0/24",
+          "tier": "private",
+          "az": "us-east-1a"
+        },
+        {
+          "id": "seg-data",
+          "name": "Data",
+          "cidr": "10.0.21.0/24",
+          "tier": "data",
+          "az": "us-east-1a"
+        }
+      ],
+      "gateways": [
+        {
+          "id": "igw-net-prod",
+          "type": "igw",
+          "name": "Internet Gateway"
+        },
+        {
+          "id": "nat-seg-dmz",
+          "type": "nat",
+          "name": "NAT us-east-1a",
+          "subnet": "seg-dmz"
+        }
+      ],
+      "resources": [
+        {
+          "id": "edge-fw",
+          "type": "waf",
+          "name": "edge-fw-1",
+          "subnet": "seg-dmz"
+        },
+        {
+          "id": "web-alb",
+          "type": "alb",
+          "name": "web-alb",
+          "subnet": "seg-dmz"
+        },
+        {
+          "id": "api-1",
+          "type": "ecs",
+          "name": "api-svc-1",
+          "subnet": "seg-app"
+        },
+        {
+          "id": "api-2",
+          "type": "ecs",
+          "name": "api-svc-2",
+          "subnet": "seg-app"
+        },
+        {
+          "id": "pg-primary",
+          "type": "rds",
+          "name": "pg-primary",
+          "subnet": "seg-data"
+        },
+        {
+          "id": "redis-cache",
+          "type": "redis",
+          "name": "redis-cache",
+          "subnet": "seg-data"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "from": "nat-seg-dmz",
+      "to": "igw-net-prod",
+      "label": "0.0.0.0/0",
+      "kind": "egress"
+    },
+    {
+      "from": "api-1",
+      "to": "nat-seg-dmz",
+      "label": "egress",
+      "kind": "egress"
+    },
+    {
+      "from": "api-2",
+      "to": "nat-seg-dmz",
+      "label": "egress",
+      "kind": "egress"
+    },
+    {
+      "from": "internet",
+      "to": "edge-fw",
+      "label": ":443",
+      "kind": "internet"
+    },
+    {
+      "from": "internet",
+      "to": "web-alb",
+      "label": ":443",
+      "kind": "internet"
+    },
+    {
+      "from": "edge-fw",
+      "to": "web-alb",
+      "label": "HTTPS 443"
+    },
+    {
+      "from": "web-alb",
+      "to": "api-1",
+      "label": "HTTP 8080"
+    },
+    {
+      "from": "web-alb",
+      "to": "api-2",
+      "label": "HTTP 8080"
+    },
+    {
+      "from": "api-1",
+      "to": "pg-primary",
+      "label": "5432"
+    },
+    {
+      "from": "api-2",
+      "to": "pg-primary",
+      "label": "5432"
+    },
+    {
+      "from": "api-1",
+      "to": "redis-cache",
+      "label": "6379 cache"
+    }
+  ]
+}
