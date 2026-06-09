@@ -86,6 +86,8 @@
     // Load a full network payload (single- or multi-version) — used by the
     // map view to drill into one of the fleet's networks.
     load: (data) => loadData(data),
+    // Deep-link a ZeroBias task to the finding (holon) it tracks.
+    focusHolon: (id) => focusHolon(id),
   };
 
   function loadData(data) {
@@ -1409,6 +1411,28 @@
   }
 
   /**
+   * Best-effort deep link from a ZeroBias task to the holon (finding) it
+   * tracks: navigate the holographic view to that holon and open its detail.
+   * @param {string} holonId
+   * @returns {boolean} whether the holon was found
+   */
+  function focusHolon(holonId) {
+    if (!currentBoundary || !holonId) return false;
+    let holonicId = null;
+    (currentBoundary.holonics || []).forEach((hc) => {
+      if (!holonicId && Array.isArray(hc.holons) && hc.holons.includes(holonId)) holonicId = hc.id;
+    });
+    const holon = window.AwsHoloViz && window.AwsHoloViz.findHolon && window.AwsHoloViz.findHolon(holonId);
+    if (holonicId) holoNavigate(2, holonicId, holonId);
+    if (holon) {
+      currentHolonId = holonId;
+      renderHolonDetail(holon);
+      updateBreadcrumb();
+    }
+    return !!holon;
+  }
+
+  /**
    * Refresh the boundary > holonic > holon breadcrumb to reflect the
    * current ZoomLevel.
    */
@@ -1806,6 +1830,20 @@
         });
       }
     });
+  }
+
+  // ZeroBias: import network / boundary / tasks, sign-in, org + map overlays.
+  function initZeroBias() {
+    if (!window.ZeroBias) return false;
+    window.ZeroBias.init({
+      onLoadNetwork: (data) => loadData(data),
+      onToast: showHoloToast,
+      onFocusHolon: (id) => focusHolon(id),
+    });
+    return true;
+  }
+  if (!initZeroBias()) {
+    document.addEventListener("DOMContentLoaded", initZeroBias);
   }
 
   // Wizard → Visualizer handoff. When the user clicks "Load into Visualizer"

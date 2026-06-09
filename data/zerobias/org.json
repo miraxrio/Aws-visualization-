@@ -1,0 +1,112 @@
+{
+  "_comment": "Sample ZeroBias organization payload. Mirrors the shape the live ZeroBias API returns (org metadata + boundaries + cloud accounts) so the visualizer's ZeroBias panels are fully populated offline. When a live connection succeeds these fields are replaced by the real tenant's data. See adapter/README.md + BACKEND-DATA-EXAMPLES.md.",
+  "org": {
+    "id": "org-acme-7f3a",
+    "danaOrgId": "org-acme-7f3a",
+    "name": "Acme Corporation",
+    "slug": "acme",
+    "plan": "Enterprise",
+    "primaryRegion": "us-east-1",
+    "createdAt": "2024-11-02T10:00:00Z",
+    "complianceFrameworks": ["SOC 2 Type II", "ISO 27001", "NIST 800-53", "PCI DSS"],
+    "contact": "security@acme.example",
+    "memberCount": 34,
+    "boundaryCount": 4,
+    "accountCount": 3,
+    "mapCity": "Cochabamba"
+  },
+  "boundaries": [
+    {
+      "id": "boundary-acme-checkout-prod",
+      "name": "Acme · Checkout · prod",
+      "kind": "assessment",
+      "environment": "prod",
+      "role": "supplier",
+      "provider": "aws",
+      "accountId": "123456789012",
+      "region": "us-east-1",
+      "dataFile": "data/sample-boundary.json",
+      "snapshotAt": "2026-05-19T06:00:00Z",
+      "owner": "Acme Compliance",
+      "mapCity": "Denver",
+      "stats": { "holonics": 3, "holons": 8, "passRate": 50, "openFindings": 4, "criticalFindings": 1 }
+    },
+    {
+      "id": "boundary-container-stig-baseline",
+      "name": "Container STIG baseline",
+      "kind": "assessment",
+      "environment": "prod",
+      "role": "supplier",
+      "provider": "agnostic",
+      "accountId": "123456789012",
+      "region": "us-east-1",
+      "dataFile": "data/sample-holons.json",
+      "snapshotAt": "2026-05-12T08:14:00Z",
+      "owner": "Platform Security Guild",
+      "mapCity": "Seattle",
+      "stats": { "holonics": 2, "holons": 5, "passRate": 60, "openFindings": 2, "criticalFindings": 0 }
+    },
+    {
+      "id": "boundary-three-tier-web-prod",
+      "name": "Three-tier web app · prod",
+      "kind": "network",
+      "environment": "prod",
+      "role": "owner",
+      "provider": "aws",
+      "accountId": "123456789012",
+      "region": "us-east-1",
+      "dataFile": "data/sample-network.json",
+      "snapshotAt": "2026-05-01T16:10:00Z",
+      "owner": "Cloud Platform Guild",
+      "mapCity": "Cochabamba",
+      "stats": { "vpcs": 1, "subnets": 9, "resources": 7, "passRate": 86, "openFindings": 1, "criticalFindings": 0 }
+    },
+    {
+      "id": "boundary-contoso-azure-platform",
+      "name": "Contoso · Azure platform",
+      "kind": "network",
+      "environment": "prod",
+      "role": "supplier",
+      "provider": "azure",
+      "accountId": "sub-azure-7c21",
+      "region": "eastus",
+      "dataFile": "azure-network.json",
+      "snapshotAt": "2026-05-08T09:30:00Z",
+      "owner": "Contoso Cloud Team",
+      "mapCity": "Austin",
+      "stats": { "vpcs": 1, "subnets": 3, "resources": 4, "passRate": 72, "openFindings": 3, "criticalFindings": 1 }
+    }
+  ],
+  "accounts": [
+    {
+      "id": "123456789012",
+      "provider": "aws",
+      "name": "acme-prod",
+      "type": "cloud",
+      "region": "us-east-1",
+      "boundaryId": "boundary-acme-checkout-prod",
+      "ingestedAt": "2026-05-19T05:40:00Z",
+      "resourceCount": 11
+    },
+    {
+      "id": "sub-azure-7c21",
+      "provider": "azure",
+      "name": "contoso-platform",
+      "type": "cloud",
+      "region": "eastus",
+      "boundaryId": "boundary-contoso-azure-platform",
+      "ingestedAt": "2026-05-08T09:10:00Z",
+      "resourceCount": 4
+    },
+    {
+      "id": "onprem-dc-01",
+      "provider": "on-prem",
+      "name": "Primary datacenter",
+      "type": "datacenter",
+      "region": "us-central",
+      "boundaryId": "boundary-container-stig-baseline",
+      "ingestedAt": "2026-05-12T07:55:00Z",
+      "resourceCount": 18
+    }
+  ]
+}

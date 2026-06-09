@@ -15,14 +15,24 @@
 // standard AWS field names and should be confirmed against the live schema with
 // `introspectQueryFields()` / `--introspect`; the normalizer is alias-tolerant
 // so minor naming differences still resolve.
+// Runs in Node (CLI, via module.exports) and in the browser (window.ZeroBiasGraphQL),
+// so the static visualizer can reuse the exact same AWS-inventory → visualizer
+// mapping the CLI uses. The transport functions use the global `fetch` (present
+// in modern Node and every browser); only `connFromEnv` touches `process`.
 "use strict";
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  else root.ZeroBiasGraphQL = api;
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
 
 const DEFAULT_HOST = "api.uat.zerobias.com";
 
 // ---- transport --------------------------------------------------------
 
 function connFromEnv(env) {
-  env = env || process.env;
+  env = env || (typeof process !== "undefined" && process.env) || {};
   return {
     host: env.ZEROBIAS_GQL_HOST || DEFAULT_HOST,
     boundaryId: env.ZEROBIAS_BOUNDARY_ID || null,
@@ -282,7 +292,8 @@ function awsInventoryToVisualizer(raw, opts) {
   return result;
 }
 
-module.exports = {
-  connFromEnv, gql, fetchInventory, awsInventoryToVisualizer,
-  QUERIES, INTROSPECT_FIELDS, introspectType, DEFAULT_HOST,
-};
+  return {
+    connFromEnv, gql, fetchInventory, awsInventoryToVisualizer,
+    QUERIES, INTROSPECT_FIELDS, introspectType, DEFAULT_HOST,
+  };
+});

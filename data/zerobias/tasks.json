@@ -1,0 +1,90 @@
+{
+  "_comment": "Sample ZeroBias tasks (remediation / workflow items). Tasks are a ZeroBias platform concept (proprietary workflow SDK) so they fall back to this sample offline. Each task is tied to a real finding in the bundled boundaries (MFA-disabled IAM users, the failing OpenSSL CVE, the partial-fail STIG control) so the views stay internally consistent.",
+  "tasks": [
+    {
+      "id": "task-4471",
+      "title": "Remediate CVE-2025-9999 (OpenSSL) in checkout image",
+      "description": "Rebuild the checkout container on a patched base image (openssl >= 3.0.14). Vulnerable runtime detected by the Q2 attestation scan.",
+      "status": "in-progress",
+      "priority": "critical",
+      "assignee": "u-gabriel",
+      "boundaryId": "boundary-acme-checkout-prod",
+      "holonId": "cve-container-openssl-2025-9999",
+      "framework": "CVE",
+      "dueAt": "2026-06-12T00:00:00Z",
+      "createdAt": "2026-05-19T07:00:00Z",
+      "source": "0bias"
+    },
+    {
+      "id": "task-4472",
+      "title": "Enable MFA for deploy-bot and ci-runner",
+      "description": "Two IAM service accounts in acme-prod have MFA disabled. Rotate to short-lived credentials or enforce MFA.",
+      "status": "open",
+      "priority": "high",
+      "assignee": "u-gabriel",
+      "boundaryId": "boundary-three-tier-web-prod",
+      "holonId": null,
+      "framework": "NIST",
+      "dueAt": "2026-06-15T00:00:00Z",
+      "createdAt": "2026-05-20T09:30:00Z",
+      "source": "0bias"
+    },
+    {
+      "id": "task-4473",
+      "title": "Pin nginx TLS STIG to compliant ciphers",
+      "description": "Container STIG control nginx-tls is partial-fail. Restrict to TLS 1.2+ and the approved cipher suite.",
+      "status": "open",
+      "priority": "medium",
+      "assignee": "u-gabriel",
+      "boundaryId": "boundary-container-stig-baseline",
+      "holonId": "stig-container-nginx-tls",
+      "framework": "STIG",
+      "dueAt": "2026-06-18T00:00:00Z",
+      "createdAt": "2026-05-13T08:00:00Z",
+      "source": "0bias"
+    },
+    {
+      "id": "task-4474",
+      "title": "Review Azure firewall egress rules",
+      "description": "Contoso Azure platform boundary flagged a critical open egress path. Confirm intended and document the exception.",
+      "status": "in-review",
+      "priority": "high",
+      "assignee": "u-gabriel",
+      "boundaryId": "boundary-contoso-azure-platform",
+      "holonId": null,
+      "framework": "custom",
+      "dueAt": "2026-06-20T00:00:00Z",
+      "createdAt": "2026-05-21T14:10:00Z",
+      "source": "0bias"
+    },
+    {
+      "id": "task-4470",
+      "title": "Q2 attestation sign-off",
+      "description": "Final reviewer sign-off on the checkout service Q2 boundary snapshot.",
+      "status": "done",
+      "priority": "medium",
+      "assignee": "u-alice",
+      "boundaryId": "boundary-acme-checkout-prod",
+      "holonId": null,
+      "framework": "custom",
+      "dueAt": "2026-05-22T00:00:00Z",
+      "createdAt": "2026-05-19T06:30:00Z",
+      "completedAt": "2026-05-21T18:00:00Z",
+      "source": "0bias"
+    },
+    {
+      "id": "task-4475",
+      "title": "Verify route-table egress chain on app subnet",
+      "description": "Confirm app-tier instances egress only through the NAT gateway, not directly to the IGW.",
+      "status": "open",
+      "priority": "low",
+      "assignee": "u-marco",
+      "boundaryId": "boundary-three-tier-web-prod",
+      "holonId": null,
+      "framework": "CIS",
+      "dueAt": "2026-06-25T00:00:00Z",
+      "createdAt": "2026-05-23T10:00:00Z",
+      "source": "0bias"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "_comment": "Sample ZeroBias account/user directory. Used for the 'sign in as' user selection and the people overlays. Live tenants return the same shape from the IAM / accounts API; AwsIamUser is the confirmed GraphQL-backed subset (mfaEnabled is real). Service accounts mirror adapter/sample-aws-inventory.json (deploy-bot, ci-runner).",
+  "users": [
+    {
+      "id": "u-gabriel",
+      "name": "Gabriel Osinaga",
+      "email": "gabrielosinaga@gmail.com",
+      "role": "Org Admin",
+      "title": "Security Lead",
+      "type": "human",
+      "avatarColor": "#7c5cff",
+      "mfaEnabled": true,
+      "lastLogin": "2026-06-08T22:14:00Z",
+      "openTasks": 4,
+      "boundaries": ["boundary-acme-checkout-prod", "boundary-container-stig-baseline", "boundary-three-tier-web-prod", "boundary-contoso-azure-platform"]
+    },
+    {
+      "id": "u-alice",
+      "name": "Alice Rivera",
+      "email": "alice.rivera@acme.example",
+      "role": "Compliance Analyst",
+      "title": "GRC",
+      "type": "human",
+      "avatarColor": "#22d3ee",
+      "mfaEnabled": true,
+      "lastLogin": "2026-06-09T07:42:00Z",
+      "openTasks": 2,
+      "boundaries": ["boundary-acme-checkout-prod", "boundary-container-stig-baseline"]
+    },
+    {
+      "id": "u-marco",
+      "name": "Marco Devlin",
+      "email": "marco.devlin@acme.example",
+      "role": "Platform Engineer",
+      "title": "SRE",
+      "type": "human",
+      "avatarColor": "#4dd4ac",
+      "mfaEnabled": true,
+      "lastLogin": "2026-06-09T11:05:00Z",
+      "openTasks": 1,
+      "boundaries": ["boundary-three-tier-web-prod", "boundary-contoso-azure-platform"]
+    },
+    {
+      "id": "u-deploy-bot",
+      "name": "deploy-bot",
+      "email": "deploy-bot@acme.iam",
+      "role": "Service Account",
+      "title": "CI/CD",
+      "type": "service",
+      "avatarColor": "#f59e0b",
+      "mfaEnabled": false,
+      "lastLogin": "2026-06-09T11:58:00Z",
+      "arn": "arn:aws:iam::123456789012:user/deploy-bot",
+      "awsAccountId": "123456789012",
+      "openTasks": 0,
+      "boundaries": ["boundary-three-tier-web-prod"]
+    },
+    {
+      "id": "u-ci-runner",
+      "name": "ci-runner",
+      "email": "ci-runner@acme.iam",
+      "role": "Service Account",
+      "title": "CI/CD",
+      "type": "service",
+      "avatarColor": "#f59e0b",
+      "mfaEnabled": false,
+      "lastLogin": "2026-06-09T10:31:00Z",
+      "arn": "arn:aws:iam::123456789012:user/ci-runner",
+      "awsAccountId": "123456789012",
+      "openTasks": 0,
+      "boundaries": ["boundary-three-tier-web-prod"]
+    }
+  ]
+}

@@ -27,6 +27,9 @@
   <script type="module" src="ontology/assembly.js"></script>
   <script type="module" src="viz3d.js"></script>
   <script src="map.js" defer></script>
+  <!-- ZeroBias integration: UMD AWS-inventory mapping (shared with the Node adapter) + browser client/UI -->
+  <script src="adapter/zerobias-graphql.js" defer></script>
+  <script src="zerobias.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -34,6 +37,9 @@
       <button id="sidebar-toggle" class="btn ghost icon-only" title="Toggle Guild Catalog" aria-label="Toggle Guild Catalog">☰</button>
       <span class="brand-mark"></span>
       <h1>AWS Network Visualizer</h1>
+      <span class="zb-brand-badge" title="Integrated with ZeroBias — Auditmation data platform">
+        <span class="zb-hex">⬡</span> <span class="zb-brand-word">ZeroBias</span>
+      </span>
     </div>
     <div class="controls">
       <div class="seg" role="group" aria-label="View mode">
@@ -41,10 +47,28 @@
         <button id="mode-3d" class="seg-btn" aria-pressed="false">Holographic View</button>
         <button id="mode-map" class="seg-btn" aria-pressed="false">Map</button>
       </div>
-      <label class="btn" for="file-input">
-        <span>Import network</span>
-        <input id="file-input" type="file" accept="application/json,.json" hidden />
-      </label>
+      <div class="zb-import-wrap">
+        <button class="btn" id="import-menu-btn" aria-haspopup="true" aria-expanded="false" title="Import a network">
+          <span>Import network</span>
+          <span class="zb-caret">▾</span>
+        </button>
+        <div class="zb-menu" id="import-menu" hidden role="menu">
+          <button class="zb-menu-item" id="import-zb-live" role="menuitem">
+            <span class="zb-menu-icon zb-hex">⬡</span>
+            <span class="zb-menu-text"><b>From ZeroBias</b><small>Pull live inventory from your boundary <span class="zb-tag-new">new</span></small></span>
+          </button>
+          <label class="zb-menu-item" for="file-input" role="menuitem">
+            <span class="zb-menu-icon">📁</span>
+            <span class="zb-menu-text"><b>Downloaded network</b><small>Load a JSON topology file</small></span>
+            <input id="file-input" type="file" accept="application/json,.json" hidden />
+          </label>
+        </div>
+      </div>
+      <button class="btn zb-account-btn" id="zb-account-btn" title="Connect / sign in to ZeroBias">
+        <span class="zb-avatar" id="zb-account-avatar" hidden></span>
+        <span class="zb-hex zb-account-hex">⬡</span>
+        <span id="zb-account-label">Connect ZeroBias</span>
+      </button>
       <a class="btn primary" href="wizard.html" id="new-integration-btn">New Integration</a>
       <a class="btn ghost" href="http://localhost:3000" id="osiris-link" target="_blank" rel="noopener" title="Open the OSIRIS global intelligence dashboard. Run it locally with: cd osiris && npm install && npm run dev">🌐 Global Intel</a>
       <button id="load-sample" class="btn ghost">Load sample</button>
@@ -65,7 +89,10 @@
   <main class="layout">
     <aside class="catalog-sidebar" id="catalog-sidebar" hidden aria-label="Guild Catalog">
       <div class="catalog-head">
-        <h2>Guild Catalog</h2>
+        <div>
+          <h2>Guild Catalog</h2>
+          <div class="zb-catalog-tag"><span class="zb-hex">⬡</span> Guilds published via ZeroBias</div>
+        </div>
         <button class="tour-btn" id="catalog-close" title="Hide catalog" aria-label="Hide catalog">×</button>
       </div>
       <div class="catalog-search">
@@ -129,11 +156,12 @@
           <button class="btn ghost btn-sm" id="map-proj-toggle" title="Toggle globe / flat projection">🗺️ Flat</button>
           <button class="btn ghost btn-sm" id="map-fit" title="Zoom to fit all networks">⤢ Fit networks</button>
         </div>
+        <div class="map-zb-panel" id="map-zb-panel" aria-label="ZeroBias overview"></div>
         <div class="map-drill-hint" id="map-drill-hint">⤓ Zoom into a network to enter its holographic view</div>
         <div class="map-legend" id="map-legend">
           <div><span class="map-dot map-aws"></span> AWS network (cube) · Cochabamba</div>
           <div><span class="map-dot map-azure"></span> Azure network (cube) · Austin</div>
-          <div><span class="map-glyph">⚛</span> Guild boundary (atom) · USA</div>
+          <div><span class="map-glyph">⚛</span> ZeroBias boundary (atom) · USA</div>
           <div><span class="map-line"></span> Cross-cloud link</div>
         </div>
         <div class="map-empty" id="map-empty" hidden>
@@ -219,6 +247,19 @@
         <div class="panel-eyebrow">Network</div>
         <h2 id="net-name">No network loaded</h2>
         <p id="net-meta" class="muted">Load a topology to begin.</p>
+      </div>
+
+      <div class="panel zb-panel" id="zb-panel">
+        <div class="panel-eyebrow zb-eyebrow"><span class="zb-hex">⬡</span> ZeroBias · Organization</div>
+        <div id="zb-org-body"><p class="muted small">Loading ZeroBias data…</p></div>
+      </div>
+
+      <div class="panel zb-panel" id="zb-tasks-panel">
+        <div class="panel-eyebrow zb-eyebrow">
+          <span><span class="zb-hex">⬡</span> ZeroBias · Tasks</span>
+          <span class="zb-count" id="zb-tasks-count">0</span>
+        </div>
+        <div id="zb-tasks-body"><p class="muted small">Loading tasks…</p></div>
       </div>
 
       <div class="panel" id="boundary-panel" hidden>
@@ -409,6 +450,61 @@
       <div class="attack-summary-actions">
         <button class="btn ghost" id="attack-summary-replay">Run again</button>
         <button class="btn primary" id="attack-summary-done">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ZeroBias connect / sign-in modal -->
+  <div class="attack-modal zb-modal" id="zb-modal" hidden role="dialog" aria-modal="true" aria-labelledby="zb-modal-title">
+    <div class="attack-modal-card zb-modal-card">
+      <div class="attack-modal-head">
+        <h2 id="zb-modal-title"><span class="zb-hex">⬡</span> Connect to ZeroBias</h2>
+        <button class="tour-btn" id="zb-modal-close" aria-label="Close">
+          <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71l-1.42-1.42L9.18 12 2.88 5.71 4.3 4.29l6.29 6.3 6.29-6.3z"/></svg>
+        </button>
+      </div>
+      <p class="muted attack-modal-sub">
+        Connect your ZeroBias (Auditmation) tenant to pull live AWS inventory, boundaries,
+        accounts, users and tasks into the visualizer. No key? Continue with demo data —
+        every panel stays fully populated from the bundled sample tenant.
+      </p>
+      <div class="zb-conn-status" id="zb-conn-status"></div>
+
+      <div class="zb-modal-cols">
+        <form class="zb-connect-form" id="zb-connect-form" autocomplete="off">
+          <div class="zb-eyebrow panel-eyebrow">Connection</div>
+          <label class="zb-field">
+            <span>GraphQL host</span>
+            <input type="text" id="zb-host" placeholder="api.uat.zerobias.com" spellcheck="false" />
+          </label>
+          <label class="zb-field">
+            <span>Organization ID <small class="muted">(dana-org-id)</small></span>
+            <input type="text" id="zb-org" placeholder="org-…" spellcheck="false" />
+          </label>
+          <label class="zb-field">
+            <span>Boundary ID</span>
+            <input type="text" id="zb-boundary" placeholder="boundary-…" spellcheck="false" />
+          </label>
+          <label class="zb-field">
+            <span>API key</span>
+            <input type="password" id="zb-apikey" placeholder="APIKey …" autocomplete="new-password" spellcheck="false" />
+          </label>
+          <label class="zb-remember">
+            <input type="checkbox" id="zb-remember" />
+            <span>Remember on this device <small class="muted">(stores the key in localStorage — leave off on shared machines)</small></span>
+          </label>
+          <div class="zb-form-actions">
+            <button class="btn primary" id="zb-connect-submit" type="submit">Connect</button>
+            <button class="btn ghost" id="zb-demo-btn" type="button">Continue with demo data</button>
+            <button class="btn ghost zb-danger" id="zb-disconnect" type="button" hidden>Disconnect</button>
+          </div>
+        </form>
+
+        <div class="zb-user-col">
+          <div class="zb-eyebrow panel-eyebrow">Sign in as</div>
+          <p class="muted small">Pick the ZeroBias account whose boundaries and tasks you want to see.</p>
+          <div class="zb-user-picker" id="zb-user-picker"></div>
+        </div>
       </div>
     </div>
   </div>

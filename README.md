@@ -45,6 +45,40 @@ static app, so `map.js` is a small vanilla port of the same technique rather
 than a direct file reuse. The OSINT data-feed keys OSIRIS documents (FIRMS,
 OpenSky, …) are **not** needed here — we plot your own network, not live feeds.
 
+### ZeroBias integration (in-app)
+
+The Visualizer is wired directly into **ZeroBias** (the Auditmation IT-audit
+data platform) so the whole tenant — inventory, boundaries, accounts, users and
+tasks — flows into every view. It's branded throughout (the **⬡ ZeroBias** mark
+in the header) and surfaces in:
+
+- **Import network ▾** — a split menu with two sources:
+  - **From ZeroBias** — pulls **live** native AWS inventory from your boundary's
+    GraphQL API (`AwsVpc` / `AwsSubnet` / `AwsEc2Instance` / `AwsIamUser` / …) and
+    maps it 1:1 onto the topology, reusing the **exact same** mapping the Node
+    adapter uses (`adapter/zerobias-graphql.js`, now UMD).
+  - **Downloaded network** — load a `.json` topology you exported earlier
+    (the original file import).
+- **Connect ZeroBias** — a connect / **sign-in** modal: enter your host, org id
+  (`dana-org-id`), boundary id and API key, or pick a **user to sign in as**.
+  Each user scopes the boundaries and tasks shown. (Key storage is opt-in and
+  stays in `localStorage`; leave it off on shared machines.)
+- **Sidebar panels** — **Organization** (org id, plan, compliance frameworks,
+  cloud accounts, and a clickable **boundary list**) and **Tasks** (the signed-in
+  user's ZeroBias remediation tasks; clicking one opens its boundary and drills
+  to the exact finding/holon).
+- **Map overlay** — a ZeroBias panel on the Map tab summarising the org,
+  boundaries, accounts, users, open tasks and findings; the atoms on the globe
+  are the org's boundaries.
+
+> **Live vs. demo.** When the browser can reach `*.zerobias.com` and you've
+> entered credentials, the import pulls **live** (a green **● Live** badge).
+> Otherwise everything falls back to the bundled sample tenant under
+> [`data/zerobias/`](data/zerobias/) (an amber **Demo data** badge), so every
+> panel is fully populated offline. This is the same host the CLI adapter targets
+> — see [`adapter/README.md`](adapter/README.md) and [`HANDOFF.md`](HANDOFF.md)
+> for the live-pull setup and network-policy notes.
+
 ---
 
 ## 1. AWS Network Visualizer (root)
