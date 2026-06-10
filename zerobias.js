@@ -149,14 +149,13 @@
   // import always produces a renderable network.
   async function getInventoryNetwork() {
     const G = window.ZeroBiasGraphQL;
-    const orgName = (data.org && data.org.name) || conn.orgId || "ZeroBias";
     if (G && conn.apiKey && conn.orgId && conn.boundaryId) {
       try {
         const c = { host: conn.host || DEFAULT_HOST, boundaryId: conn.boundaryId, apiKey: conn.apiKey, orgId: conn.orgId, pageSize: 100 };
         const raw = await G.fetchInventory(c);
         if (countInventory(raw) > 0) {
           conn.live = true;
-          return { net: G.awsInventoryToVisualizer(raw, { identity: true, name: `AWS inventory · ${orgName}` }), live: true };
+          return { net: G.awsInventoryToVisualizer(raw, { identity: true, name: "AWS inventory · ZeroBias (live)" }), live: true };
         }
       } catch (_) {/* fall through to sample */}
     }

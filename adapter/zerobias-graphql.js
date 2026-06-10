@@ -76,19 +76,24 @@ const INTROSPECT_FIELDS = `query { __schema { queryType { fields { name } } } }`
 const introspectType = (name) =>
   `query { __type(name: "${name}") { name fields { name type { name kind ofType { name kind } } } } }`;
 
-// Inventory selection sets (best-effort standard AWS field names).
+// Inventory selection sets. The live boundary API returns the Auditmation
+// AuditgraphDB ontology (verified against a real tenant): types are `AwsVPC` /
+// `AwsInstance` / `AwsFunction` (not `AwsVpc` / `AwsEc2Instance` / …) and fields
+// are `id` / `name` / `cidr` / `awsRegion` (not `vpcId` / `cidrBlock` / …).
+// awsInventoryToVisualizer() below is alias-tolerant so it also still maps the
+// AWS-API-shaped offline sample (adapter/sample-aws-inventory.json).
+// (Nested `networkInterface { subnet }` selections 500 on the live API, so
+// instance→subnet is left to synthesis.)
 const QUERIES = {
   iamUsers: `query { AwsIamUser { name arn mfaEnabled awsAccountId } }`,
-  vpcs: `query { AwsVpc { vpcId cidrBlock region awsAccountId tags { key value } } }`,
-  subnets: `query { AwsSubnet { subnetId vpcId cidrBlock availabilityZone mapPublicIpOnLaunch tags { key value } } }`,
-  internetGateways: `query { AwsInternetGateway { internetGatewayId attachments { vpcId } } }`,
-  natGateways: `query { AwsNatGateway { natGatewayId subnetId vpcId } }`,
-  routeTables: `query { AwsRouteTable { routeTableId vpcId associations { subnetId main } routes { destinationCidrBlock gatewayId natGatewayId } } }`,
-  instances: `query { AwsEc2Instance { instanceId subnetId vpcId privateIpAddress publicIpAddress securityGroupIds tags { key value } } }`,
-  securityGroups: `query { AwsSecurityGroup { groupId vpcId ipPermissions { fromPort toPort ipProtocol ipRanges { cidrIp } userIdGroupPairs { groupId } } } }`,
-  loadBalancers: `query { AwsLoadBalancer { loadBalancerArn name type scheme vpcId subnets } }`,
-  rds: `query { AwsRdsInstance { dbInstanceIdentifier engine vpcId subnetIds tags { key value } } }`,
-  lambdas: `query { AwsLambdaFunction { functionName vpcId subnetIds } }`,
+  vpcs: `query { AwsVPC { id name awsRegion awsAccountId } }`,
+  subnets: `query { AwsSubnet { id name cidr awsRegion awsAccountId availabilityZone { name } } }`,
+  internetGateways: `query { AwsInternetGateway { id name } }`,
+  natGateways: `query { AwsNatGateway { id name } }`,
+  instances: `query { AwsInstance { id name awsRegion awsAccountId vpc { id } } }`,
+  securityGroups: `query { AwsSecurityGroup { id name vpc { id } } }`,
+  lambdas: `query { AwsFunction { id name awsRegion awsAccountId } }`,
+  ecs: `query { AwsEcsService { id name awsRegion awsAccountId } }`,
 };
 
 async function fetchInventory(conn, only) {
@@ -120,6 +125,32 @@ const tagName = (o) => {
 const ANY = new Set(["0.0.0.0/0", "0.0.0.0", "::/0"]);
 const WEB = new Set([80, 443, 8080, 8443]);
 
+// --- field accessors: tolerant of both the AWS-API shape (offline sample) and
+// the AuditgraphDB shape returned by the live boundary API --------------------
+const norm = (v) => (v == null ? "" : String(v));
+// AuditgraphDB encodes regions as enums like "US_EAST2" / "EU_WEST1"; convert to
+// the standard "us-east-2" / "eu-west-1" the map view understands.
+function normalizeRegion(r) {
+  if (!r) return undefined;
+  let s = norm(r).trim();
+  if (/^[a-z]{2}-[a-z]+-\d/.test(s)) return s; // already standard
+  s = s.toLowerCase().replace(/_/g, "-").replace(/([a-z])(\d)/g, "$1-$2");
+  return s || undefined;
+}
+const vpcIdOf = (o) => (o && (o.vpcId || (o.vpc && (o.vpc.id || o.vpc.vpcId)) || null)) || null;
+const regionOf = (o) => (o && (o.region || normalizeRegion(o.awsRegion))) || undefined;
+// availabilityZone is a plain string in the AWS-API shape, an object {name} live.
+const azNameOf = (o) => {
+  const a = o && o.availabilityZone;
+  return a == null ? undefined : typeof a === "object" ? a.name : a;
+};
+// instance → subnet id, if a network interface carries it (best-effort).
+const nicSubnet = (i) => {
+  const n = i && (i.networkInterface || i.networkInterfaces);
+  const first = Array.isArray(n) ? n[0] : n;
+  return (first && first.subnet && (first.subnet.id || first.subnet.subnetId)) || undefined;
+};
+
 // destination of a subnet's 0.0.0.0/0 route: { igw:true } | { nat:id } | null
 function subnetEgress(subnetId, routeTables) {
   let mainRoute = null;
@@ -136,12 +167,12 @@ function subnetEgress(subnetId, routeTables) {
 }
 
 function subnetTier(sn, routeTables) {
-  const name = (tagName(sn) || sn.subnetId || "").toLowerCase();
+  const name = (tagName(sn) || sn.name || sn.subnetId || sn.id || "").toLowerCase();
   if (/(data|db|database)/.test(name)) return "data";
   if (/public|dmz/.test(name)) return "public";
   if (/private|app|internal/.test(name)) return "private";
   if (sn.mapPublicIpOnLaunch === true) return "public";
-  const eg = subnetEgress(sn.subnetId, routeTables);
+  const eg = subnetEgress(sn.subnetId || sn.id, routeTables);
   if (eg && eg.igw) return "public";
   if (eg && eg.nat) return "private";
   return "private";
@@ -158,12 +189,12 @@ function awsInventoryToVisualizer(raw, opts) {
   const ensureVpc = (vpcId) => {
     if (!vpcId) vpcId = "vpc-unknown";
     if (!vpcMap.has(vpcId)) {
-      const v = vpcsIn.find((x) => x.vpcId === vpcId);
+      const v = vpcsIn.find((x) => (x.vpcId || x.id) === vpcId);
       vpcMap.set(vpcId, {
         id: vpcId,
-        name: (v && tagName(v)) || vpcId,
-        cidr: (v && v.cidrBlock) || undefined,
-        region: (v && v.region) || undefined,
+        name: (v && (tagName(v) || v.name)) || vpcId,
+        cidr: (v && (v.cidrBlock || v.cidr)) || undefined,
+        region: (v && regionOf(v)) || undefined,
         subnets: [],
         gateways: [],
         resources: [],
@@ -171,51 +202,87 @@ function awsInventoryToVisualizer(raw, opts) {
     }
     return vpcMap.get(vpcId);
   };
-  vpcsIn.forEach((v) => ensureVpc(v.vpcId));
+  vpcsIn.forEach((v) => ensureVpc(v.vpcId || v.id));
+
+  // When a resource has no VPC (the live boundary often ingests compute/identity
+  // without the network layer), synthesise a VPC per AWS account+region so the
+  // resources still have a home and land on the right spot on the map.
+  const ensureSynthVpc = (o) => {
+    const acct = (o && o.awsAccountId) || "account";
+    const region = regionOf(o) || "";
+    const id = `aws-${acct}${region ? "-" + region : ""}`;
+    if (!vpcMap.has(id)) {
+      vpcMap.set(id, {
+        id,
+        name: `AWS account ${acct}${region ? " · " + region : ""}`,
+        cidr: undefined,
+        region: region || undefined,
+        subnets: [],
+        gateways: [],
+        resources: [],
+      });
+    }
+    return vpcMap.get(id);
+  };
 
   // Subnets
   const subnetVpc = new Map();
   subnetsIn.forEach((sn) => {
-    const vpc = ensureVpc(sn.vpcId);
-    subnetVpc.set(sn.subnetId, sn.vpcId);
+    const sId = sn.subnetId || sn.id;
+    const vId = vpcIdOf(sn) || ensureSynthVpc(sn).id;
+    const vpc = ensureVpc(vId);
+    subnetVpc.set(sId, vpc.id);
     vpc.subnets.push({
-      id: sn.subnetId,
-      name: tagName(sn) || sn.subnetId,
-      cidr: sn.cidrBlock || undefined,
+      id: sId,
+      name: tagName(sn) || sn.name || sId,
+      cidr: sn.cidrBlock || sn.cidr || undefined,
       tier: subnetTier(sn, routeTables),
-      az: sn.availabilityZone || undefined,
+      az: azNameOf(sn) || undefined,
     });
   });
 
   // Gateways
   (raw.internetGateways || []).forEach((ig) => {
-    const vpcId = (ig.attachments && ig.attachments[0] && ig.attachments[0].vpcId) || ig.vpcId;
+    const vpcId = (ig.attachments && ig.attachments[0] && ig.attachments[0].vpcId) || vpcIdOf(ig);
     const vpc = vpcId && vpcMap.get(vpcId);
-    if (vpc) vpc.gateways.push({ id: ig.internetGatewayId, type: "igw", name: "Internet Gateway" });
+    if (vpc) vpc.gateways.push({ id: ig.internetGatewayId || ig.id, type: "igw", name: "Internet Gateway" });
   });
   (raw.natGateways || []).forEach((ng) => {
-    const vpc = vpcMap.get(ng.vpcId) || (ng.subnetId && vpcMap.get(subnetVpc.get(ng.subnetId)));
-    if (vpc) vpc.gateways.push({ id: ng.natGatewayId, type: "nat", name: "NAT Gateway", subnet: ng.subnetId });
+    const vpc = vpcMap.get(vpcIdOf(ng)) || (ng.subnetId && vpcMap.get(subnetVpc.get(ng.subnetId)));
+    if (vpc) vpc.gateways.push({ id: ng.natGatewayId || ng.id, type: "nat", name: "NAT Gateway", subnet: ng.subnetId });
   });
 
   // Resources
   const nodeVpc = new Map(); // resourceId -> vpc
-  const place = (id, type, name, subnetId, vpcId) => {
-    const vpc = vpcMap.get(vpcId) || (subnetId && vpcMap.get(subnetVpc.get(subnetId))) || ensureVpc(vpcId);
-    vpc.resources.push({ id, type, name: name || id, subnet: subnetId || (vpc.subnets[0] && vpc.subnets[0].id) });
+  const place = (id, type, name, subnetId, vpcId, src) => {
+    let vpc = (vpcId && vpcMap.get(vpcId)) || (subnetId && vpcMap.get(subnetVpc.get(subnetId)));
+    if (!vpc) vpc = src ? ensureSynthVpc(src) : ensureVpc(vpcId);
+    // Ensure the resource has a subnet to live in — synthesise a default one
+    // when the boundary didn't ingest the network layer.
+    let sub = subnetId && subnetVpc.get(subnetId) === vpc.id ? subnetId : vpc.subnets[0] && vpc.subnets[0].id;
+    if (!sub) {
+      sub = `${vpc.id}-default`;
+      vpc.subnets.push({ id: sub, name: "default", tier: "private", az: vpc.region || "—" });
+      subnetVpc.set(sub, vpc.id);
+    }
+    vpc.resources.push({ id, type, name: name || id, subnet: sub });
     nodeVpc.set(id, vpc);
   };
-  (raw.instances || []).forEach((i) =>
-    place(i.instanceId, "ec2", tagName(i) || i.instanceId, i.subnetId, i.vpcId),
-  );
+  (raw.instances || []).forEach((i) => {
+    const iId = i.instanceId || i.id;
+    place(iId, "ec2", tagName(i) || i.name || iId, i.subnetId || nicSubnet(i), vpcIdOf(i), i);
+  });
   (raw.loadBalancers || []).forEach((lb) =>
-    place(lb.loadBalancerArn || lb.name, /network/i.test(lb.type) ? "nlb" : "alb", lb.name, (lb.subnets || [])[0], lb.vpcId),
+    place(lb.loadBalancerArn || lb.name || lb.id, /network/i.test(lb.type) ? "nlb" : "alb", lb.name, (lb.subnets || [])[0], vpcIdOf(lb), lb),
   );
   (raw.rds || []).forEach((db) =>
-    place(db.dbInstanceIdentifier, /aurora/i.test(db.engine || "") ? "aurora" : "rds", db.dbInstanceIdentifier, (db.subnetIds || [])[0], db.vpcId),
+    place(db.dbInstanceIdentifier || db.id, /aurora/i.test(db.engine || "") ? "aurora" : "rds", db.dbInstanceIdentifier || db.name, (db.subnetIds || [])[0], vpcIdOf(db), db),
   );
   (raw.lambdas || []).forEach((fn) =>
-    place(fn.functionName, "lambda", fn.functionName, (fn.subnetIds || [])[0], fn.vpcId),
+    place(fn.functionName || fn.id, "lambda", fn.functionName || fn.name, (fn.subnetIds || [])[0], vpcIdOf(fn), fn),
+  );
+  (raw.ecs || []).forEach((s) =>
+    place(s.id || s.name, "ecs", s.name || s.id, undefined, vpcIdOf(s), s),
   );
 
   // Flows
@@ -227,9 +294,9 @@ function awsInventoryToVisualizer(raw, opts) {
   // (instances, load balancers, databases) so SG-referenced rules connect the
   // whole path (internet → ALB → app → db), not just EC2-to-EC2.
   const sgNodes = [
-    ...(raw.instances || []).map((i) => ({ id: i.instanceId, sgs: i.securityGroupIds })),
-    ...(raw.loadBalancers || []).map((lb) => ({ id: lb.loadBalancerArn || lb.name, sgs: lb.securityGroupIds })),
-    ...(raw.rds || []).map((db) => ({ id: db.dbInstanceIdentifier, sgs: db.securityGroupIds })),
+    ...(raw.instances || []).map((i) => ({ id: i.instanceId || i.id, sgs: i.securityGroupIds })),
+    ...(raw.loadBalancers || []).map((lb) => ({ id: lb.loadBalancerArn || lb.name || lb.id, sgs: lb.securityGroupIds })),
+    ...(raw.rds || []).map((db) => ({ id: db.dbInstanceIdentifier || db.id, sgs: db.securityGroupIds })),
   ];
   const sgToNodes = new Map();
   sgNodes.forEach((n) =>
@@ -263,10 +330,12 @@ function awsInventoryToVisualizer(raw, opts) {
   vpcMap.forEach((vpc) => {
     const igw = vpc.gateways.find((g) => g.type === "igw");
     (raw.instances || []).forEach((i) => {
-      if (subnetVpc.get(i.subnetId) !== vpc.id) return;
-      const eg = subnetEgress(i.subnetId, routeTables);
+      const iId = i.instanceId || i.id;
+      const sId = i.subnetId || nicSubnet(i);
+      if (subnetVpc.get(sId) !== vpc.id) return;
+      const eg = subnetEgress(sId, routeTables);
       if (eg && eg.nat) {
-        push({ from: i.instanceId, to: eg.nat, label: "egress", kind: "egress" });
+        push({ from: iId, to: eg.nat, label: "egress", kind: "egress" });
         if (igw) push({ from: eg.nat, to: igw.id, label: "0.0.0.0/0", kind: "egress" });
       }
     });
@@ -274,7 +343,7 @@ function awsInventoryToVisualizer(raw, opts) {
 
   const result = {
     name: opts.name || "AWS inventory (ZeroBias)",
-    region: vpcsIn[0] && vpcsIn[0].region,
+    region: regionOf(vpcsIn[0]) || ([...vpcMap.values()].find((v) => v.region) || {}).region,
     vpcs: [...vpcMap.values()].filter((v) => v.subnets.length || v.resources.length),
     flows,
   };

@@ -67,10 +67,21 @@ gateways, `AwsEc2Instance`→`ec2`, `AwsLoadBalancer`→`alb`/`nlb`, `AwsRdsInst
 (instance → NAT → IGW); `AwsIamUser` → identity overlay (MFA-disabled users
 flagged).
 
-> Only `AwsIamUser`'s fields are confirmed; the other selection sets use standard
-> AWS field names. Run `--introspect` (and `zb-graphql.sh type AwsSubnet`) against
-> your boundary to confirm, then tweak the selection sets in `zerobias-graphql.js`
-> if a name differs — the mapping is alias-tolerant for the common variants.
+> **Confirmed live schema (Auditmation AuditgraphDB).** Verified against a real
+> UAT boundary: the live API does **not** use raw AWS-API names. Types are
+> `AwsVPC` / `AwsInstance` / `AwsFunction` / `AwsEcsService` (not `AwsVpc` /
+> `AwsEc2Instance` / …) and fields are `id` / `name` / `cidr` / `awsRegion`
+> (enum form `US_EAST2`) / `awsAccountId` — not `vpcId` / `cidrBlock` / `region`.
+> Relationships go through network interfaces (`AwsInstance.vpc`,
+> `AwsNetworkInterface { vpc subnet }`); `AwsSubnet` has **no** `vpc` field and
+> `AwsVPC` has **no** `cidr`. `AwsLoadBalancer` / `AwsRdsInstance` don't exist;
+> ELB/RDS aren't first-class here. The `QUERIES` in `zerobias-graphql.js` now
+> match this schema, and `awsInventoryToVisualizer()` is **alias-tolerant** so it
+> still maps the AWS-API-shaped offline sample too. When the boundary ingested
+> compute/identity without the network layer (common), VPCs/subnets are
+> **synthesised per account+region** so the topology still renders (e.g. 5 EC2 +
+> 8 IAM users → one `us-east-2` VPC + an IAM overlay). Run `--introspect` (and
+> `zb-graphql.sh type AwsInstance`) against your own boundary to confirm.
 
 ### Generic asset path (non-cloud evidence)
 
