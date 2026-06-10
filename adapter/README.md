@@ -72,7 +72,12 @@ Policies) and the access graph as flows — user→group (`member`), user→role
 ride the labels (`⚠no-MFA`, `★priv`, `⛔<status>`), a per-principal `note`
 (account, status, MFA, access-key count, group/role counts) shows in the detail
 panel, and the VPC label carries a posture summary (e.g. `Identity & Access · 8
-users · 8 no-MFA`).
+users · 8 no-MFA`). **IAM ↔ compute:** an **account hub** ties identities and
+resources that share an AWS account — `principal → account` (`iam`) and
+`account → resource` (`account`) — so the overlay links to the actual EC2/Lambda/
+ECS nodes (a hub is only created for accounts that own a resource). Where the
+boundary ingested them, `principal → policy` (`attached`) and `policy → resource`
+(`grants`) edges complete the user → policy → resource authorization path.
 
 > **Confirmed live schema (Auditmation AuditgraphDB).** Verified against a real
 > UAT boundary: the live API does **not** use raw AWS-API names. Types are

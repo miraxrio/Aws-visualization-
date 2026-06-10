@@ -88,8 +88,8 @@ const QUERIES = {
   iamUsers: `query { AwsIamUser { name arn awsAccountId mfaEnabled privileged status accessLevel login groups { name } roles { name } canAssume { name } inlinePolicy { name } permissionsBoundary { name } accessCredentials { id } } }`,
   iamRoles: `query { AwsIamRole { name arn awsAccountId description } }`,
   iamGroups: `query { AwsIamGroup { name arn awsAccountId } }`,
-  iamManagedPolicies: `query { AwsIamManagedPolicy { name arn awsAccountId policyType } }`,
-  iamCustomerPolicies: `query { AwsIamCustomerPolicy { name arn awsAccountId policyType } }`,
+  iamManagedPolicies: `query { AwsIamManagedPolicy { name arn awsAccountId policyType principals { name } resources { id } } }`,
+  iamCustomerPolicies: `query { AwsIamCustomerPolicy { name arn awsAccountId policyType principals { name } resources { id } } }`,
   vpcs: `query { AwsVPC { id name awsRegion awsAccountId } }`,
   subnets: `query { AwsSubnet { id name cidr awsRegion awsAccountId availabilityZone { name } } }`,
   internetGateways: `query { AwsInternetGateway { id name } }`,
@@ -379,7 +379,7 @@ function buildIdentityOverlay(result, raw, opts) {
     return id;
   };
   const seen = new Set();
-  const byName = { group: new Map(), role: new Map(), policy: new Map() };
+  const byName = { user: new Map(), group: new Map(), role: new Map(), policy: new Map() };
   const pid = (kind, name) => `iam:${kind}:${String(name).toLowerCase()}`;
   const add = (kind, id, name, type, subId, subName, tier, note, key) => {
     if (!seen.has(id)) {
@@ -431,6 +431,60 @@ function buildIdentityOverlay(result, raw, opts) {
     rnames.forEach((r) => result.flows.push({ from: uid, to: refRole(r), label: "assumes" }));
     inl.forEach((p) => result.flows.push({ from: uid, to: refPolicy(p, "Inline policy"), label: "inline" }));
     pb.forEach((p) => result.flows.push({ from: uid, to: refPolicy(p, "Permissions boundary"), label: "boundary" }));
+  });
+
+  // --- link IAM to compute -----------------------------------------------
+  // Known network resource node ids, so account/policy edges never dangle.
+  const networkIds = new Set();
+  result.vpcs.forEach((v) => (v.resources || []).forEach((r) => networkIds.add(r.id)));
+
+  // Every network resource → its AWS account (the live data ties EC2/Lambda/ECS
+  // to an account even when no per-resource IAM grant is ingested).
+  const resAccount = new Map();
+  const tagAcct = (arr) => (arr || []).forEach((o) => {
+    const id = o.instanceId || o.id || o.functionName;
+    if (id && o.awsAccountId && networkIds.has(id)) resAccount.set(id, o.awsAccountId);
+  });
+  tagAcct(raw.instances); tagAcct(raw.lambdas); tagAcct(raw.ecs); tagAcct(raw.loadBalancers); tagAcct(raw.rds);
+
+  // Account hub: identities and compute that share an AWS account are tied
+  // together through an account node — principal → account ("iam") and
+  // account → resource ("account") — so the overlay connects to the instances.
+  // Only accounts that actually own a network resource get a hub (so identity-
+  // only boundaries are unchanged).
+  const acctWithRes = new Set(resAccount.values());
+  const acctNode = new Map();
+  const ensureAccount = (acct) => {
+    if (!acct || !acctWithRes.has(acct)) return null;
+    if (!acctNode.has(acct)) {
+      const nUsers = users.filter((u) => u.awsAccountId === acct).length;
+      const nRes = [...resAccount.values()].filter((a) => a === acct).length;
+      const id = `iam:account:${acct}`;
+      add("account", id, `AWS account ${acct}`, "route53", "iam-accounts", "Accounts", "private",
+        `AWS account · ${nUsers} identit${nUsers === 1 ? "y" : "ies"} · ${nRes} resource(s)`);
+      acctNode.set(acct, id);
+    }
+    return acctNode.get(acct);
+  };
+  users.forEach((u) => {
+    const aid = ensureAccount(u.awsAccountId);
+    if (aid) result.flows.push({ from: u.arn || pid("user", u.name), to: aid, label: "iam" });
+  });
+  resAccount.forEach((acct, resId) => {
+    const aid = ensureAccount(acct);
+    if (aid) result.flows.push({ from: aid, to: resId, label: "account" });
+  });
+
+  // Policy → principal ("attached") and policy → resource ("grants"), when the
+  // boundary ingested those relationships (empty otherwise).
+  const principalId = (name) => {
+    const k = String(name).toLowerCase();
+    return byName.user.get(k) || byName.group.get(k) || byName.role.get(k) || null;
+  };
+  policies.forEach((p) => {
+    const polId = p.arn || pid("policy", p.name);
+    namesOf(p.principals).forEach((pr) => { const n = principalId(pr); if (n) result.flows.push({ from: n, to: polId, label: "attached" }); });
+    (p.resources || []).forEach((r) => { const rid = r && (r.id || r.arn || r); if (networkIds.has(rid)) result.flows.push({ from: polId, to: rid, label: "grants" }); });
   });
 
   // Summarise the risk posture in the VPC label.
