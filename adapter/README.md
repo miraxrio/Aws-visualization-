@@ -64,8 +64,15 @@ table / `mapPublicIpOnLaunch` / Name tag), `AwsInternetGateway`/`AwsNatGateway`�
 gateways, `AwsEc2Instance`→`ec2`, `AwsLoadBalancer`→`alb`/`nlb`, `AwsRdsInstance`→
 `rds`/`aurora`, `AwsLambdaFunction`→`lambda`; **flows** from security-group rules
 (internet ingress + SG-to-SG east-west) and the route-table egress chain
-(instance → NAT → IGW); `AwsIamUser` → identity overlay (MFA-disabled users
-flagged).
+(instance → NAT → IGW). **Identity & Access overlay** (`--identity`): `AwsIamUser`
+/ `AwsIamRole` / `AwsIamGroup` / `AwsIamManagedPolicy` / `AwsIamCustomerPolicy`
+become a dedicated `iam` VPC with a subnet per kind (Users / Groups / Roles /
+Policies) and the access graph as flows — user→group (`member`), user→role
+(`assumes`, incl. `canAssume`), user→policy (`inline` / `boundary`). Risk flags
+ride the labels (`⚠no-MFA`, `★priv`, `⛔<status>`), a per-principal `note`
+(account, status, MFA, access-key count, group/role counts) shows in the detail
+panel, and the VPC label carries a posture summary (e.g. `Identity & Access · 8
+users · 8 no-MFA`).
 
 > **Confirmed live schema (Auditmation AuditgraphDB).** Verified against a real
 > UAT boundary: the live API does **not** use raw AWS-API names. Types are

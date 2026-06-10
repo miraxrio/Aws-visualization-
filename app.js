@@ -876,7 +876,9 @@
     const meta = explainFor(node);
 
     els.detailTitle.textContent = node.name || node.id || meta.title;
-    els.detailSummary.textContent = meta.title;
+    // A `note` (e.g. on ZeroBias IAM nodes) carries item-specific detail; prefer
+    // it over the generic type-based summary/explainer.
+    els.detailSummary.textContent = node.note || meta.title;
 
     const props = [
       ["Type", (node.type || "").toUpperCase()],
@@ -898,7 +900,9 @@
 
     const flowSummary = describeFlowsFor(node);
 
-    els.detailExplainer.innerHTML = `
+    els.detailExplainer.innerHTML = node.note
+      ? `<div>${escapeHtml(node.note)}</div>${flowSummary ? `<div style="margin-top:10px"><strong>Access involving this principal</strong><ul>${flowSummary}</ul></div>` : ""}`
+      : `
       <div>${escapeHtml(meta.summary)}</div>
       ${bullets ? `<ul>${bullets}</ul>` : ""}
       ${flowSummary ? `<div style="margin-top:10px"><strong>Traffic involving this element</strong><ul>${flowSummary}</ul></div>` : ""}

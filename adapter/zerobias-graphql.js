@@ -85,7 +85,11 @@ const introspectType = (name) =>
 // (Nested `networkInterface { subnet }` selections 500 on the live API, so
 // instance→subnet is left to synthesis.)
 const QUERIES = {
-  iamUsers: `query { AwsIamUser { name arn mfaEnabled awsAccountId } }`,
+  iamUsers: `query { AwsIamUser { name arn awsAccountId mfaEnabled privileged status accessLevel login groups { name } roles { name } canAssume { name } inlinePolicy { name } permissionsBoundary { name } accessCredentials { id } } }`,
+  iamRoles: `query { AwsIamRole { name arn awsAccountId description } }`,
+  iamGroups: `query { AwsIamGroup { name arn awsAccountId } }`,
+  iamManagedPolicies: `query { AwsIamManagedPolicy { name arn awsAccountId policyType } }`,
+  iamCustomerPolicies: `query { AwsIamCustomerPolicy { name arn awsAccountId policyType } }`,
   vpcs: `query { AwsVPC { id name awsRegion awsAccountId } }`,
   subnets: `query { AwsSubnet { id name cidr awsRegion awsAccountId availabilityZone { name } } }`,
   internetGateways: `query { AwsInternetGateway { id name } }`,
@@ -348,17 +352,96 @@ function awsInventoryToVisualizer(raw, opts) {
     flows,
   };
 
-  // IAM users → identity overlay (findings: e.g. MFA-disabled users).
-  if (opts.identity && (raw.iamUsers || []).length) {
-    const idVpc = { id: "iam", name: "IAM Users", subnets: [{ id: "iam-users", name: "Users", tier: "private", az: "global" }], gateways: [], resources: [] };
-    (raw.iamUsers || []).forEach((u) => {
-      const flagged = u.mfaEnabled === false ? " ⚠no-MFA" : "";
-      idVpc.resources.push({ id: u.arn || u.name, type: opts.identityType || "ec2", name: (u.name || u.arn) + flagged, subnet: "iam-users" });
-    });
-    result.vpcs.push(idVpc);
-  }
+  // IAM → Identity & Access overlay (users, groups, roles, policies + the
+  // membership / assume-role / policy-attachment edges between them).
+  if (opts.identity) buildIdentityOverlay(result, raw, opts);
 
   return result;
+}
+
+// Render the IAM inventory as a dedicated "Identity & Access" VPC: a subnet per
+// principal kind (Users / Groups / Roles / Policies) with the access graph
+// (user→group "member", user→role "assumes", user→policy "inline"/"boundary")
+// as flows, and security flags (no-MFA / privileged / inactive) on the labels.
+// A per-node `note` carries the detail shown in the side panel. Tolerant of the
+// sparse AWS-API sample (just users) and the rich live AuditgraphDB shape.
+function buildIdentityOverlay(result, raw, opts) {
+  const users = raw.iamUsers || [];
+  const roles = raw.iamRoles || [];
+  const groups = raw.iamGroups || [];
+  const policies = [...(raw.iamManagedPolicies || []), ...(raw.iamCustomerPolicies || [])];
+  if (!users.length && !roles.length && !groups.length && !policies.length) return;
+
+  const vpc = { id: "iam", name: "Identity & Access", subnets: [], gateways: [], resources: [] };
+  const haveSub = {};
+  const ensureSub = (id, name, tier) => {
+    if (!haveSub[id]) { vpc.subnets.push({ id, name, tier, az: "global" }); haveSub[id] = true; }
+    return id;
+  };
+  const seen = new Set();
+  const byName = { group: new Map(), role: new Map(), policy: new Map() };
+  const pid = (kind, name) => `iam:${kind}:${String(name).toLowerCase()}`;
+  const add = (kind, id, name, type, subId, subName, tier, note, key) => {
+    if (!seen.has(id)) {
+      ensureSub(subId, subName, tier);
+      vpc.resources.push({ id, type, name, subnet: subId, note });
+      seen.add(id);
+      if (key && byName[kind]) byName[kind].set(String(key).toLowerCase(), id);
+    }
+    return id;
+  };
+
+  // Top-level principals.
+  groups.forEach((g) => add("group", g.arn || pid("group", g.name), g.name, "ecs", "iam-groups", "Groups", "private", `IAM group${g.awsAccountId ? " · " + g.awsAccountId : ""}`, g.name));
+  roles.forEach((r) => add("role", r.arn || pid("role", r.name), r.name, "lambda", "iam-roles", "Roles", "private", `IAM role${r.awsAccountId ? " · " + r.awsAccountId : ""}${r.description ? " · " + r.description : ""}`, r.name));
+  policies.forEach((p) => add("policy", p.arn || pid("policy", p.name), p.name, "s3", "iam-policies", "Policies", "data", `IAM ${p.policyType || "policy"}${p.awsAccountId ? " · " + p.awsAccountId : ""}`, p.name));
+
+  // Resolve a referenced principal by name, creating a node for it if the
+  // top-level list didn't include it.
+  const refGroup = (n) => byName.group.get(String(n).toLowerCase()) || add("group", pid("group", n), n, "ecs", "iam-groups", "Groups", "private", "IAM group (referenced)", n);
+  const refRole = (n) => byName.role.get(String(n).toLowerCase()) || add("role", pid("role", n), n, "lambda", "iam-roles", "Roles", "private", "IAM role (referenced)", n);
+  const refPolicy = (n, note) => byName.policy.get(String(n).toLowerCase()) || add("policy", pid("policy", n), n, "s3", "iam-policies", "Policies", "data", note || "IAM policy", n);
+
+  const namesOf = (arr) => (arr || []).map((x) => x && (x.name || x)).filter(Boolean);
+  let noMfa = 0, priv = 0, inactive = 0;
+
+  users.forEach((u) => {
+    const uid = u.arn || pid("user", u.name);
+    const keys = (u.accessCredentials || []).length;
+    const gnames = namesOf(u.groups);
+    const rnames = [...new Set([...namesOf(u.roles), ...namesOf(u.canAssume)])];
+    const inl = namesOf(u.inlinePolicy);
+    const pb = namesOf(u.permissionsBoundary);
+    const mfaOff = u.mfaEnabled === false;
+    const isPriv = u.privileged === true;
+    const isInactive = u.status != null && String(u.status).toUpperCase() !== "ACTIVE";
+    if (mfaOff) noMfa++;
+    if (isPriv) priv++;
+    if (isInactive) inactive++;
+    let nm = u.name || u.arn;
+    if (mfaOff) nm += " ⚠no-MFA";
+    if (isPriv) nm += " ★priv";
+    if (isInactive) nm += ` ⛔${u.status}`;
+    const note =
+      `IAM user${u.awsAccountId ? " · acct " + u.awsAccountId : ""} · ${u.status || "status?"} · ` +
+      `MFA ${mfaOff ? "OFF" : "on"} · ${keys} access key(s)${isPriv ? " · privileged" : ""} · ` +
+      `${gnames.length} group(s) · ${rnames.length} role(s)`;
+    add("user", uid, nm, opts.identityType || "ec2", "iam-users", "Users", "public", note, u.name);
+    gnames.forEach((g) => result.flows.push({ from: uid, to: refGroup(g), label: "member" }));
+    rnames.forEach((r) => result.flows.push({ from: uid, to: refRole(r), label: "assumes" }));
+    inl.forEach((p) => result.flows.push({ from: uid, to: refPolicy(p, "Inline policy"), label: "inline" }));
+    pb.forEach((p) => result.flows.push({ from: uid, to: refPolicy(p, "Permissions boundary"), label: "boundary" }));
+  });
+
+  // Summarise the risk posture in the VPC label.
+  const bits = [];
+  if (users.length) bits.push(`${users.length} user${users.length === 1 ? "" : "s"}`);
+  if (noMfa) bits.push(`${noMfa} no-MFA`);
+  if (priv) bits.push(`${priv} privileged`);
+  if (inactive) bits.push(`${inactive} inactive`);
+  if (bits.length) vpc.name = `Identity & Access · ${bits.join(" · ")}`;
+
+  result.vpcs.push(vpc);
 }
 
   return {
