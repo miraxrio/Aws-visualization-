@@ -68,20 +68,26 @@ in. It surfaces in:
   `data/zerobias/users.json`); the matching **API key** is read at runtime from
   `data/zerobias/credentials.local.json` (**gitignored — never committed**) or
   typed once into the modal (opt-in `localStorage`, off on shared machines).
-- **Sidebar panels** — **Organization** (org id, plan, compliance frameworks,
-  cloud accounts, and a clickable **boundary list**) and **Tasks** (the signed-in
-  user's ZeroBias remediation tasks; clicking one opens its boundary and drills
-  to the exact finding/holon).
+- **Sidebar panels** — **Organization** (org id, accounts, and a clickable
+  **boundary list**) and **Tasks**. When connected with a key, **Tasks pulls real
+  `Ticket` / `WorkflowTicket` / `Finding` records** live from the boundary and
+  shows an honest "no tasks" state when there are none; without a key it shows
+  **clearly-labelled fictional sample** tasks (never presented as your real
+  assignments). The org profile/boundary-list/accounts are sample data (the
+  boundary API exposes no org profile) — flagged as such with a provenance banner
+  when live.
 - **Map overlay + provider filter** — a ZeroBias panel on the Map tab summarising
   the org, boundaries, accounts, users, open tasks and findings; the atoms on the
   globe are the org's boundaries. An **All / AWS / Azure** segmented control
   filters the globe to one provider (and back to all).
 
-> **Live vs. demo.** When the browser can reach `*.zerobias.com` and a key is
-> present, the import pulls **live** (a green **● Live** badge). Otherwise
-> everything falls back to the bundled sample tenant under
-> [`data/zerobias/`](data/zerobias/) (an amber **Demo data** badge), so every
-> panel is fully populated offline. (In-browser live pulls also depend on the
+> **Live vs. demo (what's real).** With a key, the **AWS inventory**, **IAM**
+> and **Tasks** are pulled **live** from your boundary (green **● Live**). The
+> **org profile, boundary list and cloud-account list are bundled sample data**
+> (the boundary GraphQL API exposes no org profile) and are labelled as sample
+> when live. Without a key, everything is the clearly-labelled demo tenant under
+> [`data/zerobias/`](data/zerobias/) (amber **Demo data**) — populated so the UI
+> is explorable offline, never presented as your real data. (In-browser live pulls also depend on the
 > ZeroBias API allowing CORS from the page origin; if it doesn't, generate a file
 > with the CLI adapter and use **Import → Downloaded network**.) This is the same
 > host the CLI adapter targets — see [`adapter/README.md`](adapter/README.md) and

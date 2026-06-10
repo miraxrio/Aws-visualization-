@@ -42,8 +42,18 @@
   let localCreds = {}; // userId -> apiKey, from the gitignored local file
   let inited = false;
   let dataReady = null; // promise
+  let liveTasks = null; // real Ticket/WorkflowTicket/Finding records once fetched
+  let liveTasksError = false;
   let hooks = { onLoadNetwork: null, onToast: null, onFocusHolon: null };
   const els = {};
+
+  // Real ZeroBias work items live in the boundary GraphQL as tickets / workflow
+  // tickets / findings (NOT the bundled sample). Queried live when connected.
+  const TASK_QUERIES = [
+    { q: `query { Ticket { id name description ticketStatus priority opened closed dateCreated url } }`, kind: "ticket" },
+    { q: `query { WorkflowTicket { id name description ticketStatus priority opened closed dateCreated url } }`, kind: "workflow" },
+    { q: `query { Finding { id name description state dateCreated url } }`, kind: "finding" },
+  ];
 
   // --- persistence -------------------------------------------------------
 
@@ -182,6 +192,7 @@
   // Load a boundary (assessment → holographic view, network → 3D city) and
   // optionally drill to a specific holon/finding.
   async function openBoundary(boundaryId, holonId) {
+    if (!boundaryId) return; // live tickets have no local boundary file — no-op
     await ensureData();
     const b = data.boundaries.find((x) => x.id === boundaryId);
     if (!b || !b.dataFile) { toast("Boundary has no data file."); return; }
@@ -192,6 +203,56 @@
     if (holonId && hooks.onFocusHolon) {
       setTimeout(() => hooks.onFocusHolon(holonId), 350);
     }
+  }
+
+  // --- tasks: REAL ZeroBias tickets / findings (no fabrication) -----------
+
+  const hasLiveCreds = () => !!(conn.apiKey && conn.orgId && conn.boundaryId);
+
+  function mapTicketToTask(x, kind) {
+    const statusRaw = x.ticketStatus || x.state || "open";
+    return {
+      id: x.id,
+      title: x.name || x.id,
+      description: x.description || "",
+      status: String(statusRaw).toLowerCase().replace(/_/g, "-"),
+      priority: String(x.priority || "medium").toLowerCase(),
+      framework: kind,
+      dueAt: null,
+      createdAt: x.dateCreated || null,
+      url: x.url || null,
+      source: "live",
+    };
+  }
+
+  // Pull real work items from the boundary GraphQL. Returns an array (possibly
+  // empty — which is the honest answer when the tenant has no tickets).
+  async function fetchLiveTasks() {
+    const G = window.ZeroBiasGraphQL;
+    if (!G || !hasLiveCreds()) return null;
+    const c = { host: conn.host || DEFAULT_HOST, boundaryId: conn.boundaryId, apiKey: conn.apiKey, orgId: conn.orgId, pageSize: 100 };
+    const out = [];
+    let anyOk = false;
+    for (const t of TASK_QUERIES) {
+      try {
+        const d = await G.gql(c, t.q);
+        const arr = Object.values(d).find(Array.isArray) || [];
+        arr.forEach((x) => out.push(mapTicketToTask(x, t.kind)));
+        anyOk = true;
+      } catch (_) {/* one source failed — keep going */}
+    }
+    return anyOk ? out : null; // null = couldn't reach any source (error state)
+  }
+
+  // Refresh the tasks panel from the live API when connected with a key.
+  async function refreshTasks() {
+    if (!hasLiveCreds()) { liveTasks = null; liveTasksError = false; renderTasksPanel(); return; }
+    liveTasks = null; liveTasksError = false;
+    renderTasksPanel(); // show "loading…"
+    const res = await fetchLiveTasks();
+    if (res === null) { liveTasksError = true; liveTasks = []; }
+    else { liveTasks = res; liveTasksError = false; }
+    renderTasksPanel();
   }
 
   // --- connection actions ------------------------------------------------
@@ -220,6 +281,7 @@
     render();
     refreshMap();
     doImport();
+    refreshTasks();
   }
 
   function connect(form) {
@@ -309,21 +371,28 @@
     }
     const o = data.org;
     if (!o) { els.orgBody.innerHTML = '<p class="muted small">ZeroBias data unavailable.</p>'; return; }
+    const live = hasLiveCreds();
     const frameworks = (o.complianceFrameworks || []).map((f) => `<span class="zb-chip">${esc(f)}</span>`).join("");
+    // Be explicit about provenance: only the inventory/IAM/tasks come live; the
+    // org profile, boundary list and accounts below are bundled sample data.
+    const banner = live
+      ? `<div class="zb-tasks-sample"><span class="zb-badge zb-badge-live">● Live</span> Live from boundary <code>${esc(conn.boundaryId)}</code>: AWS inventory, IAM &amp; tasks. The org profile, boundary list &amp; accounts below are <b>sample</b> (the boundary API doesn't expose an org profile).</div>`
+      : "";
     els.orgBody.innerHTML = `
+      ${banner}
       <div class="zb-org-head">
-        <div class="zb-org-name">${esc(o.name)} ${statusBadge()}</div>
+        <div class="zb-org-name">${esc(live ? "Your ZeroBias org" : o.name)} ${statusBadge()}</div>
         <div class="zb-kv">
-          <span>Org ID</span><code>${esc(o.danaOrgId || o.id)}</code>
-          <span>Plan</span><b>${esc(o.plan || "—")}</b>
-          <span>Members</span><b>${esc(String(o.memberCount ?? "—"))}</b>
-          <span>Accounts</span><b>${esc(String((data.accounts || []).length))}</b>
+          <span>Org ID</span><code>${esc(live ? conn.orgId : (o.danaOrgId || o.id))}</code>
+          ${live ? "" : `<span>Plan</span><b>${esc(o.plan || "—")}</b>`}
+          ${live ? "" : `<span>Members</span><b>${esc(String(o.memberCount ?? "—"))}</b>`}
+          <span>Accounts</span><b>${esc(String((data.accounts || []).length))}${live ? " <small class=\"muted\">(sample)</small>" : ""}</b>
         </div>
-        ${frameworks ? `<div class="zb-chips">${frameworks}</div>` : ""}
+        ${live ? "" : (frameworks ? `<div class="zb-chips">${frameworks}</div>` : "")}
       </div>
-      <div class="zb-sub-eyebrow">Boundaries (${(data.boundaries || []).length})</div>
+      <div class="zb-sub-eyebrow">Boundaries (${(data.boundaries || []).length})${live ? " · sample" : ""}</div>
       <div class="zb-boundary-list" id="zb-boundary-list">${boundaryListHtml()}</div>
-      <div class="zb-sub-eyebrow">Cloud accounts</div>
+      <div class="zb-sub-eyebrow">Cloud accounts${live ? " · sample" : ""}</div>
       <div class="zb-account-list">${accountListHtml()}</div>
     `;
     els.orgBody.querySelectorAll("[data-open-boundary]").forEach((b) =>
@@ -370,18 +439,51 @@
       els.tasksBody.innerHTML = connectCtaHtml("Sign in to ZeroBias to see the tasks assigned to you.");
       return;
     }
-    const all = data.tasks || [];
-    const mine = currentUser ? all.filter((t) => t.assignee === currentUser.id) : all;
-    const list = (mine.length ? mine : all).slice();
-    const open = list.filter((t) => t.status !== "done");
-    const who = currentUser ? `for ${esc(currentUser.name.split(" ")[0])}` : "across the org";
-    if (els.tasksCount) els.tasksCount.textContent = String(open.length);
-    if (!list.length) { els.tasksBody.innerHTML = '<p class="muted small">No ZeroBias tasks.</p>'; return; }
     const order = { critical: 0, high: 1, medium: 2, low: 3 };
-    list.sort((a, b) => (a.status === "done" ? 1 : 0) - (b.status === "done" ? 1 : 0) || (order[a.priority] ?? 9) - (order[b.priority] ?? 9));
-    els.tasksBody.innerHTML =
-      `<div class="zb-tasks-sub muted small">${open.length} open ${who}</div>` +
-      list.map(taskHtml).join("");
+    const isOpen = (t) => !["done", "closed", "resolved", "complete", "completed"].includes(String(t.status));
+
+    // LIVE mode: a real API key is present → show real Ticket/Finding records
+    // (or an honest empty/error state). Never fabricated tasks.
+    if (hasLiveCreds()) {
+      if (liveTasks === null) {
+        if (els.tasksCount) els.tasksCount.textContent = "—";
+        els.tasksBody.innerHTML = '<p class="muted small">Loading tasks from ZeroBias…</p>';
+        return;
+      }
+      if (liveTasksError) {
+        if (els.tasksCount) els.tasksCount.textContent = "0";
+        els.tasksBody.innerHTML = '<p class="muted small">Could not reach the ZeroBias tickets API (CORS / network). No tasks shown.</p>';
+        return;
+      }
+      const list = liveTasks.slice();
+      if (els.tasksCount) els.tasksCount.textContent = String(list.filter(isOpen).length);
+      if (!list.length) {
+        els.tasksBody.innerHTML =
+          '<div class="zb-tasks-empty"><span class="zb-badge zb-badge-live">● Live</span>' +
+          '<p class="muted small">No tickets, workflow items or findings are assigned in this boundary — ZeroBias returned 0. Nothing here is fabricated.</p></div>';
+        return;
+      }
+      list.sort((a, b) => (isOpen(a) ? 0 : 1) - (isOpen(b) ? 0 : 1) || (order[a.priority] ?? 9) - (order[b.priority] ?? 9));
+      els.tasksBody.innerHTML =
+        `<div class="zb-tasks-sub muted small"><span class="zb-badge zb-badge-live">● Live</span> ${list.length} from your boundary</div>` +
+        list.map(taskHtml).join("");
+      els.tasksBody.querySelectorAll("[data-task-boundary]").forEach((el) =>
+        el.addEventListener("click", () => openBoundary(el.getAttribute("data-task-boundary"), el.getAttribute("data-task-holon") || null)));
+      return;
+    }
+
+    // DEMO mode: no API key → the bundled tasks are FICTIONAL samples, labelled
+    // as such and never presented as the signed-in user's real assignments.
+    const all = data.tasks || [];
+    const list = all.slice();
+    const open = list.filter(isOpen);
+    if (els.tasksCount) els.tasksCount.textContent = String(open.length);
+    const banner =
+      '<div class="zb-tasks-sample"><span class="zb-badge zb-badge-demo">Sample</span>' +
+      ' Fictional demo tasks — <b>not</b> from your ZeroBias account. Add an API key to see real tickets.</div>';
+    if (!list.length) { els.tasksBody.innerHTML = banner; return; }
+    list.sort((a, b) => (isOpen(a) ? 0 : 1) - (isOpen(b) ? 0 : 1) || (order[a.priority] ?? 9) - (order[b.priority] ?? 9));
+    els.tasksBody.innerHTML = banner + list.map(taskHtml).join("");
     els.tasksBody.querySelectorAll("[data-task-boundary]").forEach((el) =>
       el.addEventListener("click", () => openBoundary(el.getAttribute("data-task-boundary"), el.getAttribute("data-task-holon") || null)));
   }
