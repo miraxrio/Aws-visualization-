@@ -69,20 +69,22 @@ in. It surfaces in:
   `data/zerobias/credentials.local.json` (**gitignored — never committed**) or
   typed once into the modal (opt-in `localStorage`, off on shared machines).
 - **Sidebar panels** — **Organization** (org id, accounts, and a clickable
-  **boundary list**) and **Tasks**. When connected with a key, **Tasks pulls real
-  `Ticket` / `WorkflowTicket` / `Finding` records** live from the boundary and
-  shows an honest "no tasks" state when there are none; without a key it shows
-  **clearly-labelled fictional sample** tasks (never presented as your real
-  assignments). The org profile/boundary-list/accounts are sample data (the
-  boundary API exposes no org profile) — flagged as such with a provenance banner
-  when live.
+  **boundary list**) and **Tasks**. When connected with a key, **Tasks pulls your
+  real assigned tasks** live from the platform task API
+  (`POST https://<host>/portal/myTasks`, the hydra "portal" service — tasks are a
+  platform concept, not in the boundary GraphQL) and shows an honest "no tasks"
+  state when there are none; without a key it shows **clearly-labelled fictional
+  sample** tasks (never presented as your real assignments). The org
+  profile/boundary-list/accounts are sample data (the boundary API exposes no org
+  profile) — flagged with a provenance banner when live.
 - **Map overlay + provider filter** — a ZeroBias panel on the Map tab summarising
   the org, boundaries, accounts, users, open tasks and findings; the atoms on the
   globe are the org's boundaries. An **All / AWS / Azure** segmented control
   filters the globe to one provider (and back to all).
 
-> **Live vs. demo (what's real).** With a key, the **AWS inventory**, **IAM**
-> and **Tasks** are pulled **live** from your boundary (green **● Live**). The
+> **Live vs. demo (what's real).** With a key, the **AWS inventory** and **IAM**
+> are pulled **live** from your boundary and **Tasks** from the platform task API
+> (green **● Live**). The
 > **org profile, boundary list and cloud-account list are bundled sample data**
 > (the boundary GraphQL API exposes no org profile) and are labelled as sample
 > when live. Without a key, everything is the clearly-labelled demo tenant under

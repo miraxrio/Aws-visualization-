@@ -47,14 +47,6 @@
   let hooks = { onLoadNetwork: null, onToast: null, onFocusHolon: null };
   const els = {};
 
-  // Real ZeroBias work items live in the boundary GraphQL as tickets / workflow
-  // tickets / findings (NOT the bundled sample). Queried live when connected.
-  const TASK_QUERIES = [
-    { q: `query { Ticket { id name description ticketStatus priority opened closed dateCreated url } }`, kind: "ticket" },
-    { q: `query { WorkflowTicket { id name description ticketStatus priority opened closed dateCreated url } }`, kind: "workflow" },
-    { q: `query { Finding { id name description state dateCreated url } }`, kind: "finding" },
-  ];
-
   // --- persistence -------------------------------------------------------
 
   function loadConn() {
@@ -205,48 +197,61 @@
     }
   }
 
-  // --- tasks: REAL ZeroBias tickets / findings (no fabrication) -----------
+  // --- tasks: REAL ZeroBias tasks from the platform task API --------------
+  // Tasks are a platform concept (NOT in the boundary GraphQL, which has no Task
+  // type). They live in the hydra "portal" service:
+  //   POST https://<host>/portal/myTasks  → the signed-in org's assigned tasks
+  // CORS is open for the GitHub Pages origin, so the browser pulls them directly.
 
   const hasLiveCreds = () => !!(conn.apiKey && conn.orgId && conn.boundaryId);
+  const hasOrgCreds = () => !!(conn.apiKey && conn.orgId); // tasks are org-scoped
 
-  function mapTicketToTask(x, kind) {
-    const statusRaw = x.ticketStatus || x.state || "open";
+  function mapPortalTask(t) {
+    const pv = t && t.priority && typeof t.priority === "object" ? t.priority.value : null;
+    const priority = pv == null ? "medium" : pv < 150 ? "critical" : pv < 200 ? "high" : pv === 200 ? "medium" : "low";
+    const link = (t.links || []).find((l) => l && l.description) || (t.links || [])[0] || {};
+    const approver = (t.approvers && t.approvers[0] && t.approvers[0].contactName) || null;
     return {
-      id: x.id,
-      title: x.name || x.id,
-      description: x.description || "",
-      status: String(statusRaw).toLowerCase().replace(/_/g, "-"),
-      priority: String(x.priority || "medium").toLowerCase(),
-      framework: kind,
+      id: t.id,
+      title: t.name || t.code || t.id,
+      description: link.description || "",
+      status: String(t.status || "todo").toLowerCase(),
+      priority,
+      approver,
+      framework: null,
       dueAt: null,
-      createdAt: x.dateCreated || null,
-      url: x.url || null,
+      createdAt: t.created || null,
       source: "live",
     };
   }
 
-  // Pull real work items from the boundary GraphQL. Returns an array (possibly
-  // empty — which is the honest answer when the tenant has no tickets).
+  // Pull the signed-in org's real tasks. Returns an array (possibly empty — the
+  // honest answer), or null if the API couldn't be reached.
   async function fetchLiveTasks() {
-    const G = window.ZeroBiasGraphQL;
-    if (!G || !hasLiveCreds()) return null;
-    const c = { host: conn.host || DEFAULT_HOST, boundaryId: conn.boundaryId, apiKey: conn.apiKey, orgId: conn.orgId, pageSize: 100 };
-    const out = [];
-    let anyOk = false;
-    for (const t of TASK_QUERIES) {
-      try {
-        const d = await G.gql(c, t.q);
-        const arr = Object.values(d).find(Array.isArray) || [];
-        arr.forEach((x) => out.push(mapTicketToTask(x, t.kind)));
-        anyOk = true;
-      } catch (_) {/* one source failed — keep going */}
+    if (!hasOrgCreds()) return null;
+    const url = `https://${conn.host || DEFAULT_HOST}/portal/myTasks`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `APIKey ${conn.apiKey}`,
+          "dana-org-id": conn.orgId,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: "{}",
+      });
+      if (!res.ok) return null;
+      const arr = await res.json();
+      return Array.isArray(arr) ? arr.map(mapPortalTask) : [];
+    } catch (_) {
+      return null; // network / CORS failure → error state
     }
-    return anyOk ? out : null; // null = couldn't reach any source (error state)
   }
 
   // Refresh the tasks panel from the live API when connected with a key.
   async function refreshTasks() {
-    if (!hasLiveCreds()) { liveTasks = null; liveTasksError = false; renderTasksPanel(); return; }
+    if (!hasOrgCreds()) { liveTasks = null; liveTasksError = false; renderTasksPanel(); return; }
     liveTasks = null; liveTasksError = false;
     renderTasksPanel(); // show "loading…"
     const res = await fetchLiveTasks();
@@ -442,17 +447,17 @@
     const order = { critical: 0, high: 1, medium: 2, low: 3 };
     const isOpen = (t) => !["done", "closed", "resolved", "complete", "completed"].includes(String(t.status));
 
-    // LIVE mode: a real API key is present → show real Ticket/Finding records
-    // (or an honest empty/error state). Never fabricated tasks.
-    if (hasLiveCreds()) {
+    // LIVE mode: a real API key is present → show the org's real tasks from the
+    // platform task API (or an honest empty/error state). Never fabricated.
+    if (hasOrgCreds()) {
       if (liveTasks === null) {
         if (els.tasksCount) els.tasksCount.textContent = "—";
-        els.tasksBody.innerHTML = '<p class="muted small">Loading tasks from ZeroBias…</p>';
+        els.tasksBody.innerHTML = '<p class="muted small">Loading your tasks from ZeroBias…</p>';
         return;
       }
       if (liveTasksError) {
         if (els.tasksCount) els.tasksCount.textContent = "0";
-        els.tasksBody.innerHTML = '<p class="muted small">Could not reach the ZeroBias tickets API (CORS / network). No tasks shown.</p>';
+        els.tasksBody.innerHTML = '<p class="muted small">Could not reach the ZeroBias task API (CORS / network). No tasks shown.</p>';
         return;
       }
       const list = liveTasks.slice();
@@ -460,12 +465,12 @@
       if (!list.length) {
         els.tasksBody.innerHTML =
           '<div class="zb-tasks-empty"><span class="zb-badge zb-badge-live">● Live</span>' +
-          '<p class="muted small">No tickets, workflow items or findings are assigned in this boundary — ZeroBias returned 0. Nothing here is fabricated.</p></div>';
+          '<p class="muted small">No tasks are assigned to you in ZeroBias right now. Nothing here is fabricated.</p></div>';
         return;
       }
       list.sort((a, b) => (isOpen(a) ? 0 : 1) - (isOpen(b) ? 0 : 1) || (order[a.priority] ?? 9) - (order[b.priority] ?? 9));
       els.tasksBody.innerHTML =
-        `<div class="zb-tasks-sub muted small"><span class="zb-badge zb-badge-live">● Live</span> ${list.length} from your boundary</div>` +
+        `<div class="zb-tasks-sub muted small"><span class="zb-badge zb-badge-live">● Live</span> ${list.length} assigned to you in ZeroBias</div>` +
         list.map(taskHtml).join("");
       els.tasksBody.querySelectorAll("[data-task-boundary]").forEach((el) =>
         el.addEventListener("click", () => openBoundary(el.getAttribute("data-task-boundary"), el.getAttribute("data-task-holon") || null)));
@@ -480,7 +485,7 @@
     if (els.tasksCount) els.tasksCount.textContent = String(open.length);
     const banner =
       '<div class="zb-tasks-sample"><span class="zb-badge zb-badge-demo">Sample</span>' +
-      ' Fictional demo tasks — <b>not</b> from your ZeroBias account. Add an API key to see real tickets.</div>';
+      ' Fictional demo tasks — <b>not</b> from your ZeroBias account. Add an API key to see your real tasks.</div>';
     if (!list.length) { els.tasksBody.innerHTML = banner; return; }
     list.sort((a, b) => (isOpen(a) ? 0 : 1) - (isOpen(b) ? 0 : 1) || (order[a.priority] ?? 9) - (order[b.priority] ?? 9));
     els.tasksBody.innerHTML = banner + list.map(taskHtml).join("");
@@ -500,6 +505,7 @@
           <span class="zb-task-meta">
             <span class="zb-task-status st-${esc(t.status)}">${esc(t.status)}</span>
             ${t.framework ? `<span class="zb-task-fw">${esc(t.framework)}</span>` : ""}
+            ${t.approver ? `<span class="zb-task-boundary">▸ ${esc(t.approver)}</span>` : ""}
             ${b ? `<span class="zb-task-boundary">${esc(b.name)}</span>` : ""}
             ${due ? `<span class="zb-task-due${overdue ? " is-overdue" : ""}">${esc(due)}</span>` : ""}
           </span>
@@ -518,7 +524,9 @@
       return;
     }
     const o = data.org;
-    const open = (data.tasks || []).filter((t) => t.status !== "done").length;
+    // Prefer real task count when connected live; fall back to the sample count.
+    const taskSrc = hasOrgCreds() && Array.isArray(liveTasks) ? liveTasks : (data.tasks || []);
+    const open = taskSrc.filter((t) => !["done", "closed", "resolved", "complete", "completed"].includes(String(t.status))).length;
     const findings = (data.boundaries || []).reduce((n, b) => n + ((b.stats && b.stats.openFindings) || 0), 0);
     els.mapPanel.innerHTML = `
       <div class="zb-map-head">
