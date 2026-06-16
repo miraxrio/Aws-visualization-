@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AuditCrowd — what you're seeing (reference)</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* Page-only layout on top of the shared app stylesheet. Everything below is a
+       STATIC, labelled reference — clearly Sample, never live data. */
+    .ref-wrap { max-width: 1060px; margin: 0 auto; padding: 28px 22px 80px; }
+    .ref-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+    .ref-top h1 { font-size: 22px; margin: 0; }
+    .ref-lead { color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 760px; }
+    .ref-sec { margin-top: 34px; }
+    .ref-sec > h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 9px; }
+    .ref-sec > p { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 0 0 14px; max-width: 780px; }
+    .ref-frame { border: 1px solid var(--border); border-radius: 14px; background: radial-gradient(900px 500px at 50% -10%, #161f3f 0%, #0b1322 75%); padding: 16px; overflow: auto; }
+    .ref-frame .zb-board-grid { display: grid; gap: 10px; align-items: start; min-width: max-content; }
+    .ref-note { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+    .ref-back { color: var(--zb-2); text-decoration: none; font-weight: 600; }
+    .ref-back:hover { text-decoration: underline; }
+    .ref-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+    .ref-legend b { color: var(--text); }
+    .ref-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 760px) { .ref-cols { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body class="theme-night">
+  <div class="ref-wrap">
+    <div class="ref-top">
+      <span class="zb-hex" style="font-size:26px">⬡</span>
+      <h1>AuditCrowd — what you're actually seeing</h1>
+      <span class="zb-badge zb-badge-demo">Sample reference</span>
+    </div>
+    <p class="ref-lead">
+      A labelled walkthrough of the assessor experience: a <b>task board</b> is the primary interface,
+      every task carries a real <b>lifecycle</b>, and work is framed by its <b>economics</b> (rates, value,
+      opportunities). AuditCrowd is a narrowing, branded view over ZeroBias — not a parallel store.
+      <br /><br />
+      <b>Provenance, always honest:</b>
+      <span class="zb-badge zb-badge-live">● Live</span> = your real ZeroBias data (tasks, boards, lifecycle, boundaries via
+      <code>POST /portal/myTasks</code>).
+      <span class="zb-badge zb-badge-demo">Sample</span> = illustrative demo data (the economics rate-card, opportunities and
+      provider profile, which aren't browser-reachable on every tenant). Everything on <em>this</em> page is Sample.
+    </p>
+    <p><a class="ref-back" href="index.html">← Back to the app</a> &nbsp;·&nbsp; open the live board with the <b>⬡ Board</b> view.</p>
+
+    <!-- 1 · The board -->
+    <section class="ref-sec">
+      <h2>1 · The board (your inbox) <span class="zb-badge zb-badge-demo">Sample</span></h2>
+      <p>Swim-lanes (rows) × lifecycle status (columns). Lanes here are marketplace <b>partitions</b>
+        (AUDIT = third-party assessor work); on a live board they can also be your real boards or phase.
+        Each card shows its code, priority, products/frameworks and a rolled-up value.</p>
+      <div class="ref-frame">
+        <div class="zb-board-grid" style="grid-template-columns: minmax(150px,180px) repeat(4, minmax(190px,1fr));">
+          <div class="zb-bg-corner"></div>
+          <div class="zb-bg-colhead"><span class="zb-bg-dot" style="background:#38bdf8"></span>To Do</div>
+          <div class="zb-bg-colhead"><span class="zb-bg-dot" style="background:#f59e0b"></span>In Progress</div>
+          <div class="zb-bg-colhead"><span class="zb-bg-dot" style="background:#a78bfa"></span>In Review</div>
+          <div class="zb-bg-colhead"><span class="zb-bg-dot" style="background:#22c55e"></span>Done</div>
+
+          <div class="zb-bg-lanehead" style="--lane:#7c5cff">
+            <div class="zb-bg-lane-name">Audit</div>
+            <div class="zb-bg-lane-meta">3/4 open · <span class="zb-econ-sm">$1,700</span></div>
+            <div class="zb-bg-lane-desc muted">Third-party assessor tasks</div>
+          </div>
+          <div class="zb-bg-cell">
+            <button class="zb-card pri-high">
+              <span class="zb-card-top"><span class="zb-card-code">AUD-KSI-LOG</span><span class="zb-card-pri pri-high"></span></span>
+              <span class="zb-card-name">KSI: validate centralised logging is enabled</span>
+              <span class="zb-card-chips"><span class="zb-chip zb-chip-prod">AWS Security Hub</span><span class="zb-chip zb-chip-fw">FedRAMP 20x</span></span>
+              <span class="zb-card-foot"><span class="zb-card-val">$700 <span class="zb-badge zb-badge-demo zb-badge-xs">est</span></span><span class="zb-card-bnd">▦ Checkout · prod</span></span>
+            </button>
+          </div>
+          <div class="zb-bg-cell">
+            <button class="zb-card pri-high">
+              <span class="zb-card-top"><span class="zb-card-code">AUD-MFA-1</span><span class="zb-card-pri pri-high"></span></span>
+              <span class="zb-card-name">Verify MFA enforced on all IAM users</span>
+              <span class="zb-card-chips"><span class="zb-chip zb-chip-prod">AWS IAM</span><span class="zb-chip zb-chip-fw">NIST 800-53</span></span>
+              <span class="zb-card-foot"><span class="zb-card-val">$700 <span class="zb-badge zb-badge-demo zb-badge-xs">est</span></span><span class="zb-card-bnd">▦ Three-tier web</span></span>
+            </button>
+          </div>
+          <div class="zb-bg-cell">
+            <button class="zb-card pri-medium">
+              <span class="zb-card-top"><span class="zb-card-code">AUD-STIG-TLS</span><span class="zb-card-pri pri-medium"></span></span>
+              <span class="zb-card-name">Assess nginx TLS STIG ciphers</span>
+              <span class="zb-card-chips"><span class="zb-chip zb-chip-fw">STIG</span></span>
+              <span class="zb-card-foot"><span class="zb-card-val">$700 <span class="zb-badge zb-badge-demo zb-badge-xs">est</span></span><span class="zb-card-bnd">▦ STIG baseline</span></span>
+            </button>
+          </div>
+          <div class="zb-bg-cell">
+            <button class="zb-card pri-medium">
+              <span class="zb-card-top"><span class="zb-card-code">AUD-Q2-SIGN</span><span class="zb-card-pri pri-medium"></span></span>
+              <span class="zb-card-name">Sign off Q2 attestation</span>
+              <span class="zb-card-foot"><span class="zb-card-val">$300 <span class="zb-badge zb-badge-demo zb-badge-xs">est</span></span></span>
+            </button>
+          </div>
+
+          <div class="zb-bg-lanehead" style="--lane:#22d3ee">
+            <div class="zb-bg-lane-name">Provider</div>
+            <div class="zb-bg-lane-meta">2/2 open · <span class="zb-econ-sm">$2,560</span></div>
+            <div class="zb-bg-lane-desc muted">Work you deliver as a provider</div>
+          </div>
+          <div class="zb-bg-cell">
+            <button class="zb-card pri-low">
+              <span class="zb-card-top"><span class="zb-card-code">PRV-PROTO-S3</span><span class="zb-card-pri pri-low"></span></span>
+              <span class="zb-card-name">Prototype 'S3 public-access' control</span>
+              <span class="zb-card-chips"><span class="zb-chip zb-chip-prod">Amazon S3</span></span>
+              <span class="zb-card-foot"><span class="zb-card-val">$1,280 <span class="zb-badge zb-badge-demo zb-badge-xs">est</span></span></span>
+            </button>
+          </div>
+          <div class="zb-bg-cell">
+            <button class="zb-card pri-medium">
+              <span class="zb-card-top"><span class="zb-card-code">PRV-PUB-IAM</span><span class="zb-card-pri pri-medium"></span></span>
+              <span class="zb-card-name">Publish 'IAM MFA' guild to the catalog</span>
+              <span class="zb-card-chips"><span class="zb-chip zb-chip-prod">AWS IAM</span></span>
+              <span class="zb-card-foot"><span class="zb-card-val">$1,280 <span class="zb-badge zb-badge-demo zb-badge-xs">est</span></span><span class="zb-card-bnd">▦ Three-tier web</span></span>
+            </button>
+          </div>
+          <div class="zb-bg-cell"></div>
+          <div class="zb-bg-cell"></div>
+        </div>
+      </div>
+      <p class="ref-note">In the live app, clicking a card opens the task detail (below). Cards tied to a boundary deep-link into its holographic view.</p>
+    </section>
+
+    <div class="ref-cols">
+      <!-- 2 · A single IAM/MFA task -->
+      <section class="ref-sec">
+        <h2>2 · One task: IAM / MFA <span class="zb-badge zb-badge-demo">Sample</span></h2>
+        <p>A control assessed against a specific product, with its real lifecycle and a (sample) economics roll-up.</p>
+        <div class="ref-frame" style="background:var(--bg-elev)">
+          <div class="zb-drawer-code">AUD-MFA-1 <span class="zb-badge zb-badge-live">● Live</span></div>
+          <h3 class="zb-drawer-title" style="margin:4px 0 8px">Verify MFA enforced on all IAM users</h3>
+          <div class="zb-drawer-meta" style="margin-bottom:12px">
+            <span class="zb-chip zb-chip-prod">AWS IAM</span>
+            <span class="zb-chip zb-chip-fw">NIST 800-53</span>
+            <span class="zb-chip">Assess a control</span>
+          </div>
+          <div class="zb-life-eyebrow">Lifecycle · Assessor Lifecycle <span class="zb-badge zb-badge-live zb-badge-xs">● Live</span></div>
+          <div class="zb-life-track">
+            <div class="zb-life-node is-past" style="--c:#38bdf8"><span class="zb-life-dot"></span><span class="zb-life-label">To Do</span></div>
+            <span class="zb-life-edge"></span>
+            <div class="zb-life-node is-current" style="--c:#f59e0b"><span class="zb-life-dot"></span><span class="zb-life-label">In Progress</span></div>
+            <span class="zb-life-edge"></span>
+            <div class="zb-life-node is-future" style="--c:#a78bfa"><span class="zb-life-dot"></span><span class="zb-life-label">In Review</span></div>
+            <span class="zb-life-edge"></span>
+            <div class="zb-life-node is-future" style="--c:#22c55e"><span class="zb-life-dot"></span><span class="zb-life-label">Done</span></div>
+          </div>
+          <div class="zb-life-next" style="margin-top:11px">
+            <span class="muted small">Valid next moves (from workflow data):</span>
+            <span class="zb-life-trans">Submit for review → In Review <span class="zb-life-approval">⚑</span></span>
+          </div>
+          <div class="zb-drawer-econ" style="margin-top:14px">
+            <div class="zb-life-eyebrow">Economics <span class="zb-badge zb-badge-demo zb-badge-xs">Sample estimate</span></div>
+            <div class="zb-econ-grid">
+              <span>Estimated effort</span><b>4 h</b>
+              <span>Rate</span><b>$175/h</b>
+              <span>Rolled-up value</span><b>$700</b>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3 · KSI logging task -->
+      <section class="ref-sec">
+        <h2>3 · One task: KSI logging <span class="zb-badge zb-badge-demo">Sample</span></h2>
+        <p>A Key Security Indicator — the same shape applies to any control/finding the assessor validates.</p>
+        <div class="ref-frame" style="background:var(--bg-elev)">
+          <div class="zb-drawer-code">AUD-KSI-LOG <span class="zb-badge zb-badge-live">● Live</span></div>
+          <h3 class="zb-drawer-title" style="margin:4px 0 8px">KSI: validate centralised logging is enabled</h3>
+          <p class="zb-drawer-desc" style="margin-bottom:12px">Verify CloudTrail plus centralised log aggregation across the checkout boundary.</p>
+          <div class="zb-drawer-meta" style="margin-bottom:12px">
+            <span class="zb-chip zb-chip-prod">AWS Security Hub</span>
+            <span class="zb-chip zb-chip-fw">FedRAMP 20x</span>
+          </div>
+          <div class="zb-life-eyebrow">Lifecycle · Assessor Lifecycle <span class="zb-badge zb-badge-live zb-badge-xs">● Live</span></div>
+          <div class="zb-life-track">
+            <div class="zb-life-node is-current" style="--c:#38bdf8"><span class="zb-life-dot"></span><span class="zb-life-label">To Do</span></div>
+            <span class="zb-life-edge"></span>
+            <div class="zb-life-node is-future" style="--c:#f59e0b"><span class="zb-life-dot"></span><span class="zb-life-label">In Progress</span></div>
+            <span class="zb-life-edge"></span>
+            <div class="zb-life-node is-future" style="--c:#a78bfa"><span class="zb-life-dot"></span><span class="zb-life-label">In Review</span></div>
+            <span class="zb-life-edge"></span>
+            <div class="zb-life-node is-future" style="--c:#22c55e"><span class="zb-life-dot"></span><span class="zb-life-label">Done</span></div>
+          </div>
+          <div class="zb-drawer-bnd" style="margin-top:14px">
+            <div class="zb-life-eyebrow">Validates against</div>
+            <div class="zb-bnd-name">▦ Acme · Checkout · prod</div>
+            <span class="muted small">Deep-links into the boundary's holographic view.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 4 · The dev lifecycle -->
+    <section class="ref-sec">
+      <h2>4 · The dev lifecycle (prototype → publish) <span class="zb-badge zb-badge-demo">Sample</span></h2>
+      <p>Publishing a guild/integration is itself a workflow, rendered from <code>SmeMartWorkflow</code> data — not hard-coded.
+        The live app draws this graph from the task's actual workflow definition and highlights where it sits.</p>
+      <div class="ref-frame" style="background:var(--bg-elev)">
+        <div class="zb-life-track" style="justify-content:flex-start">
+          <div class="zb-life-node is-past" style="--c:#38bdf8"><span class="zb-life-dot"></span><span class="zb-life-label">Prototype</span></div>
+          <span class="zb-life-edge"></span>
+          <div class="zb-life-node is-past" style="--c:#22d3ee"><span class="zb-life-dot"></span><span class="zb-life-label">Test</span></div>
+          <span class="zb-life-edge"></span>
+          <div class="zb-life-node is-current" style="--c:#f59e0b"><span class="zb-life-dot"></span><span class="zb-life-label">Validate</span></div>
+          <span class="zb-life-edge"></span>
+          <div class="zb-life-node is-future" style="--c:#a78bfa"><span class="zb-life-dot"></span><span class="zb-life-label">In Review</span></div>
+          <span class="zb-life-edge"></span>
+          <div class="zb-life-node is-future" style="--c:#22c55e"><span class="zb-life-dot"></span><span class="zb-life-label">Published</span></div>
+        </div>
+        <p class="ref-note" style="margin-top:14px"><b>Submit for review</b> is the approval gate (a <code>Review</code> with a rating/status). Transitions, their approvals and escalations all come from the workflow definition.</p>
+      </div>
+      <p class="ref-legend">
+        <span><b>Board scope:</b> ORG · BOUNDARY · PROJECT · USER</span>
+        <span><b>Lanes (partition):</b> BUYER · PROVIDER · SHARED · ENGAGEMENT_SETUP · CLOSEOUT · AUDIT</span>
+        <span><b>Budget:</b> FIXED · HOURLY · RETAINER · NEGOTIABLE</span>
+      </p>
+    </section>
+
+    <p class="ref-note" style="margin-top:30px">
+      This page is the onboarding scaffold for the day-one → headless transition. It is intentionally static and Sample-labelled.
+      If a richer artifact-relations reference lands on this branch, link it here rather than duplicating it.
+      <br /><a class="ref-back" href="index.html">← Back to the app</a>
+    </p>
+  </div>
+</body>
+</html>

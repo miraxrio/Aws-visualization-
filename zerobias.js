@@ -22,6 +22,7 @@
     org: "data/zerobias/org.json",
     users: "data/zerobias/users.json",
     tasks: "data/zerobias/tasks.json",
+    board: "data/zerobias/board-sample.json",
     inventory: "adapter/sample-aws-inventory.json",
     creds: "data/zerobias/credentials.local.json", // gitignored, optional
   };
@@ -44,6 +45,14 @@
   let dataReady = null; // promise
   let liveTasks = null; // real Ticket/WorkflowTicket/Finding records once fetched
   let liveTasksError = false;
+  // --- assessor board (platform-ops) state ---
+  let myTasksRaw = null;        // raw POST /portal/myTasks array (null = not loaded yet)
+  let myTasksErr = false;       // last myTasks fetch failed (CORS / network / auth)
+  let boardSampleDoc = null;    // data/zerobias/board-sample.json (lazy)
+  let boardLaneAxis = "auto";   // 'auto' | 'board' | 'partition' | 'phase' | 'none'
+  let boardFinancials = false;  // FinancialProfile disclosure gate (off by default)
+  let detailTaskId = null;      // open task-detail drawer (task code/id) or null
+  let boardTasksCache = [];     // tasks backing the current board (for detail lookup)
   let hooks = { onLoadNetwork: null, onToast: null, onFocusHolon: null };
   const els = {};
 
@@ -225,39 +234,58 @@
     };
   }
 
-  // Pull the signed-in org's real tasks. Returns an array (possibly empty — the
-  // honest answer), or null if the API couldn't be reached.
-  async function fetchLiveTasks() {
-    if (!hasOrgCreds()) return null;
-    const url = `https://${conn.host || DEFAULT_HOST}/portal/myTasks`;
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `APIKey ${conn.apiKey}`,
-          "dana-org-id": conn.orgId,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: "{}",
-      });
-      if (!res.ok) return null;
-      const arr = await res.json();
-      return Array.isArray(arr) ? arr.map(mapPortalTask) : [];
-    } catch (_) {
-      return null; // network / CORS failure → error state
+  // Raw POST /portal/myTasks fetch. Prefers the shared platform-ops module
+  // (window.ZeroBiasPlatform, also used by the Node adapter); falls back to an
+  // inline fetch so the sidebar still works if that script didn't load. Throws on
+  // a transport/auth failure so callers can show an explicit error state.
+  async function fetchMyTasksRaw() {
+    const P = window.ZeroBiasPlatform;
+    if (P && P.fetchMyTasks) {
+      return P.fetchMyTasks({ host: conn.host || DEFAULT_HOST, apiKey: conn.apiKey, orgId: conn.orgId });
     }
+    const url = `https://${conn.host || DEFAULT_HOST}/portal/myTasks`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `APIKey ${conn.apiKey}`,
+        "dana-org-id": conn.orgId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: "{}",
+    });
+    if (!res.ok) throw new Error(`myTasks HTTP ${res.status}`);
+    const arr = await res.json();
+    return Array.isArray(arr) ? arr : [];
   }
 
-  // Refresh the tasks panel from the live API when connected with a key.
+  // Derive the sidebar's slim task list from the shared raw payload, so the
+  // sidebar list and the board are always one consistent fetch.
+  function syncDerivedTasks() {
+    if (myTasksErr) { liveTasks = []; liveTasksError = true; }
+    else if (myTasksRaw) { liveTasks = myTasksRaw.map(mapPortalTask); liveTasksError = false; }
+    else { liveTasks = null; liveTasksError = false; }
+  }
+
+  // Refresh the sidebar Tasks panel AND the assessor board from one live pull.
   async function refreshTasks() {
-    if (!hasOrgCreds()) { liveTasks = null; liveTasksError = false; renderTasksPanel(); return; }
+    if (!hasOrgCreds()) {
+      myTasksRaw = null; myTasksErr = false;
+      liveTasks = null; liveTasksError = false;
+      renderTasksPanel(); renderBoardView();
+      return;
+    }
+    myTasksRaw = null; myTasksErr = false;
     liveTasks = null; liveTasksError = false;
-    renderTasksPanel(); // show "loading…"
-    const res = await fetchLiveTasks();
-    if (res === null) { liveTasksError = true; liveTasks = []; }
-    else { liveTasks = res; liveTasksError = false; }
-    renderTasksPanel();
+    renderTasksPanel(); renderBoardView(); // show "loading…"
+    try {
+      myTasksRaw = await fetchMyTasksRaw();
+      myTasksErr = false;
+    } catch (_) {
+      myTasksRaw = null; myTasksErr = true; // network / CORS / auth failure
+    }
+    syncDerivedTasks();
+    renderTasksPanel(); renderBoardView();
   }
 
   // --- connection actions ------------------------------------------------
@@ -282,11 +310,15 @@
 
   // Run after any successful connect: refresh panels + the map gate, then pull
   // the network so the views are no longer empty.
-  function afterConnect() {
+  function afterConnect(opts) {
     render();
     refreshMap();
     doImport();
     refreshTasks();
+    // The assessor board is the primary interface — land newly-connected users on
+    // it (explicit connect / sign-in / demo), but don't hijack a returning user's
+    // last view on reload.
+    if (opts && opts.board && window.AwsMode && window.AwsMode.set) window.AwsMode.set("board");
   }
 
   function connect(form) {
@@ -302,14 +334,14 @@
     saveConn();
     const liveCapable = conn.apiKey && conn.orgId && conn.boundaryId;
     toast(liveCapable ? "Connected to ZeroBias — pulling inventory…" : "ZeroBias connected (demo). Add an API key for live data.");
-    afterConnect();
+    afterConnect({ board: true });
   }
   function continueDemo() {
     conn.connected = true;
     if (!currentUser && data.users.length) currentUser = data.users.find((u) => u.type === "human") || data.users[0];
     saveConn();
     toast("Using ZeroBias demo data.");
-    afterConnect();
+    afterConnect({ board: true });
   }
   function disconnect() {
     conn.apiKey = "";
@@ -328,7 +360,7 @@
     applyUserConnection(currentUser);
     saveConn();
     toast(`Signed in as ${currentUser.name}.`);
-    afterConnect();
+    afterConnect({ board: true });
   }
 
   // --- rendering: account button + brand state ---------------------------
@@ -513,6 +545,377 @@
       </button>`;
   }
 
+  // --- rendering: assessor BOARD (the primary assessor interface) --------
+  // Swim-lanes × status columns, fed by the live SmeMartTask records from
+  // POST /portal/myTasks (badged ● Live) or the bundled sample board (badged
+  // Sample). Cards open a detail drawer with the task's real lifecycle/workflow
+  // and a (sample) economics roll-up; a deep-link opens the related boundary.
+
+  function fmtMoney(v) {
+    if (v == null || isNaN(v)) return "—";
+    return "$" + Math.round(v).toLocaleString();
+  }
+  function titleCaseLocal(s) {
+    return String(s || "").replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  function boundaryName(bid) {
+    const b = (data.boundaries || []).find((x) => x.id === bid);
+    return b ? b.name : bid;
+  }
+  function resolveLaneAxis(source) {
+    if (boardLaneAxis !== "auto") return boardLaneAxis;
+    return source === "sample" ? "partition" : "board"; // live has no partition; group by real board
+  }
+
+  // Normalise the sample board file into the same task model mapTask() emits, so
+  // the board renderer is source-agnostic (live vs sample share one code path).
+  function sampleBoardTasks() {
+    const P = window.ZeroBiasPlatform;
+    if (!boardSampleDoc || !P) return [];
+    const wf = boardSampleDoc.workflow || null;
+    const board = boardSampleDoc.board || null;
+    const closedSet = ["done", "closed", "complete", "completed", "cancelled", "canceled"];
+    return (boardSampleDoc.tasks || []).map((t, i) => {
+      const level = String(t.priority || "medium").toLowerCase();
+      const closed = closedSet.includes(String(t.status).toLowerCase());
+      return {
+        id: t.id || t.code || "sample-" + i,
+        code: t.code || "S-" + i,
+        name: t.name,
+        description: t.description || "",
+        status: String(t.status || "todo"),
+        statusName: P.statusLabel(t.status),
+        phase: closed ? "closed" : "open",
+        phaseName: closed ? "Closed" : "Open",
+        priority: { value: null, label: titleCaseLocal(level), level },
+        rank: null,
+        boardId: board ? board.id : "board-sample",
+        board: board ? { id: board.id, name: board.name, description: board.description } : null,
+        activity: t.activity ? { code: t.activity.code, name: t.activity.name, type: "task", workflowId: wf ? wf.id : null } : null,
+        workflow: wf,
+        nextTransitions: wf ? P.transitionsFrom(wf, t.status) : [],
+        boundaryId: t.boundaryId || null,
+        boundary: t.boundaryId ? { id: t.boundaryId, name: boundaryName(t.boundaryId) } : null,
+        product: t.product || null,
+        framework: t.framework || null,
+        custom: {},
+        links: [],
+        approver: null,
+        partition: t.partition || null,
+        source: "sample",
+      };
+    });
+  }
+
+  function renderBoardView() {
+    if (!els.boardStage) return;
+    const P = window.ZeroBiasPlatform;
+
+    if (!conn.connected) {
+      els.boardStage.innerHTML =
+        `<div class="zb-board zb-board--empty">${boardHeadHtml({ source: null })}` +
+        `<div class="zb-board-scroll"><div class="zb-board-cta">` +
+        connectCtaHtml("Connect your ZeroBias account to load your assessor task board — your tasks grouped into swim lanes, each with its lifecycle and economics.") +
+        `</div></div></div>`;
+      wireBoardEls();
+      return;
+    }
+    if (!P) {
+      els.boardStage.innerHTML = `<div class="zb-board"><div class="zb-board-scroll"><div class="zb-board-cta"><p class="muted small">The board module (adapter/zerobias-platform.js) didn’t load.</p></div></div></div>`;
+      return;
+    }
+
+    const live = hasOrgCreds();
+    const source = live ? "live" : "sample";
+
+    // The sample board needs its bundled data file first.
+    if (!live && !boardSampleDoc) {
+      els.boardStage.innerHTML =
+        `<div class="zb-board">${boardHeadHtml({ source })}<div class="zb-board-scroll">` +
+        `<div class="zb-board-cta"><p class="muted small">Loading the sample board…</p></div></div></div>`;
+      fetchJson(SAMPLE.board).then((doc) => { boardSampleDoc = doc || { tasks: [] }; renderBoardView(); });
+      return;
+    }
+
+    let tasks = [], loading = false, errored = false;
+    if (live) {
+      if (myTasksRaw === null && !myTasksErr) loading = true;
+      else if (myTasksErr) errored = true;
+      else tasks = myTasksRaw.map((t) => P.mapTask(t, "live"));
+    } else {
+      tasks = sampleBoardTasks();
+    }
+    boardTasksCache = tasks;
+
+    const axis = resolveLaneAxis(source);
+    const model = loading || errored ? null : P.buildBoard(tasks, { laneAxis: axis });
+
+    let body;
+    if (loading) body = `<div class="zb-board-cta"><p class="muted small">Loading your tasks from ZeroBias…</p></div>`;
+    else if (errored) body = `<div class="zb-board-cta"><p class="muted small">Could not reach the ZeroBias task API (CORS / network). No tasks shown — nothing here is fabricated.</p></div>`;
+    else if (!tasks.length) {
+      body = `<div class="zb-board-cta"><span class="zb-badge zb-badge-live">● Live</span><p class="muted small">No tasks are assigned to you in ZeroBias right now. Nothing here is fabricated.</p></div>`;
+    } else {
+      body = boardGridHtml(model) + opportunitiesHtml(tasks);
+    }
+
+    els.boardStage.innerHTML =
+      `<div class="zb-board">${boardHeadHtml({ source, model, axis })}` +
+      `<div class="zb-board-scroll">${body}</div>${detailDrawerHtml()}</div>`;
+    wireBoardEls();
+  }
+
+  function boardHeadHtml({ source, model, axis }) {
+    const badge = source === "live"
+      ? '<span class="zb-badge zb-badge-live">● Live</span>'
+      : source === "sample"
+        ? '<span class="zb-badge zb-badge-demo">Sample</span>'
+        : statusBadge();
+    const totals = model
+      ? `<div class="zb-board-totals">
+           <span><b>${model.total.open}</b><i>open</i></span>
+           <span><b>${model.total.count}</b><i>tasks</i></span>
+           <span class="zb-econ"><b>${fmtMoney(model.total.value)}</b><i>value <span class="zb-badge zb-badge-demo zb-badge-xs">Sample</span></i></span>
+         </div>`
+      : "";
+    const axes = source ? laneAxisSwitchHtml(axis) : "";
+    const sub = source === "sample"
+      ? "AuditCrowd · Assessor board (sample)"
+      : model && model.lanes.length
+        ? `${model.lanes.length} lane${model.lanes.length === 1 ? "" : "s"} · ${model.columns.length} status columns`
+        : "Your tasks across engagements";
+    const provNote = source === "live"
+      ? '<p class="zb-board-note muted small"><span class="zb-badge zb-badge-live">● Live</span> Tasks, boards, lifecycle &amp; boundaries are your real ZeroBias data (<code>POST /portal/myTasks</code>). The <b>$ value</b> is a <span class="zb-badge zb-badge-demo zb-badge-xs">Sample</span> rate-card estimate — real budgets need the platform economics API.</p>'
+      : source === "sample"
+        ? '<p class="zb-board-note muted small"><span class="zb-badge zb-badge-demo">Sample</span> Fictional demo board — <b>not</b> your real tasks. Connect an API key to load your live board.</p>'
+        : "";
+    return `
+      <header class="zb-board-head">
+        <div class="zb-board-head-main">
+          <div class="zb-board-title"><span class="zb-hex">⬡</span> Assessor board ${badge}</div>
+          <div class="zb-board-sub muted small">${esc(sub)}</div>
+        </div>
+        ${totals}
+        <div class="zb-board-actions">
+          ${axes}
+          <a class="zb-ref-link" href="reference.html" target="_blank" rel="noopener" title="A labelled reference of the assessor experience">What am I seeing? ↗</a>
+        </div>
+      </header>
+      ${provNote}`;
+  }
+
+  function laneAxisSwitchHtml(axis) {
+    const opts = [
+      { k: "board", label: "By board" },
+      { k: "partition", label: "By lane" },
+      { k: "phase", label: "By phase" },
+    ];
+    return `<div class="zb-axis-switch" role="group" aria-label="Group swim-lanes by">` +
+      opts.map((o) => `<button class="zb-axis-btn${axis === o.k ? " is-active" : ""}" data-board-axis="${o.k}">${o.label}</button>`).join("") +
+      `</div>`;
+  }
+
+  function boardGridHtml(model) {
+    const cols = model.columns;
+    const colHeads = cols.map((c) =>
+      `<div class="zb-bg-colhead"><span class="zb-bg-dot" style="background:${c.color}"></span>${esc(c.label)}</div>`).join("");
+    const rows = model.lanes.map((lane) => {
+      const cells = cols.map((c) => {
+        const cellTasks = lane.byStatus[c.key] || [];
+        return `<div class="zb-bg-cell">${cellTasks.map(boardCardHtml).join("")}</div>`;
+      }).join("");
+      return `
+        <div class="zb-bg-lanehead" style="--lane:${lane.color}">
+          <div class="zb-bg-lane-name">${esc(lane.label)}</div>
+          <div class="zb-bg-lane-meta">${lane.openCount}/${lane.count} open · <span class="zb-econ-sm">${fmtMoney(lane.value)}</span></div>
+          ${lane.desc ? `<div class="zb-bg-lane-desc muted">${esc(lane.desc)}</div>` : ""}
+        </div>${cells}`;
+    }).join("");
+    return `
+      <div class="zb-board-grid" style="grid-template-columns: minmax(170px,210px) repeat(${cols.length}, minmax(208px,1fr));">
+        <div class="zb-bg-corner"></div>${colHeads}${rows}
+      </div>`;
+  }
+
+  function boardCardHtml(t) {
+    const econ = t.econ || {};
+    const chips = [
+      t.product ? `<span class="zb-chip zb-chip-prod">${esc(t.product)}</span>` : "",
+      t.framework ? `<span class="zb-chip zb-chip-fw">${esc(t.framework)}</span>` : "",
+    ].join("");
+    return `
+      <button class="zb-card pri-${esc(t.priority.level)}" data-task-id="${esc(t.id)}" title="${esc(t.name)}">
+        <span class="zb-card-top">
+          <span class="zb-card-code">${esc(t.code)}</span>
+          <span class="zb-card-pri pri-${esc(t.priority.level)}" title="${esc(t.priority.label || t.priority.level)}"></span>
+        </span>
+        <span class="zb-card-name">${esc(t.name)}</span>
+        ${chips ? `<span class="zb-card-chips">${chips}</span>` : ""}
+        <span class="zb-card-foot">
+          <span class="zb-card-val">${fmtMoney(econ.value)} <span class="zb-badge zb-badge-demo zb-badge-xs">est</span></span>
+          ${t.boundary ? `<span class="zb-card-bnd" title="${esc(t.boundary.name)}">▦ ${esc(t.boundary.name)}</span>` : ""}
+        </span>
+      </button>`;
+  }
+
+  function opportunitiesHtml() {
+    const P = window.ZeroBiasPlatform;
+    if (!P) return "";
+    const profile = P.SAMPLE_PROVIDER_PROFILE;
+    const ops = P.SAMPLE_OPPORTUNITIES.map((o) => ({ o, s: P.scoreOpportunity(o, profile) }))
+      .sort((a, b) => b.s.score - a.s.score);
+    const total = ops.reduce((s, x) => s + x.o.price, 0);
+    return `
+      <section class="zb-opps">
+        <div class="zb-opps-head">
+          <div class="zb-opps-title">Opportunities <span class="zb-badge zb-badge-demo">Sample</span></div>
+          <div class="zb-opps-sub muted small">Open RFPs &amp; bids matched to your profile — <b>${fmtMoney(total)}</b> in reach. Real bids need the marketplace API (not browser-reachable here).</div>
+        </div>
+        <div class="zb-opps-row">
+          ${ops.map(({ o, s }) => `
+            <div class="zb-opp">
+              <div class="zb-opp-price">${fmtMoney(o.price)} <span class="zb-opp-model">${esc(String(o.pricingModel || "").toLowerCase())}</span></div>
+              <div class="zb-opp-title">${esc(o.title)}</div>
+              <div class="zb-opp-meta muted small">${esc(o.product || "")}${o.framework ? " · " + esc(o.framework) : ""} · ${esc(String(o.hours))}h</div>
+              ${s.reasons.length
+                ? `<div class="zb-opp-match">✓ ${esc(s.reasons.join(" · "))}</div>`
+                : `<div class="zb-opp-match zb-opp-nomatch">No profile match</div>`}
+            </div>`).join("")}
+        </div>
+        ${financialGateHtml()}
+      </section>`;
+  }
+
+  // FinancialProfile is sensitive (annualRevenue / credit) — read-gated at the UI
+  // layer: hidden until the user explicitly discloses, and even then it's sample.
+  function financialGateHtml() {
+    if (!boardFinancials) {
+      return `<div class="zb-finprofile">
+        <button class="zb-fin-toggle" data-fin-toggle="1">🔒 Show financial profile</button>
+        <span class="muted small">FinancialProfile (revenue / credit) is sensitive — hidden until you explicitly disclose.</span>
+      </div>`;
+    }
+    return `<div class="zb-finprofile is-open">
+      <div class="zb-fin-head"><b>Financial profile</b> <span class="zb-badge zb-badge-demo">Sample</span>
+        <button class="zb-fin-toggle" data-fin-toggle="0">Hide</button></div>
+      <div class="zb-fin-grid">
+        <span>Annual revenue</span><b>$2.4M</b>
+        <span>Credit standing</span><b>Good</b>
+        <span>Utilisation (90d)</span><b>72%</b>
+      </div>
+      <p class="muted small">Illustrative only — the real FinancialProfile is read-gated behind an org disclosure check in ZeroBias.</p>
+    </div>`;
+  }
+
+  // --- task detail drawer (lifecycle / economics / boundary, WS3) --------
+
+  function detailDrawerHtml() {
+    if (!detailTaskId) return "";
+    const t = boardTasksCache.find((x) => String(x.id) === String(detailTaskId));
+    if (!t) return "";
+    const P = window.ZeroBiasPlatform;
+    const econ = t.econ || (P ? P.estimateValue(t) : {});
+    const localBnd = t.boundaryId ? (data.boundaries || []).find((b) => b.id === t.boundaryId) : null;
+    return `
+      <div class="zb-drawer" role="dialog" aria-label="Task detail">
+        <div class="zb-drawer-head">
+          <div>
+            <div class="zb-drawer-code">${esc(t.code)} ${t.source === "live" ? '<span class="zb-badge zb-badge-live">● Live</span>' : '<span class="zb-badge zb-badge-demo">Sample</span>'}</div>
+            <h3 class="zb-drawer-title">${esc(t.name)}</h3>
+          </div>
+          <button class="zb-drawer-close" data-drawer-close="1" aria-label="Close detail">×</button>
+        </div>
+        ${t.description ? `<p class="zb-drawer-desc">${esc(t.description)}</p>` : ""}
+        <div class="zb-drawer-meta">
+          ${t.product ? `<span class="zb-chip zb-chip-prod">${esc(t.product)}</span>` : ""}
+          ${t.framework ? `<span class="zb-chip zb-chip-fw">${esc(t.framework)}</span>` : ""}
+          ${t.activity ? `<span class="zb-chip">${esc(t.activity.name || t.activity.code)}</span>` : ""}
+          <span class="zb-chip">priority: ${esc(t.priority.label || t.priority.level)}</span>
+        </div>
+        ${lifecycleHtml(t)}
+        ${drawerEconHtml(econ)}
+        ${drawerBoundaryHtml(t, localBnd)}
+      </div>`;
+  }
+
+  function lifecycleHtml(t) {
+    const P = window.ZeroBiasPlatform;
+    if (!P || !t.workflow) {
+      return `<div class="zb-life"><div class="zb-life-eyebrow">Lifecycle</div><p class="muted small">No workflow on this task.</p></div>`;
+    }
+    const steps = P.pipelineStatuses(t.workflow);
+    const curKey = String(t.status).toLowerCase();
+    const curIdx = steps.findIndex((s) => s.key === curKey);
+    const nodes = steps.map((s, i) => {
+      const state = curIdx < 0 ? "future" : i < curIdx ? "past" : i === curIdx ? "current" : "future";
+      return `<div class="zb-life-node is-${state}" style="--c:${s.color}"><span class="zb-life-dot"></span><span class="zb-life-label">${esc(s.label)}</span></div>`;
+    }).join('<span class="zb-life-edge"></span>');
+    const nexts = (t.nextTransitions || []).filter((x) => x.status && x.status !== "init");
+    const nextHtml = nexts.length
+      ? `<div class="zb-life-next"><span class="muted small">Valid next moves (from workflow data):</span>${nexts.map((x) =>
+          `<span class="zb-life-trans">${esc(x.name)} → ${esc(P.statusLabel(x.status))}${x.approval ? ' <span class="zb-life-approval" title="requires approval">⚑</span>' : ""}</span>`).join("")}</div>`
+      : "";
+    return `
+      <div class="zb-life">
+        <div class="zb-life-eyebrow">Lifecycle · ${esc(t.workflow.name)} ${t.source === "live" ? '<span class="zb-badge zb-badge-live zb-badge-xs">● Live</span>' : '<span class="zb-badge zb-badge-demo zb-badge-xs">Sample</span>'}</div>
+        <div class="zb-life-track">${nodes}</div>
+        ${nextHtml}
+        <p class="muted small zb-life-foot">Statuses &amp; transitions come from the workflow definition, not hard-coded. Status changes happen in ZeroBias.</p>
+      </div>`;
+  }
+
+  function drawerEconHtml(econ) {
+    return `
+      <div class="zb-drawer-econ">
+        <div class="zb-life-eyebrow">Economics <span class="zb-badge zb-badge-demo zb-badge-xs">Sample estimate</span></div>
+        <div class="zb-econ-grid">
+          <span>Estimated effort</span><b>${econ.hours != null ? esc(String(econ.hours)) + " h" : "—"}</b>
+          <span>Rate</span><b>${econ.rate != null ? fmtMoney(econ.rate) + "/h" : "—"}</b>
+          <span>Rolled-up value</span><b>${fmtMoney(econ.value)}</b>
+        </div>
+        <p class="muted small">${esc(econ.basis || "")} — illustrative; real value = activity.estimatedTime × the project budget rate.</p>
+      </div>`;
+  }
+
+  function drawerBoundaryHtml(t, localBnd) {
+    if (localBnd) {
+      return `<div class="zb-drawer-bnd">
+        <div class="zb-life-eyebrow">Validates against</div>
+        <button class="btn primary zb-open-bnd" data-open-bnd="${esc(localBnd.id)}">▦ Open ${esc(localBnd.name)} →</button>
+        <span class="muted small">Opens the boundary in the holographic view.</span>
+      </div>`;
+    }
+    if (t.boundary) {
+      return `<div class="zb-drawer-bnd">
+        <div class="zb-life-eyebrow">Validates against</div>
+        <div class="zb-bnd-name">▦ ${esc(t.boundary.name)} <span class="zb-badge zb-badge-live zb-badge-xs">● Live</span></div>
+        <span class="muted small">This boundary lives in ZeroBias — no local snapshot to open here.</span>
+      </div>`;
+    }
+    return "";
+  }
+
+  function openTaskDetail(id) { detailTaskId = id; renderBoardView(); }
+
+  function wireBoardEls() {
+    const root = els.boardStage;
+    if (!root) return;
+    root.querySelectorAll("[data-task-id]").forEach((el) =>
+      el.addEventListener("click", () => openTaskDetail(el.getAttribute("data-task-id"))));
+    root.querySelectorAll("[data-board-axis]").forEach((el) =>
+      el.addEventListener("click", () => { boardLaneAxis = el.getAttribute("data-board-axis"); renderBoardView(); }));
+    root.querySelectorAll("[data-drawer-close]").forEach((el) =>
+      el.addEventListener("click", () => { detailTaskId = null; renderBoardView(); }));
+    root.querySelectorAll("[data-fin-toggle]").forEach((el) =>
+      el.addEventListener("click", () => { boardFinancials = el.getAttribute("data-fin-toggle") === "1"; renderBoardView(); }));
+    root.querySelectorAll("[data-open-bnd]").forEach((el) =>
+      el.addEventListener("click", () => {
+        const bid = el.getAttribute("data-open-bnd");
+        detailTaskId = null;
+        openBoundary(bid).then(() => { if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("3d"); });
+      }));
+  }
+
   // --- rendering: Map overlay --------------------------------------------
 
   function renderMapOverlay() {
@@ -623,6 +1026,7 @@
     renderAccountBtn();
     renderOrgPanel();
     renderTasksPanel();
+    renderBoardView();
     renderMapOverlay();
     renderModal();
   }
@@ -656,6 +1060,8 @@
     els.tasksCount = document.getElementById("zb-tasks-count");
     // map
     els.mapPanel = document.getElementById("map-zb-panel");
+    // board
+    els.boardStage = document.getElementById("stage-board");
   }
 
   function wire() {
@@ -714,6 +1120,7 @@
   window.ZeroBias = {
     init,
     render,
+    renderBoard: renderBoardView,
     importNetwork: doImport,
     openBoundary,
     openModal,

@@ -27,8 +27,9 @@
   <script type="module" src="ontology/assembly.js"></script>
   <script type="module" src="viz3d.js"></script>
   <script src="map.js" defer></script>
-  <!-- ZeroBias integration: UMD AWS-inventory mapping (shared with the Node adapter) + browser client/UI -->
+  <!-- ZeroBias integration: UMD AWS-inventory mapping + platform-ops (board/tasks/workflow/economics) shared with the Node adapter, then the browser client/UI -->
   <script src="adapter/zerobias-graphql.js" defer></script>
+  <script src="adapter/zerobias-platform.js" defer></script>
   <script src="zerobias.js" defer></script>
 </head>
 <body>
@@ -43,6 +44,7 @@
     </div>
     <div class="controls">
       <div class="seg" role="group" aria-label="View mode">
+        <button id="mode-board" class="seg-btn zb-mode-board" aria-pressed="false" title="Assessor task board (ZeroBias)"><span class="zb-hex">⬡</span> Board</button>
         <button id="mode-2d" class="seg-btn is-active" aria-pressed="true">2D</button>
         <button id="mode-3d" class="seg-btn" aria-pressed="false">Holographic View</button>
         <button id="mode-map" class="seg-btn" aria-pressed="false">Map</button>
@@ -173,6 +175,7 @@
           Load a network with <code>region</code> fields to plot it on the globe.
         </div>
       </div>
+      <div class="stage-board" id="stage-board" hidden aria-label="Assessor task board (ZeroBias)"></div>
       <div class="stage-holo" id="stage-holo" hidden aria-label="Holographic assessment view (3D)"></div>
       <div class="holo-watermark" id="holo-watermark" hidden>Holographic Assessment Principle</div>
       <div class="holo-starfield" id="holo-starfield" hidden></div>

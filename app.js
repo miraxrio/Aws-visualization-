@@ -8,7 +8,9 @@
     mode2d: document.getElementById("mode-2d"),
     mode3d: document.getElementById("mode-3d"),
     modeMap: document.getElementById("mode-map"),
+    modeBoard: document.getElementById("mode-board"),
     stageMap: document.getElementById("stage-map"),
+    stageBoard: document.getElementById("stage-board"),
     exploreBtn: document.getElementById("explore-btn"),
     exploreHud: document.getElementById("explore-hud"),
     attackBtn: document.getElementById("attack-btn"),
@@ -480,21 +482,29 @@
   function setMode(next) {
     if (next === mode) return;
     mode = next;
-    const is2d = mode === "2d", is3d = mode === "3d", isMap = mode === "map";
+    const is2d = mode === "2d", is3d = mode === "3d", isMap = mode === "map", isBoard = mode === "board";
     document.body.classList.toggle("mode-3d", is3d);
     document.body.classList.toggle("mode-map", isMap);
+    document.body.classList.toggle("mode-board", isBoard);
     els.mode2d.classList.toggle("is-active", is2d);
     els.mode3d.classList.toggle("is-active", is3d);
     if (els.modeMap) els.modeMap.classList.toggle("is-active", isMap);
+    if (els.modeBoard) els.modeBoard.classList.toggle("is-active", isBoard);
     els.mode2d.setAttribute("aria-pressed", is2d ? "true" : "false");
     els.mode3d.setAttribute("aria-pressed", is3d ? "true" : "false");
     if (els.modeMap) els.modeMap.setAttribute("aria-pressed", isMap ? "true" : "false");
+    if (els.modeBoard) els.modeBoard.setAttribute("aria-pressed", isBoard ? "true" : "false");
     els.diagram.style.display = is2d ? "" : "none";
     els.stage3d.hidden = !is3d;
     if (els.stageMap) els.stageMap.hidden = !isMap;
+    if (els.stageBoard) els.stageBoard.hidden = !isBoard;
     els.hint3d.hidden = !is3d;
     els.exploreBtn.hidden = !is3d;
     els.attackBtn.hidden = !is3d;
+
+    // Board view: the assessor task board owns the stage. Its renderer lives in
+    // zerobias.js and pulls live SmeMartTask records (or the sample fallback).
+    if (isBoard && window.ZeroBias && window.ZeroBias.renderBoard) window.ZeroBias.renderBoard();
     if (!is3d) {
       if (window.AwsViz3D && window.AwsViz3D.isExploring()) {
         window.AwsViz3D.exitExplore();
@@ -559,6 +569,7 @@
   els.mode2d.addEventListener("click", () => setMode("2d"));
   els.mode3d.addEventListener("click", () => setMode("3d"));
   if (els.modeMap) els.modeMap.addEventListener("click", () => setMode("map"));
+  if (els.modeBoard) els.modeBoard.addEventListener("click", () => setMode("board"));
 
   // ---- Boundary slider + highlight toggle ----
   // The slider snaps to each snapshot index. Each scrub silently swaps the

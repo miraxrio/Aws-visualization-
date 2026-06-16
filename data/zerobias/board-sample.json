@@ -1,0 +1,32 @@
+{
+  "_comment": "SAMPLE AuditCrowd assessor board — FICTIONAL. Always badged 'Sample' in the UI and never presented as your real ZeroBias tasks. It demonstrates the full vision (partition swim-lanes, the task lifecycle, and the economics roll-up) for offline/demo mode. When a real API key is connected, the board pulls the live SmeMartTask records from POST /portal/myTasks instead (badged '● Live'). Boundary ids point at the bundled sample boundaries so clicking a card opens its holographic view.",
+  "board": {
+    "id": "board-auditcrowd-sample",
+    "name": "AuditCrowd · Assessor board",
+    "scope": "USER",
+    "description": "Your assessor work across engagements (sample)"
+  },
+  "workflow": {
+    "id": "wf-assessor-sample",
+    "name": "AuditCrowd Assessor Lifecycle",
+    "statuses": ["todo", "in_progress", "in_review", "done", "cancelled"],
+    "transitions": [
+      { "id": "t-start",   "name": "Start work",        "status": "in_progress", "fromStatus": ["todo"], "approval": false, "notification": false },
+      { "id": "t-review",  "name": "Submit for review", "status": "in_review",   "fromStatus": ["in_progress"], "approval": true,  "notification": true },
+      { "id": "t-approve", "name": "Approve & close",   "status": "done",        "fromStatus": ["in_review"], "approval": true,  "notification": true },
+      { "id": "t-reject",  "name": "Send back",          "status": "in_progress", "fromStatus": ["in_review"], "approval": false, "notification": true },
+      { "id": "t-cancel",  "name": "Cancel",             "status": "cancelled",   "fromStatus": ["todo", "in_progress", "in_review"], "approval": false, "notification": true }
+    ]
+  },
+  "tasks": [
+    { "code": "AUD-MFA-1", "name": "Verify MFA enforced on all IAM users", "partition": "AUDIT", "status": "in_progress", "priority": "high", "activity": { "code": "assessControl", "name": "Assess a control" }, "boundaryId": "boundary-three-tier-web-prod", "product": "AWS Identity and Access Management", "framework": "NIST 800-53", "description": "Confirm every IAM principal in acme-prod has MFA enabled; flag the deploy-bot and ci-runner service accounts." },
+    { "code": "AUD-KSI-LOG", "name": "KSI: validate centralised logging is enabled", "partition": "AUDIT", "status": "todo", "priority": "high", "activity": { "code": "assessControl", "name": "Assess a control" }, "boundaryId": "boundary-acme-checkout-prod", "product": "AWS Security Hub", "framework": "FedRAMP 20x", "description": "Key Security Indicator — verify CloudTrail plus centralised log aggregation across the checkout boundary." },
+    { "code": "AUD-STIG-TLS", "name": "Assess nginx TLS STIG ciphers", "partition": "AUDIT", "status": "in_review", "priority": "medium", "activity": { "code": "assessControl", "name": "Assess a control" }, "boundaryId": "boundary-container-stig-baseline", "product": "nginx", "framework": "STIG", "description": "Container STIG nginx-tls is partial-fail; validate the remediation restricts to TLS 1.2+ approved ciphers." },
+    { "code": "AUD-Q2-SIGN", "name": "Sign off Q2 attestation", "partition": "AUDIT", "status": "done", "priority": "medium", "activity": { "code": "reviewSignoff", "name": "Review & sign-off" }, "boundaryId": "boundary-acme-checkout-prod", "framework": "custom", "description": "Final reviewer sign-off on the checkout service Q2 boundary snapshot." },
+    { "code": "PRV-PUB-IAM", "name": "Publish 'IAM MFA' guild to the catalog", "partition": "PROVIDER", "status": "in_progress", "priority": "medium", "activity": { "code": "publishGuild", "name": "Publish a guild" }, "boundaryId": "boundary-three-tier-web-prod", "product": "AWS Identity and Access Management", "framework": "NIST 800-53", "description": "Prototype, test, validate, review and publish the reusable MFA control as a guild others can buy." },
+    { "code": "PRV-PROTO-S3", "name": "Prototype 'S3 public-access' control", "partition": "PROVIDER", "status": "todo", "priority": "low", "activity": { "code": "publishGuild", "name": "Publish a guild" }, "product": "Amazon S3", "framework": "CIS", "description": "Draft a control that flags S3 buckets whose public-access block is disabled." },
+    { "code": "BUY-AZ-EGRESS", "name": "Review Azure firewall egress finding", "partition": "BUYER", "status": "in_progress", "priority": "high", "activity": { "code": "remediate", "name": "Remediate a finding" }, "boundaryId": "boundary-contoso-azure-platform", "framework": "custom", "description": "Contoso Azure boundary flagged a critical open egress path; confirm intent or remediate." },
+    { "code": "ENG-EC2-CONN", "name": "Setup connection for Amazon EC2", "partition": "ENGAGEMENT_SETUP", "status": "todo", "priority": "medium", "activity": { "code": "engagementSetup", "name": "Engagement setup" }, "boundaryId": "boundary-three-tier-web-prod", "product": "Amazon EC2", "description": "Stand up the read-only connector so the boundary can be assessed." },
+    { "code": "CLO-ARCHIVE", "name": "Archive evidence & close engagement", "partition": "CLOSEOUT", "status": "todo", "priority": "low", "activity": { "code": "closeout", "name": "Closeout" }, "boundaryId": "boundary-acme-checkout-prod", "framework": "custom", "description": "Bundle evidence, export the report, and transition the project to COMPLETED." }
+  ]
+}
