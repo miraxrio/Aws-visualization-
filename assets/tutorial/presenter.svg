@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 360" width="260" height="360" role="img" aria-label="AuditCrowd guide">
+  <defs>
+    <linearGradient id="tutShirt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#39c0cf"/>
+      <stop offset="1" stop-color="#1f97a8"/>
+    </linearGradient>
+    <linearGradient id="tutHair" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4cd74"/>
+      <stop offset="1" stop-color="#e2ad4e"/>
+    </linearGradient>
+    <radialGradient id="tutCheek" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffb3a1" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffb3a1" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- hair (back) -->
+  <ellipse cx="130" cy="158" rx="82" ry="92" fill="url(#tutHair)"/>
+  <path d="M58 196 C44 250 56 300 70 348 L96 348 C82 300 78 250 84 206 Z" fill="url(#tutHair)"/>
+  <path d="M202 196 C216 250 204 300 190 348 L164 348 C178 300 182 250 176 206 Z" fill="url(#tutHair)"/>
+
+  <!-- shirt / shoulders -->
+  <path d="M52 360 C52 286 86 250 130 250 C174 250 208 286 208 360 Z" fill="url(#tutShirt)"/>
+  <!-- collar -->
+  <path d="M112 252 C120 268 140 268 148 252 L142 250 C136 260 124 260 118 250 Z" fill="#178290"/>
+  <text x="130" y="322" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="19" font-weight="800" letter-spacing="0.5" fill="#eafcff">AuditCrowd</text>
+
+  <!-- neck -->
+  <path d="M116 214 L116 240 C116 252 144 252 144 240 L144 214 Z" fill="#f0c19a"/>
+  <path d="M116 230 C124 240 136 240 144 230 L144 214 L116 214 Z" fill="#e3ad84" opacity="0.55"/>
+
+  <!-- face -->
+  <ellipse cx="130" cy="150" rx="58" ry="62" fill="#f7d2ab"/>
+  <!-- ears -->
+  <ellipse cx="74" cy="156" rx="10" ry="14" fill="#f3c79c"/>
+  <ellipse cx="186" cy="156" rx="10" ry="14" fill="#f3c79c"/>
+
+  <!-- hair (fringe / top) -->
+  <path d="M72 150 C66 96 100 66 130 66 C160 66 194 96 188 150 C182 120 168 104 150 100 C156 112 156 122 150 130 C138 110 112 104 96 120 C90 128 86 140 84 152 C80 142 76 144 72 150 Z" fill="url(#tutHair)"/>
+
+  <!-- cheeks -->
+  <ellipse cx="100" cy="166" rx="13" ry="9" fill="url(#tutCheek)"/>
+  <ellipse cx="160" cy="166" rx="13" ry="9" fill="url(#tutCheek)"/>
+
+  <!-- brows -->
+  <path d="M96 134 q12 -8 24 -1" fill="none" stroke="#c79a55" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M140 133 q12 -7 24 1" fill="none" stroke="#c79a55" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- eyes -->
+  <ellipse cx="108" cy="150" rx="6.5" ry="8" fill="#3b2f2a"/>
+  <ellipse cx="152" cy="150" rx="6.5" ry="8" fill="#3b2f2a"/>
+  <circle cx="110.4" cy="147.4" r="2.1" fill="#fff"/>
+  <circle cx="154.4" cy="147.4" r="2.1" fill="#fff"/>
+
+  <!-- nose -->
+  <path d="M129 156 q5 8 1 13" fill="none" stroke="#e0ad82" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- smile -->
+  <path d="M110 178 q20 22 40 0 q-20 10 -40 0 Z" fill="#fff"/>
+  <path d="M110 178 q20 22 40 0" fill="none" stroke="#9a4b41" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- waving arm (image-left, raised) -->
+  <path d="M70 268 C44 250 36 214 44 184 C48 170 66 172 66 188 C64 212 78 240 96 256 Z" fill="url(#tutShirt)"/>
+  <path d="M40 188 C34 168 40 150 52 146 C64 142 72 152 68 168 C66 178 60 186 58 192 Z" fill="#f7d2ab"/>
+  <!-- open waving hand -->
+  <g fill="#f7d2ab" stroke="#e7b78a" stroke-width="1.5">
+    <ellipse cx="48" cy="140" rx="15" ry="16"/>
+    <rect x="34" y="112" width="6.5" height="22" rx="3.2"/>
+    <rect x="44" y="106" width="6.5" height="26" rx="3.2"/>
+    <rect x="54" y="108" width="6.5" height="25" rx="3.2"/>
+    <rect x="63" y="114" width="6.5" height="22" rx="3.2"/>
+    <rect x="64" y="138" width="14" height="7" rx="3.5"/>
+  </g>
+</svg>

@@ -3629,3 +3629,216 @@ body.mode-holographic.mode-3d .stage-holo canvas:hover { cursor: pointer; }
 body.theme-day .stage-board { background: radial-gradient(1200px 700px at 50% -5%, #eef3fb 0%, #dde6f3 72%); }
 body.theme-day .zb-board-head { background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.6)); }
 body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%, rgba(238,243,251,0)); }
+
+/* ============================================================
+   Onboarding tutorial (tutorial.js / window.AwsTutorial)
+   Dims the page, spotlights a target, narrates with a presenter.
+   ============================================================ */
+.tut-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;          /* children opt back in */
+}
+.tut-root[hidden] { display: none; }
+
+/* Four dimming panels around the spotlight hole. They also swallow clicks,
+   so the rest of the UI is locked until the highlighted action is taken. */
+.tut-mask {
+  position: fixed;
+  background: rgba(5, 9, 18, 0.74);
+  backdrop-filter: blur(1.5px);
+  pointer-events: auto;
+  opacity: 0;
+}
+.tut-root.show .tut-mask {
+  opacity: 1;
+  transition: top 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              left 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              height 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              opacity 0.25s ease;
+}
+
+/* Glowing ring framing the target. */
+.tut-ring {
+  position: fixed;
+  border-radius: 12px;
+  pointer-events: none;
+  display: none;
+  box-shadow: 0 0 0 2px var(--accent-2),
+              0 0 0 5px rgba(88, 166, 255, 0.35),
+              0 0 22px 6px rgba(88, 166, 255, 0.55);
+  animation: tut-ring-pulse 1.8s ease-in-out infinite;
+  transition: top 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              left 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              height 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes tut-ring-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent-2), 0 0 0 5px rgba(88,166,255,0.30), 0 0 18px 4px rgba(88,166,255,0.45); }
+  50%      { box-shadow: 0 0 0 3px var(--accent-2), 0 0 0 7px rgba(88,166,255,0.45), 0 0 30px 10px rgba(88,166,255,0.80); }
+}
+
+/* Presenter + speech bubble, docked bottom-right. */
+.tut-stage {
+  position: fixed;
+  right: 22px;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: none;
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+.tut-presenter {
+  position: relative;
+  flex: 0 0 auto;
+  width: clamp(150px, 18vw, 215px);
+  pointer-events: none;
+  filter: drop-shadow(0 12px 26px rgba(0, 0, 0, 0.55));
+  transform-origin: 50% 100%;
+  animation: tut-presenter-in 0.5s cubic-bezier(0.2, 0.9, 0.2, 1.1) both;
+}
+.tut-presenter-img { display: block; width: 100%; height: auto; }
+.tut-presenter.no-img { display: none; }
+.tut-presenter.talking { animation: tut-bob 1.1s ease-in-out infinite; }
+@keyframes tut-bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-5px) rotate(-1deg); }
+}
+@keyframes tut-presenter-in {
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.tut-bubble {
+  position: relative;
+  pointer-events: auto;
+  width: clamp(260px, 36vw, 440px);
+  margin-bottom: 52px;
+  padding: 18px 20px 14px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffdba2 0%, #f6b86a 100%);
+  color: #4a2c00;
+  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(120, 70, 0, 0.18);
+}
+.tut-bubble.pop { animation: tut-pop 0.36s cubic-bezier(0.2, 0.9, 0.2, 1.2) both; }
+@keyframes tut-pop {
+  from { transform: scale(0.9) translateY(8px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
+.tut-bubble.nudge { animation: tut-nudge 0.4s ease; }
+@keyframes tut-nudge {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-7px); }
+  40%, 80% { transform: translateX(7px); }
+}
+/* tail pointing toward the presenter (right) */
+.tut-tail {
+  position: absolute;
+  right: -13px;
+  bottom: 30px;
+  width: 0; height: 0;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+  border-left: 16px solid #f6b86a;
+  filter: drop-shadow(2px 0 0 rgba(120, 70, 0, 0.12));
+}
+
+.tut-text {
+  margin: 2px 0 0;
+  white-space: pre-line;
+  font-size: 14.5px;
+  line-height: 1.55;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.tut-cta {
+  margin-top: 11px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #7a4a00;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tut-cta[hidden] { display: none; }
+.tut-cta::before { content: "👉"; }
+
+.tut-close {
+  position: absolute;
+  top: 8px; right: 10px;
+  width: 24px; height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(74, 44, 0, 0.10);
+  color: #6b3f00;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.tut-close:hover { background: rgba(74, 44, 0, 0.22); }
+
+.tut-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.tut-replay {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 13px;
+  background: rgba(74, 44, 0, 0.12);
+  color: #5a3700;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.tut-replay:hover { background: rgba(74, 44, 0, 0.22); }
+.tut-replay svg { width: 15px; height: 15px; fill: currentColor; }
+.tut-replay.speaking { animation: tut-speak-pulse 1.3s ease-out infinite; }
+@keyframes tut-speak-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(90, 55, 0, 0.45); }
+  100% { box-shadow: 0 0 0 9px rgba(90, 55, 0, 0); }
+}
+.tut-dots { display: flex; gap: 6px; }
+.tut-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(74, 44, 0, 0.3); }
+.tut-dot.is-active { background: #6b3f00; }
+.tut-next {
+  margin-left: auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 18px;
+  background: #1a1300;
+  color: #ffd79e;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.05s ease, filter 0.15s ease;
+}
+.tut-next:hover { filter: brightness(1.18); }
+.tut-next:active { transform: scale(0.96); }
+
+/* Narrow screens: drop the presenter, center the bubble. */
+@media (max-width: 720px) {
+  .tut-stage { right: 12px; left: 12px; bottom: 12px; justify-content: center; max-width: none; }
+  .tut-presenter { display: none; }
+  .tut-bubble { width: 100%; margin-bottom: 0; }
+  .tut-tail { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tut-ring, .tut-presenter, .tut-presenter.talking, .tut-bubble.pop, .tut-replay.speaking { animation: none; }
+}
