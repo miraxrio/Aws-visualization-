@@ -19,7 +19,10 @@
   const STEPS = [
     {
       target: "#zb-account-btn",
-      audioBase: "assets/tutorial/step-1",
+      // Your recording. Looked for in assets/tutorial/ first, then the site
+      // root — so "line 1.mp3" works whether it sits beside index.html or
+      // under assets/tutorial/. Falls back to text-to-speech if not found.
+      audioBases: ["assets/tutorial/line 1", "line 1"],
       // Shown in the bubble (\n becomes a line break).
       text:
         "Welcome to the AuditCrowd visualization site. I'll explain the basics of this tool.\n" +
@@ -37,7 +40,9 @@
 
   const PAD = 8;                  // spotlight padding around the target (px)
   const AUDIO_EXTS = [".mp3", ".m4a", ".wav", ".ogg"];
-  const PRESENTER_SRCS = ["assets/tutorial/presenter.png", "assets/tutorial/presenter.svg"];
+  // Your presenter.png is preferred (assets/tutorial/ then site root); the
+  // bundled illustration is the final fallback.
+  const PRESENTER_SRCS = ["assets/tutorial/presenter.png", "presenter.png", "assets/tutorial/presenter.svg"];
   const SEEN_KEY = "aws-viz.tutorial.seen";
 
   let root, masks, ring, stage, bubble, textEl, ctaEl, dotsEl, nextBtn, replayBtn, presenter, presenterImg;
@@ -188,15 +193,25 @@
     }
   }
 
+  // Ordered list of audio URLs to try for a step: every basename × every
+  // extension. First one that actually plays wins.
+  function audioCandidates(step) {
+    const bases = step.audioBases || (step.audioBase ? [step.audioBase] : []);
+    const out = [];
+    bases.forEach((b) => AUDIO_EXTS.forEach((e) => out.push(b + e)));
+    return out;
+  }
+
   function playNarration(step) {
     stopNarration();
     if (!step) return;
-    if (!step.audioBase) { speakFallback(step); return; }
+    const cands = audioCandidates(step);
+    if (!cands.length) { speakFallback(step); return; }
 
     let i = 0;
     const attempt = () => {
-      if (i >= AUDIO_EXTS.length) { speakFallback(step); return; }
-      const src = step.audioBase + AUDIO_EXTS[i++];
+      if (i >= cands.length) { speakFallback(step); return; }
+      const src = encodeURI(cands[i++]);   // encode spaces, e.g. "line 1.mp3"
       const a = new Audio(src);
       let settled = false;
       const fail = () => { if (!settled) { settled = true; attempt(); } };
