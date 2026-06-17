@@ -3689,13 +3689,13 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
   align-items: flex-end;
   gap: 4px;
   pointer-events: none;
-  max-width: min(720px, calc(100vw - 32px));
+  max-width: min(940px, calc(100vw - 24px));
 }
 
 .tut-presenter {
   position: relative;
   flex: 0 0 auto;
-  width: clamp(150px, 18vw, 215px);
+  width: clamp(260px, 30vw, 430px);
   pointer-events: none;
   filter: drop-shadow(0 12px 26px rgba(0, 0, 0, 0.55));
   transform-origin: 50% 100%;
