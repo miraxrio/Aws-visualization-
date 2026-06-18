@@ -3686,8 +3686,8 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
   right: 22px;
   bottom: 0;
   display: flex;
-  align-items: flex-end;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 0;
   pointer-events: none;
   max-width: min(940px, calc(100vw - 24px));
 }
@@ -3717,7 +3717,8 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
   position: relative;
   pointer-events: auto;
   width: clamp(260px, 36vw, 440px);
-  margin-bottom: 52px;
+  margin-top: 16px;
+  margin-right: -104px;
   padding: 18px 20px 14px;
   border-radius: 20px;
   background: linear-gradient(180deg, #ffdba2 0%, #f6b86a 100%);
@@ -3739,13 +3740,15 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
 /* tail pointing toward the presenter (right) */
 .tut-tail {
   position: absolute;
-  right: -13px;
-  bottom: 30px;
+  right: -18px;
+  top: 72px;
   width: 0; height: 0;
-  border-top: 11px solid transparent;
-  border-bottom: 11px solid transparent;
-  border-left: 16px solid #f6b86a;
-  filter: drop-shadow(2px 0 0 rgba(120, 70, 0, 0.12));
+  border-top: 9px solid transparent;
+  border-bottom: 15px solid transparent;
+  border-left: 26px solid #f6b86a;
+  transform: rotate(10deg);
+  transform-origin: left center;
+  filter: drop-shadow(2px 1px 0 rgba(120, 70, 0, 0.12));
 }
 
 .tut-text {
@@ -3835,7 +3838,7 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
 @media (max-width: 720px) {
   .tut-stage { right: 12px; left: 12px; bottom: 12px; justify-content: center; max-width: none; }
   .tut-presenter { display: none; }
-  .tut-bubble { width: 100%; margin-bottom: 0; }
+  .tut-bubble { width: 100%; margin: 0; }
   .tut-tail { display: none; }
 }
 
