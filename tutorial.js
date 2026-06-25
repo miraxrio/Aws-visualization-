@@ -82,6 +82,45 @@
       cta: "Click “2D”",
       advanceOn: "target",
     },
+    {
+      // Load the deterministic sample network (which carries a version timeline)
+      // so the 2D view, the 3D view and the tour all show the same known topology.
+      target: "#diagram",
+      loadNetwork: "sample-network.json",
+      audioBases: ["assets/tutorial/line 6", "line 6"],
+      text:
+        "Here is the 2D view of the sample network.\n" +
+        "It shows how the different elements connect and interact with each other.",
+      speech:
+        "Here is the 2D view of the sample network. It shows you how the different elements connect and interact with each other.",
+    },
+    {
+      target: "#mode-3d",
+      audioBases: ["assets/tutorial/line 7", "line 7"],
+      text: "Now let's move to the Holographic view.",
+      speech: "Now let's move to the Holographic view.",
+      cta: "Click “Holographic View”",
+      advanceOn: "target",
+    },
+    {
+      target: "#stage-3d",
+      waitFor: true,
+      audioBases: ["assets/tutorial/line 8", "line 8"],
+      text:
+        "In the holographic view you can see your network rendered in 3D.\n" +
+        "Right‑click to move, hold left‑click to rotate, and use the mouse wheel to zoom.",
+      speech:
+        "In the holographic view you can see your network rendered in 3D. Use right click to move, " +
+        "hold left click to rotate, and use the mouse wheel to zoom in and out.",
+    },
+    {
+      target: "#start-tour",
+      audioBases: ["assets/tutorial/line 9", "line 9"],
+      text: "Press Start tour, and I'll explain every component of this network to you.",
+      speech: "Press Start tour, and I'll explain every component of this network to you.",
+      cta: "Click “Start tour”",
+      advanceOn: "target",
+    },
   ];
 
   const PAD = 8;                  // spotlight padding around the target (px)
@@ -97,6 +136,7 @@
   let index = 0;
   let showSeq = 0;
   let currentTarget = null;
+  const loadedNets = new Set();   // network files already loaded this run (load once)
   let currentAudio = null;
   let targetHandler = null;
   let targetHandlerEl = null;
@@ -288,6 +328,8 @@
     const seq = ++showSeq;
     detachTargetClick();
 
+    if (step.loadNetwork) maybeLoadNetwork(step.loadNetwork);
+
     textEl.textContent = step.text || "";
     ctaEl.textContent = step.cta || "";
     ctaEl.hidden = !step.cta;
@@ -346,6 +388,21 @@
     }, ms));
   }
 
+  // Load a network file into the app once (so the tutorial's 2D/3D/tour steps
+  // all show the same known topology). Re-measures once it has rendered.
+  function maybeLoadNetwork(url) {
+    if (loadedNets.has(url)) return;
+    loadedNets.add(url);
+    if (!(window.AwsApp && window.AwsApp.load)) return;
+    fetch(url)
+      .then((r) => r.json())
+      .then((data) => {
+        try { window.AwsApp.load(data); } catch (_) {}
+        if (active) reposition();
+      })
+      .catch(() => {});
+  }
+
   function attachTargetClick(target) {
     detachTargetClick();
     targetHandlerEl = target;
@@ -392,6 +449,7 @@
     if (active) return;
     active = true;
     index = 0;
+    loadedNets.clear();
     root.hidden = false;
     show(0);                          // set geometry while the masks are still transparent
     void root.offsetWidth;            // flush, then fade the dimming in
