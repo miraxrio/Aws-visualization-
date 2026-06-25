@@ -38,6 +38,22 @@ re‑record any of them, just drop a replacement `line N.mp3` in here. Step 1 sa
 > tool. To start you need to login into your ZeroBias account so you can
 > interact with your data here. Press Connect to ZeroBias.
 
+## Tour narration (the sample network)
+
+The guided **tour** (the "Start tour" button) normally reads its narration with
+the browser's voice. The bundled sample network (`sample-network.json`) ships an
+authored tour instead: the latest version's `data.tour` is an ordered list of
+steps, each with a human‑written `narration` and a pre‑recorded clip:
+
+```
+assets/tutorial/tour-1.mp3 … tour-12.mp3   ← Qwen3-TTS (Vivian), one per tour step
+```
+
+`tour.js` plays `step.audio` when present (any network can supply a `tour`
+array) and falls back to the browser voice if a clip can't load. To re‑voice a
+step, edit its `narration` in `sample-network.json` and drop in a new
+`tour-N.mp3`.
+
 ## Presenter image (optional)
 
 The guide character is loaded from, in order of preference:

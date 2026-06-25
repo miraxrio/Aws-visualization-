@@ -46,6 +46,7 @@
   let speakEnabled = localStorage.getItem("aws-viz.speak") !== "0" && speechSupported;
   let currentUtter = null;
   let utterQueue = []; // utterances we've queued for the current step
+  let currentClip = null; // pre-recorded narration <audio> for the current step
 
   // Preprocess text so the TTS reads things naturally.
   function prepareForSpeech(text) {
@@ -198,6 +199,38 @@
     currentUtter = null;
     try { synth.cancel(); } catch (_) {}
     els.speak.classList.remove("speaking");
+  }
+
+  // --- Pre-recorded narration clips -----------------------------------
+  // A network's authored tour can attach a pre-recorded clip per step
+  // (step.audio). When present we play that instead of the browser voice.
+
+  function stopClip() {
+    if (currentClip) {
+      try { currentClip.pause(); } catch (_) {}
+      currentClip.onended = currentClip.onerror = currentClip.onloadedmetadata = null;
+      currentClip = null;
+    }
+    els.speak.classList.remove("speaking");
+  }
+
+  // Play a clip. Calls handlers: onMeta(ms) when the duration is known,
+  // onEnd() when it finishes, onFail() if it can't load/play.
+  function playClip(url, { onMeta, onEnd, onFail }) {
+    stopClip();
+    const a = new Audio(encodeURI(url));
+    let settled = false;
+    const fail = () => { if (settled) return; settled = true; els.speak.classList.remove("speaking"); if (onFail) onFail(); };
+    a.addEventListener("loadedmetadata", () => {
+      if (onMeta && isFinite(a.duration) && a.duration > 0) onMeta(Math.round(a.duration * 1000));
+    });
+    a.addEventListener("playing", () => { settled = true; els.speak.classList.add("speaking"); });
+    a.addEventListener("ended", () => { els.speak.classList.remove("speaking"); if (onEnd) onEnd(); });
+    a.addEventListener("error", fail);
+    currentClip = a;
+    const p = a.play();
+    if (p && p.catch) p.catch(fail);
+    return a;
   }
 
   function speak(text, onEnd) {
@@ -411,7 +444,10 @@
   function open() {
     const data = AwsViz.getData();
     if (!data) return;
-    steps = buildSteps(data);
+    // A network can ship its own authored tour (ordered steps with per-step
+    // pre-recorded narration clips); otherwise build a generic one and let the
+    // browser voice read it.
+    steps = (Array.isArray(data.tour) && data.tour.length) ? data.tour.slice() : buildSteps(data);
     if (!steps.length) return;
     index = 0;
     els.bar.classList.add("open");
@@ -447,6 +483,7 @@
     if (timer) clearTimeout(timer);
     timer = null;
     stopSpeaking();
+    stopClip();
     freezeProgress();
   }
 
@@ -552,6 +589,7 @@
 
     if (timer) { clearTimeout(timer); timer = null; }
     stopSpeaking();
+    stopClip();
     resetProgress();
 
     const in3D = window.AwsMode && window.AwsMode.is3D() && window.AwsViz3D && window.AwsViz3D.isReady();
@@ -569,29 +607,54 @@
     }
 
     const text = composeText(step);
-    let estMs = STEP_MS;
-    let usingSpeech = false;
+    let usingNarration = false;
 
-    if (speakEnabled && speechSupported && text) {
-      usingSpeech = true;
-      estMs = speak(text, () => {
-        // Speech ended (or errored): if we're still playing on this step, advance.
-        if (!playing || index !== i) return;
-        if (timer) { clearTimeout(timer); timer = null; }
-        // Brief pause between steps so the spoken sentences don't run together.
-        setTimeout(() => {
-          if (playing && index === i) advanceFromTimer();
-        }, 450);
+    // Advance once the narration for THIS step finishes.
+    const onNarrationEnd = () => {
+      if (!playing || index !== i) return;
+      if (timer) { clearTimeout(timer); timer = null; }
+      // Brief pause between steps so the spoken sentences don't run together.
+      setTimeout(() => {
+        if (playing && index === i) advanceFromTimer();
+      }, 450);
+    };
+
+    if (step.audio && speakEnabled) {
+      // Pre-recorded clip (authored tour): drive timing off the audio element.
+      usingNarration = true;
+      if (playing) timer = setTimeout(advanceFromTimer, 90000); // safety net until metadata loads
+      playClip(step.audio, {
+        onMeta: (ms) => {
+          if (!playing || index !== i) return;
+          if (timer) { clearTimeout(timer); timer = null; }
+          timer = setTimeout(advanceFromTimer, ms + 3000);
+          animateProgress(ms);
+        },
+        onEnd: onNarrationEnd,
+        onFail: () => {
+          // Clip missing/blocked → fall back to the browser voice.
+          if (index !== i) return;
+          let ms = STEP_MS;
+          if (speakEnabled && speechSupported && text) ms = speak(text, onNarrationEnd);
+          if (playing) {
+            if (timer) { clearTimeout(timer); timer = null; }
+            timer = setTimeout(advanceFromTimer, ms + 2500);
+            animateProgress(ms);
+          }
+        },
       });
+    } else if (speakEnabled && speechSupported && text) {
+      usingNarration = true;
+      const estMs = speak(text, onNarrationEnd);
+      if (playing) {
+        timer = setTimeout(advanceFromTimer, estMs + 2500);
+        animateProgress(estMs);
+      }
     }
 
-    if (playing) {
-      // Schedule a fallback advance in case onend never fires (e.g. browser
-      // dropped the utterance). Use a generous buffer past the speech estimate.
-      const fallbackMs = usingSpeech ? estMs + 2500 : STEP_MS;
-      timer = setTimeout(advanceFromTimer, fallbackMs);
-      // The progress bar visually tracks the *speech* (or the fixed step time).
-      animateProgress(usingSpeech ? estMs : STEP_MS);
+    if (playing && !usingNarration) {
+      timer = setTimeout(advanceFromTimer, STEP_MS);
+      animateProgress(STEP_MS);
     }
   }
 
@@ -617,6 +680,7 @@
     // a step is showing, re-speak the current step.
     if (!speakEnabled) {
       stopSpeaking();
+      stopClip();
     } else if (els.bar.classList.contains("open")) {
       show(index, false);
     }
