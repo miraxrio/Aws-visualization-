@@ -48,10 +48,12 @@
       advanceOn: "target",
     },
     {
-      // The board renders asynchronously after the demo data loads, so wait for
-      // a task card to appear before spotlighting it.
-      target: ".zb-board-grid .zb-card",
-      waitFor: true,
+      // Frame the whole task board. It renders asynchronously after the demo
+      // data loads, so wait for a task card to appear before spotlighting the
+      // board area (.zb-board-scroll is clipped to the visible board, so it
+      // doesn't bleed into the sidebar the way the overflowing grid would).
+      target: ".zb-board-scroll",
+      waitFor: ".zb-card",
       audioBases: ["assets/tutorial/line 3", "line 3"],
       text:
         "Now you can see the sample data — these are your tasks.\n" +
@@ -316,17 +318,21 @@
   }
 
   // Resolve a step's target, polling briefly for ones that render asynchronously
-  // (after a view switch / data load) when `waitFor` is set.
+  // (after a view switch / data load) when `waitFor` is set. `waitFor` may be a
+  // boolean (poll for the target itself) or a selector string (poll for that to
+  // exist — e.g. wait for a task card before framing the whole board area).
   function resolveTarget(step, seq, cb) {
     if (!step.target) { cb(null); return; }
-    const now = document.querySelector(step.target);
+    const waitSel = typeof step.waitFor === "string" ? step.waitFor : step.target;
+    const get = () => (step.waitFor && !document.querySelector(waitSel)) ? null : document.querySelector(step.target);
+    const now = get();
     if (now || !step.waitFor) { cb(now); return; }
     const t0 = Date.now();
     const tick = () => {
       if (seq !== showSeq || !active) return;
-      const el = document.querySelector(step.target);
+      const el = get();
       if (el) { cb(el); return; }
-      if (Date.now() - t0 > 6000) { cb(null); return; }
+      if (Date.now() - t0 > 6000) { cb(document.querySelector(step.target)); return; }
       setTimeout(tick, 120);
     };
     setTimeout(tick, 120);
