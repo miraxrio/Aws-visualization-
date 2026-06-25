@@ -3,7 +3,7 @@
 // Dims the whole page except a spotlight cut‑out over a target element,
 // frames that target with a glowing ring, and narrates each step with a
 // presenter + speech bubble. Narration plays a pre‑recorded clip when one is
-// present (assets/tutorial/step-N.<ext>) and otherwise falls back to the
+// present (assets/tutorial/line-N.<ext>) and otherwise falls back to the
 // browser's text‑to‑speech (shared window.AwsSpeak from tour.js).
 //
 // This is intentionally separate from the network "tour" (tour.js / AwsTour),
@@ -36,6 +36,50 @@
       cta: "Click “Connect ZeroBias” to continue",
       advanceOn: "target",
     },
+    {
+      target: "#zb-demo-btn",
+      audioBases: ["assets/tutorial/line 2", "line 2"],
+      text:
+        "Here you can enter your ZeroBias credentials.\n" +
+        "But for this demo, click “Continue with demo data”.",
+      speech:
+        "Here you can put your Zero Bias credentials, but for this demo, click on Continue with demo data.",
+      cta: "Click “Continue with demo data”",
+      advanceOn: "target",
+    },
+    {
+      // The board renders asynchronously after the demo data loads, so wait for
+      // a task card to appear before spotlighting it.
+      target: ".zb-board-grid .zb-card",
+      waitFor: true,
+      audioBases: ["assets/tutorial/line 3", "line 3"],
+      text:
+        "Now you can see the sample data — these are your tasks.\n" +
+        "Each task has a reward value. Once you complete a task, submit it to review and get paid.",
+      speech:
+        "Now you can see the sample data. Here you will see your tasks. Each task has a reward value. " +
+        "Once you complete that task, submit it to review and get paid.",
+    },
+    {
+      // Opportunities sit below the board grid — wait for it, then scroll it in.
+      target: ".zb-opps",
+      waitFor: true,
+      scrollIntoView: true,
+      audioBases: ["assets/tutorial/line 4", "line 4"],
+      text:
+        "Scroll down to the Opportunities menu.\n" +
+        "Here you can see posted bids that match your profile.",
+      speech:
+        "Scroll down and you will see the opportunities menu. Here you can see posted bids that match your profile.",
+    },
+    {
+      target: "#mode-2d",
+      audioBases: ["assets/tutorial/line 5", "line 5"],
+      text: "Now click the 2D button to switch to the basic Network View.",
+      speech: "Now click on the 2D button to switch to the basic Network View.",
+      cta: "Click “2D”",
+      advanceOn: "target",
+    },
   ];
 
   const PAD = 8;                  // spotlight padding around the target (px)
@@ -49,6 +93,7 @@
   let built = false;
   let active = false;
   let index = 0;
+  let showSeq = 0;
   let currentTarget = null;
   let currentAudio = null;
   let targetHandler = null;
@@ -238,6 +283,7 @@
     const step = STEPS[i];
     if (!step) { finish(); return; }
     index = i;
+    const seq = ++showSeq;
     detachTargetClick();
 
     textEl.textContent = step.text || "";
@@ -246,17 +292,52 @@
     nextBtn.textContent = i >= STEPS.length - 1 ? "Got it" : "Next ›";
     renderDots();
 
-    const target = step.target ? document.querySelector(step.target) : null;
-    currentTarget = target;
-    positionSpotlight(target);
-    if (target && step.advanceOn === "target") attachTargetClick(target);
-
     // Re-trigger the pop animation each step.
     bubble.classList.remove("pop");
     void bubble.offsetWidth;
     bubble.classList.add("pop");
 
     playNarration(step);
+
+    // Dim everything while we (possibly) wait for an async-rendered target.
+    const immediate = step.target ? document.querySelector(step.target) : null;
+    if (!immediate) { currentTarget = null; positionSpotlight(null); }
+
+    resolveTarget(step, seq, (target) => {
+      if (seq !== showSeq) return;             // user moved on while we waited
+      currentTarget = target;
+      if (target && step.scrollIntoView) {
+        try { target.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
+      }
+      positionSpotlight(target);
+      if (target && step.advanceOn === "target") attachTargetClick(target);
+      settleReposition(seq);                   // re-measure after transitions settle
+    });
+  }
+
+  // Resolve a step's target, polling briefly for ones that render asynchronously
+  // (after a view switch / data load) when `waitFor` is set.
+  function resolveTarget(step, seq, cb) {
+    if (!step.target) { cb(null); return; }
+    const now = document.querySelector(step.target);
+    if (now || !step.waitFor) { cb(now); return; }
+    const t0 = Date.now();
+    const tick = () => {
+      if (seq !== showSeq || !active) return;
+      const el = document.querySelector(step.target);
+      if (el) { cb(el); return; }
+      if (Date.now() - t0 > 6000) { cb(null); return; }
+      setTimeout(tick, 120);
+    };
+    setTimeout(tick, 120);
+  }
+
+  // Re-measure a few times after a step shows, to catch modal fade-in, view
+  // switches and scroll settling that move the target after first paint.
+  function settleReposition(seq) {
+    [60, 220, 480].forEach((ms) => setTimeout(() => {
+      if (seq === showSeq && active) reposition();
+    }, ms));
   }
 
   function attachTargetClick(target) {

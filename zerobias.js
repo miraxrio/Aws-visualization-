@@ -311,6 +311,7 @@
   // Run after any successful connect: refresh panels + the map gate, then pull
   // the network so the views are no longer empty.
   function afterConnect(opts) {
+    closeModal();
     render();
     refreshMap();
     doImport();

@@ -21,8 +21,18 @@ Supported extensions are tried in this order: `.mp3`, `.m4a`, `.wav`, `.ogg`,
 so `line 1.wav` works too. Each clip is also looked for in the **site root**
 (next to `index.html`), so `line 1.mp3` beside the page works as well.
 
-If you recorded the narration into a folder like `Downloads/audit/`, copy the
-clip for the welcome line in here as **`line 1.mp3`**. Step 1 says:
+Five clips ship today:
+
+| File | Step | Source |
+|------|------|--------|
+| `line 1.mp3` | Welcome / Connect ZeroBias | recorded narration |
+| `line 2.mp3` | Connection modal → demo data | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 3.mp3` | Sample data / tasks & rewards | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 4.mp3` | Opportunities / posted bids | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 5.mp3` | Switch to the 2D Network View | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+
+Lines 2–5 were generated with `fal-ai/qwen-3-tts/text-to-speech/1.7b`. To
+re‑record any of them, just drop a replacement `line N.mp3` in here. Step 1 says:
 
 > Welcome to the AuditCrowd visualization site, I'll explain the basics of this
 > tool. To start you need to login into your ZeroBias account so you can
@@ -43,6 +53,15 @@ the bundled illustration.
 
 ## Adding / editing steps
 
-Steps live in `tutorial.js` (`STEPS` array near the top). Each step has a
-`target` CSS selector to spotlight, the on‑screen `text`, the `speech` used for
-text‑to‑speech, and an optional `cta` label.
+Steps live in `tutorial.js` (`STEPS` array near the top). Each step supports:
+
+- `target` — CSS selector to spotlight.
+- `text` — on‑screen bubble copy (`\n` = line break).
+- `speech` — text read by text‑to‑speech when no audio clip is found.
+- `audioBases` — narration file base names to try (e.g. `"assets/tutorial/line 2"`).
+- `cta` — optional call‑to‑action chip.
+- `advanceOn: "target"` — complete the step by clicking the highlighted element
+  (otherwise the user advances with the **Next** button).
+- `waitFor: true` — poll for a target that renders asynchronously (after a view
+  switch or data load).
+- `scrollIntoView: true` — scroll the target into view before spotlighting it.
