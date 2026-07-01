@@ -4114,3 +4114,90 @@ body.theme-day .fx-spotlight {
   .btn:hover { transform: none; }
   .fx-spotlight { display: none; }
 }
+
+/* ---- Holographic holons view: FX-layer additions ---- */
+/* The floating overlays are positioned purely by the per-frame transform
+   (translate(-50%,-50%) translate(x,y)). Anchor their static position to
+   the container's origin — without this, absolute elements with auto
+   top/left sit BELOW the full-height canvas in flow order and every card
+   lands off-screen. */
+.stage-holo .holo-label,
+.stage-holo .holo-card,
+.stage-holo .asm-badge-3d,
+.stage-holo .holo-icon,
+.stage-holo .holo-lock-card {
+  top: 0;
+  left: 0;
+}
+
+/* Third line on entity cards: entityClass · provider · target. */
+.holo-card-meta {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+/* Compact card sizing inside the 3D stage — the original card scale was
+   tuned for a single callout; with a card per holon they must be small
+   enough that a dozen can share the viewport. */
+.stage-holo .holo-card {
+  gap: 8px;
+  min-width: 0;
+  max-width: 250px;
+  padding: 6px 11px 7px 9px;
+  border-width: 1.5px;
+  border-radius: 10px;
+}
+.stage-holo .holo-card-icon { font-size: 21px; }
+.stage-holo .holo-card-title { font-size: 12.5px; max-width: 200px; }
+.stage-holo .holo-card-sub { font-size: 9.5px; letter-spacing: 0.06em; }
+.stage-holo .holo-card-meta { font-size: 9px; max-width: 200px; }
+
+/* Level-2 "target lock" readout beside the selected holon. */
+.holo-lock-card {
+  position: absolute;
+  z-index: 12;
+  pointer-events: none;
+  min-width: 190px;
+  padding: 10px 14px 11px;
+  background: rgba(4, 10, 22, 0.92);
+  border: 1px solid rgba(88, 166, 255, 0.55);
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: #cfe0f5;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55), 0 0 14px rgba(88, 166, 255, 0.18);
+  backdrop-filter: blur(8px);
+  animation: holo-label-in 0.45s ease both;
+}
+.holo-lock-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: #8fc6ff;
+  margin-bottom: 6px;
+  animation: fx-lock-blink 1.6s steps(2, start) infinite;
+}
+.holo-lock-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  line-height: 1.55;
+}
+.holo-lock-row span { color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; }
+.holo-lock-row b { color: #fff; font-weight: 700; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.holo-lock-card.status-pass   { border-color: var(--status-pass); }
+.holo-lock-card.status-fail   { border-color: var(--status-fail); box-shadow: 0 6px 22px rgba(0,0,0,0.55), 0 0 14px rgba(239,68,68,0.25); }
+.holo-lock-card.status-partial-fail { border-color: var(--status-partial-fail); }
+@keyframes fx-lock-blink {
+  0%, 60% { opacity: 1; }
+  61%, 100% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .holo-lock-title { animation: none; }
+  .holo-lock-card { animation: none; }
+}
