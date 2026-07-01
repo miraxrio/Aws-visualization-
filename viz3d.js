@@ -5,8 +5,12 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
-console.log("[viz3d] build 2026-05-05u — gun/explosion SFX + bigger spread");
+console.log("[viz3d] build 2026-07-01 — HDR bloom pipeline + cinematic city build-in");
 
 let initialized = false;
 let scene, camera, renderer, controls, fpControls;
@@ -50,6 +54,25 @@ const SCALE_TARGET = 380; // city max dimension in 3D units
 let SCALE = 0.15;
 const CITY = { cx: 0, cz: 0, w: 0, d: 0 };
 
+// ---- FX pipeline state (HDR bloom + cinematic animations) ----
+const _reducedMotion3D = window.matchMedia
+  ? window.matchMedia("(prefers-reduced-motion: reduce)")
+  : { matches: false };
+let composer = null;      // EffectComposer; null → plain renderer fallback
+let bloomPass = null;
+let groundPulse = null;   // expanding radar ring on the data-centre floor
+let groundPulseMax = 220; // ring radius at the end of a sweep (city-sized)
+// City build-in: elements rise out of the floor with a staggered overshoot.
+let buildAnims = [];      // [{ group, delay, dur, depth }]
+let buildStartAt = null;  // set on the first *visible* frame so the show
+                          // isn't wasted while the 3D stage is hidden
+let flowReveal = null;    // { delay, dur, items: [{ mat, target }] }
+let collectFlowReveal = null; // addFlow() pushes fade-in mats here during build
+// Hover glow — the element under the cursor pulses its emissive.
+let hoverFx = null;       // { mesh, mat, baseI }
+// Idle cinematography — slow auto-orbit after the user goes quiet.
+let lastUserActionAt = performance.now();
+
 // ---------- init ----------
 
 function init(container) {
@@ -70,6 +93,27 @@ function init(container) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   container.appendChild(renderer.domElement);
+
+  // HDR post-processing: render → bloom → tonemap/output. The half-float
+  // MSAA target keeps antialiasing while giving bloom real HDR headroom, so
+  // only genuinely bright things (packet halos, portal ring, blink lights,
+  // neon emissives) glow. Falls back to the plain renderer on any failure.
+  try {
+    const rt = new THREE.WebGLRenderTarget(2, 2, {
+      type: THREE.HalfFloatType,
+      samples: renderer.capabilities.isWebGL2 ? 4 : 0,
+    });
+    composer = new EffectComposer(renderer, rt);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.addPass(new RenderPass(scene, camera));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(2, 2), 0.55, 0.6, 0.8);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+  } catch (e) {
+    console.warn("[viz3d] bloom pipeline unavailable, using direct render", e);
+    composer = null;
+    bloomPass = null;
+  }
 
   // Lights — bumped up so brand colours read saturated rather than muted.
   hemiLight = new THREE.HemisphereLight(0xb6c8ff, 0x0a1428, 1.05);
@@ -138,6 +182,24 @@ function init(container) {
   stars = makeStars(900);
   scene.add(stars);
 
+  // Radar sweep — a thin additive ring that periodically expands across the
+  // floor from the city centre. Scaled to the city on every render().
+  groundPulse = new THREE.Mesh(
+    new THREE.RingGeometry(0.94, 1.0, 96),
+    new THREE.MeshBasicMaterial({
+      color: 0x58a6ff,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  groundPulse.rotation.x = -Math.PI / 2;
+  groundPulse.position.y = 0.18;
+  groundPulse.renderOrder = 2;
+  scene.add(groundPulse);
+
   cityGroup = new THREE.Group();
   scene.add(cityGroup);
 
@@ -153,10 +215,17 @@ function init(container) {
   controls.minDistance = 6;
   controls.maxDistance = 900;
 
-  // User interaction cancels any active camera tween.
+  // User interaction cancels any active camera tween and pauses the idle
+  // auto-orbit; going quiet for a while resumes the slow cinematic spin.
+  controls.autoRotateSpeed = 0.45;
   controls.addEventListener("start", () => {
     cameraTween = null;
     controls.enableDamping = true;
+    controls.autoRotate = false;
+    lastUserActionAt = performance.now();
+  });
+  controls.addEventListener("end", () => {
+    lastUserActionAt = performance.now();
   });
 
   // First-person walk controls (Explore mode). Initially disconnected.
@@ -188,6 +257,10 @@ function resize(container) {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h, false);
+  if (composer) {
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(w, h);
+  }
 }
 
 // ---------- city build ----------
@@ -260,18 +333,67 @@ function render(data, opts) {
   // Internet — represented as a glowing portal hovering over the city
   if (lay.internet) addInternetPortal(lay.internet);
 
+  // Fresh (non-diff) city → choreograph a staggered build-in: platforms
+  // rise out of the floor, buildings sprout outward from the centre, the
+  // internet portal descends, then the traffic flows fade in last.
+  const choreograph = !hadPreviousCity && !diff && !_reducedMotion3D.matches;
+  buildAnims = [];
+  buildStartAt = null;
+  flowReveal = null;
+  let maxDelay = 0;
+  if (choreograph) {
+    registry.forEach((entry) => {
+      if (!entry.group) return;
+      let delay, depth;
+      if (entry.type === "vpc") {
+        delay = 0;
+        depth = 6;
+      } else if (entry.type === "subnet") {
+        delay = 200 + Math.random() * 160;
+        depth = 8;
+      } else if (entry.type === "internet") {
+        delay = 1050;
+        depth = -60; // negative → descends from the sky
+      } else {
+        const dist = Math.hypot(entry.position.x, entry.position.z);
+        delay = 420 + dist * 2.0 + Math.random() * 120;
+        depth = (entry.height || 6) + 10;
+      }
+      maxDelay = Math.max(maxDelay, delay);
+      entry.group.position.y = -depth; // pre-place off-stage (below floor / in the sky)
+      buildAnims.push({ group: entry.group, delay, dur: 850, depth });
+    });
+    collectFlowReveal = [];
+  }
+
   // Flows
   (data.flows || []).forEach(addFlow);
+
+  if (choreograph) {
+    flowReveal = { delay: Math.min(maxDelay + 500, 1500), dur: 700, items: collectFlowReveal };
+    collectFlowReveal = null;
+  }
 
   // Frame the city on the *first* render only. Version transitions keep
   // whatever camera angle / zoom the user had set — resetting on every
   // click is jarring and discards the user's framing of the city.
   if (!hadPreviousCity) {
     const dist = Math.max(CITY.w, CITY.d) + 80;
-    camera.position.set(dist * 0.35, dist * 0.55, dist * 0.85);
-    controls.target.set(0, 4, 0);
+    const toPos = new THREE.Vector3(dist * 0.35, dist * 0.55, dist * 0.85);
+    if (choreograph) {
+      // Cinematic fly-in: start wide and high, glide down to the framing.
+      camera.position.set(dist * 0.95, dist * 1.15, dist * 1.55);
+      controls.target.set(0, 4, 0);
+      tweenCamera(toPos, new THREE.Vector3(0, 4, 0), 2200);
+    } else {
+      camera.position.copy(toPos);
+      controls.target.set(0, 4, 0);
+    }
   }
   controls.update();
+
+  // Size the radar sweep to the new city footprint.
+  groundPulseMax = Math.max(CITY.w, CITY.d, 120) * 0.85;
 
   // Adapt fog to city size so the whole layout is always visible from
   // overview, but distant detail still fades for atmosphere.
@@ -755,13 +877,26 @@ function addFlow(flow) {
   // Glowing data packets streaming along the curve
   const N = 6 + Math.min(6, Math.floor(dist / 22));
   const sphereGeo = new THREE.SphereGeometry(1.15, 14, 10);
-  const sphereMat = new THREE.MeshBasicMaterial({ color });
+  const sphereMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
   // A second outer "halo" for the packet
   const haloGeo = new THREE.SphereGeometry(1.9, 12, 8);
   const haloMat = new THREE.MeshBasicMaterial({
     color, transparent: true, opacity: 0.35,
     blending: THREE.AdditiveBlending, depthWrite: false,
   });
+
+  // During a choreographed build-in the flows start invisible and fade in
+  // after the buildings have landed (ramped in animate()).
+  if (collectFlowReveal) {
+    collectFlowReveal.push(
+      { mat: tube.material, target: 0.32 },
+      { mat: sphereMat, target: 1 },
+      { mat: haloMat, target: 0.35 },
+    );
+    tube.material.opacity = 0;
+    sphereMat.opacity = 0;
+    haloMat.opacity = 0;
+  }
   const offsets = [];
   for (let i = 0; i < N; i++) {
     const m = new THREE.Mesh(sphereGeo, sphereMat);
@@ -1611,6 +1746,14 @@ function setTheme(theme) {
   }
   if (renderer) {
     renderer.toneMappingExposure = isDay ? 1.05 : 1.05;
+  }
+  // Bloom reads differently against a bright sky — tone it down by day.
+  if (bloomPass) {
+    bloomPass.strength = isDay ? 0.25 : 0.55;
+    bloomPass.threshold = isDay ? 0.9 : 0.8;
+  }
+  if (groundPulse) {
+    groundPulse.material.color.set(isDay ? 0x1b6ad6 : 0x58a6ff);
   }
 
   if (sunLight) {
@@ -3323,6 +3466,8 @@ function onCanvasPointerMove(evt) {
   const tooltip = document.getElementById("tooltip");
   if (id !== hoveredId) {
     hoveredId = id;
+    setHoverGlow(id);
+    renderer.domElement.style.cursor = id ? "pointer" : "";
     if (id) {
       // Look up the original node in the 2D layout so we get name/cidr/az etc.
       const lay = window.AwsViz && window.AwsViz.getLayout && window.AwsViz.getLayout();
@@ -3365,9 +3510,29 @@ function onCanvasPointerMove(evt) {
   }
 }
 
+// Pulse the hovered element's emissive so hover feedback exists in 3D just
+// like the 2D view's highlight. Restores the previous mesh's baseline.
+function setHoverGlow(id) {
+  if (hoverFx) {
+    if (hoverFx.mat) hoverFx.mat.emissiveIntensity = hoverFx.baseI;
+    hoverFx = null;
+  }
+  if (!id) return;
+  const entry = registry.get(id);
+  const mesh = entry && entry.mesh;
+  if (!mesh) return;
+  const mat = Array.isArray(mesh.material)
+    ? mesh.material.find((m) => m && m.emissive)
+    : (mesh.material && mesh.material.emissive ? mesh.material : null);
+  if (!mat) return;
+  hoverFx = { mesh, mat, baseI: mat.emissiveIntensity };
+}
+
 function onCanvasPointerLeave() {
   _pointerInside = false;
   hoveredId = null;
+  setHoverGlow(null);
+  if (renderer) renderer.domElement.style.cursor = "";
   const tooltip = document.getElementById("tooltip");
   if (tooltip) {
     tooltip.classList.remove("show");
@@ -3869,6 +4034,71 @@ function animate() {
   const dt = Math.min(0.05, (now - lastT) / 1000) || 0;
   lastT = now;
 
+  // City build-in choreography — clock starts on the first VISIBLE frame so
+  // the show isn't wasted while the user is still in another view mode.
+  if (buildAnims.length) {
+    if (buildStartAt === null) buildStartAt = now;
+    const t0 = buildStartAt;
+    buildAnims = buildAnims.filter((a) => {
+      const u = (now - t0 - a.delay) / a.dur;
+      if (u < 0) return true;
+      if (u >= 1) { a.group.position.y = 0; return false; }
+      // Ease-out-back: rises past the floor slightly, then settles.
+      const c1 = 1.4, c3 = c1 + 1;
+      const e = 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2);
+      a.group.position.y = -a.depth * (1 - e);
+      return true;
+    });
+  }
+  if (flowReveal && buildStartAt !== null) {
+    const u = (now - buildStartAt - flowReveal.delay) / flowReveal.dur;
+    if (u >= 1) {
+      flowReveal.items.forEach(({ mat, target }) => { mat.opacity = target; });
+      flowReveal = null;
+    } else if (u > 0) {
+      flowReveal.items.forEach(({ mat, target }) => { mat.opacity = target * u; });
+    }
+  }
+
+  // Radar sweep expanding across the floor from the city centre.
+  if (groundPulse) {
+    if (_reducedMotion3D.matches || !registry.size) {
+      groundPulse.material.opacity = 0;
+    } else {
+      const u = (now % 7000) / 7000;
+      groundPulse.scale.setScalar(Math.max(0.001, u * groundPulseMax));
+      groundPulse.material.opacity = 0.3 * (1 - u) * Math.min(1, u / 0.04);
+    }
+  }
+
+  // Foreground stars: slow drift + gentle twinkle.
+  if (stars && stars.visible) {
+    stars.rotation.y += dt * 0.006;
+    stars.material.opacity = 0.78 + 0.18 * Math.sin(now / 1300);
+  }
+
+  // Hover glow pulse on the element under the cursor.
+  if (hoverFx) {
+    if (!hoverFx.mesh.parent) {
+      hoverFx = null; // city was rebuilt under the cursor
+    } else {
+      hoverFx.mat.emissiveIntensity =
+        hoverFx.baseI + 0.55 * (0.5 + 0.5 * Math.sin(now / 240));
+    }
+  }
+
+  // Idle cinematography: after ~12s without input, orbit slowly. Any state
+  // that owns the camera (tween, explore, attack, tour focus) pauses it.
+  controls.autoRotate =
+    !_reducedMotion3D.matches &&
+    !exploreActive &&
+    !cameraTween &&
+    !attackState &&
+    !focusEffect &&
+    !hoveredId &&
+    registry.size > 0 &&
+    now - lastUserActionAt > 12000;
+
   // Packets streaming along flow tubes
   particleSystems.forEach(({ curve, offsets }) => {
     offsets.forEach((o) => {
@@ -4033,7 +4263,8 @@ function animate() {
   if (exploreActive) updateExplore(dt);
   else controls.update();
 
-  renderer.render(scene, camera);
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
 }
 
 // Expose to non-module callers
