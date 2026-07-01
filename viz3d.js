@@ -4882,6 +4882,7 @@ function updateHoloLabels() {
   holo.scene.updateMatrixWorld(true);
   holo.camera.updateMatrixWorld();
   holo.camera.matrixWorldInverse.copy(holo.camera.matrixWorld).invert();
+  const cards = [];
   holo.labels.forEach((entry) => {
     const parent = entry.parent || holo.group;
     const v = entry.position.clone().applyMatrix4(parent.matrixWorld);
@@ -4892,9 +4893,41 @@ function updateHoloLabels() {
       return;
     }
     entry.el.style.display = "";
-    const x = (v.x * 0.5 + 0.5) * w;
-    const y = (1 - (v.y * 0.5 + 0.5)) * h;
-    entry.el.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+    entry._x = (v.x * 0.5 + 0.5) * w;
+    entry._y = (1 - (v.y * 0.5 + 0.5)) * h;
+    if (entry.el.classList.contains("holo-card") ||
+        entry.el.classList.contains("holo-lock-card")) {
+      cards.push(entry);
+    } else {
+      entry.el.style.transform =
+        `translate(-50%, -50%) translate(${entry._x}px, ${entry._y}px)`;
+    }
+  });
+
+  // Card collision avoidance: as anchors orbit, projected cards can pile
+  // onto each other. Stack overlapping cards downward (sorted by y, each
+  // pushed below any earlier card it horizontally overlaps), and smooth
+  // the correction so cards glide apart instead of snapping.
+  cards.sort((a, b) => a._y - b._y);
+  const PAD = 6;
+  for (let i = 0; i < cards.length; i++) {
+    const b = cards[i];
+    b._w = b.el.offsetWidth;
+    b._h = b.el.offsetHeight;
+    b._ry = b._y; // resolved y
+    for (let j = 0; j < i; j++) {
+      const a = cards[j];
+      const xOverlap = Math.abs(a._x - b._x) < (a._w + b._w) / 2 + PAD;
+      if (!xOverlap) continue;
+      const minDy = (a._h + b._h) / 2 + PAD;
+      if (b._ry - a._ry < minDy) b._ry = a._ry + minDy;
+    }
+  }
+  cards.forEach((entry) => {
+    const targetDy = entry._ry - entry._y;
+    entry._dy = (entry._dy || 0) + (targetDy - (entry._dy || 0)) * 0.25;
+    entry.el.style.transform =
+      `translate(-50%, -50%) translate(${entry._x}px, ${entry._y + entry._dy}px)`;
   });
 }
 
@@ -5455,7 +5488,27 @@ function renderHoloLevel1(holonicId, boundaryData) {
 
   const lookup = buildHoloLookup(boundaryData);
   const holons = (hc.holons || []).map((id) => lookup.get(id)).filter(Boolean);
-  const positions = fibSphere(holons.length, boundaryR * 0.6);
+  // Concentric orbital shells: every holon orbits at its OWN radius, with
+  // the gap between neighbouring shells sized from their sphere radii.
+  // A great-circle orbit keeps each holon at constant distance from the
+  // centre, so distinct shells mean the moving spheres can never touch
+  // each other — nor the nucleus (inner clearance) nor the boundary rings
+  // (outer cap). Directions come from the Fibonacci lattice for spread.
+  const dirs = fibSphere(holons.length, 1);
+  const bodyR = (h) => (HOLO_SEVERITY_RADIUS[h.severity] || 0.6) * 1.15; // core + rim halo
+  const SHELL_GAP = 0.6;
+  let shellR = 2.0; // clears the r=0.9 nucleus
+  const radii = holons.map((h, i) => {
+    shellR += bodyR(h) + (i > 0 ? bodyR(holons[i - 1]) + SHELL_GAP : 0);
+    return shellR;
+  });
+  // If the outermost shell would poke through the boundary, compress all
+  // shells proportionally (spacing degrades gracefully — the Fibonacci
+  // directions still keep neighbours angularly apart).
+  const rCap = boundaryR - 1.0;
+  const overflow = radii.length && radii[radii.length - 1] > rCap
+    ? rCap / radii[radii.length - 1] : 1;
+  const positions = dirs.map((d, i) => d.multiplyScalar(Math.max(2.0, radii[i] * overflow)));
   holons.forEach((holon, i) => addHoloOrbiter(holon, positions[i], i));
   buildOrbitEdges(holons);
   updateOrbitEdges();
