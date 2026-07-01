@@ -3845,3 +3845,272 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
 @media (prefers-reduced-motion: reduce) {
   .tut-ring, .tut-presenter, .tut-presenter.talking, .tut-bubble.pop, .tut-replay.speaking { animation: none; }
 }
+
+/* ============================================================================
+   FX layer — site-wide animations, ripples, particles & interactive polish.
+   Companion to fx.js. Everything here is decorative and additive; all motion
+   is disabled under prefers-reduced-motion at the bottom of this section.
+   ========================================================================== */
+
+/* ---- Particle canvas overlay (drawn by fx.js) ---- */
+.fx-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 12000;
+}
+
+/* ---- Page entrance: topbar drops in, layout fades up, panels stagger ---- */
+@keyframes fx-bar-in {
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fx-page-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fx-panel-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+body.fx-page-enter .topbar { animation: fx-bar-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+body.fx-page-enter .layout,
+body.fx-page-enter .wizard-layout,
+body.fx-page-enter .ref-wrap { animation: fx-page-in 0.55s cubic-bezier(0.2, 0.9, 0.3, 1) 0.08s both; }
+body.fx-page-enter .sidebar > .panel { animation: fx-panel-in 0.55s cubic-bezier(0.2, 0.9, 0.3, 1) backwards; }
+body.fx-page-enter .sidebar > .panel:nth-child(1) { animation-delay: 0.12s; }
+body.fx-page-enter .sidebar > .panel:nth-child(2) { animation-delay: 0.19s; }
+body.fx-page-enter .sidebar > .panel:nth-child(3) { animation-delay: 0.26s; }
+body.fx-page-enter .sidebar > .panel:nth-child(4) { animation-delay: 0.33s; }
+body.fx-page-enter .sidebar > .panel:nth-child(5) { animation-delay: 0.40s; }
+body.fx-page-enter .sidebar > .panel:nth-child(6) { animation-delay: 0.47s; }
+body.fx-page-enter .sidebar > .panel:nth-child(n + 7) { animation-delay: 0.54s; }
+
+/* ---- View-mode switch: the incoming stage scales/fades in (fx.js adds it) */
+@keyframes fx-view-in {
+  from { opacity: 0; transform: scale(0.985) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.fx-view-enter { animation: fx-view-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1); }
+
+/* ---- Buttons: lift on hover, sheen sweep on primary, springy press ---- */
+.btn,
+.seg-btn,
+.tour-btn,
+.asm-pill,
+.wizard-step,
+.zb-menu-item,
+.attack-card,
+.inv-tile,
+.catalog-card,
+.holo-crumb {
+  position: relative;
+  overflow: hidden;
+}
+.btn {
+  transition:
+    transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1),
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.2s ease;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.28);
+}
+.btn:active { transform: translateY(1px) scale(0.98); box-shadow: none; }
+body.theme-day .btn:hover { box-shadow: 0 5px 16px rgba(20, 50, 100, 0.22); }
+
+.btn.primary::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -80%;
+  width: 55%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+.btn.primary:hover::after { animation: fx-sheen 0.7s ease; }
+@keyframes fx-sheen {
+  from { left: -80%; }
+  to   { left: 130%; }
+}
+
+@keyframes fx-seg-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+.seg-btn.is-active { animation: fx-seg-pop 0.28s ease; }
+
+/* ---- Ripple (span injected by fx.js on pointerdown) ---- */
+.fx-ripple {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 70%);
+  transform: scale(0);
+  animation: fx-ripple 0.55s ease-out forwards;
+  z-index: 1;
+}
+body.theme-day .fx-ripple {
+  background: radial-gradient(circle, rgba(13, 37, 64, 0.22) 0%, rgba(13, 37, 64, 0) 70%);
+}
+@keyframes fx-ripple {
+  to { transform: scale(1); opacity: 0; }
+}
+
+/* ---- Brand mark: living gradient + slow glow pulse ---- */
+.brand-mark {
+  background: linear-gradient(135deg, var(--accent), #ff5f6d, #c084fc, var(--accent));
+  background-size: 300% 300%;
+  animation: fx-gradient-drift 7s ease infinite, fx-glow-pulse 3.2s ease-in-out infinite;
+}
+@keyframes fx-gradient-drift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes fx-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(255, 153, 0, 0.12); }
+  50%      { box-shadow: 0 0 0 6px rgba(255, 153, 0, 0.22), 0 0 18px rgba(255, 153, 0, 0.35); }
+}
+
+/* ---- Legend dots breathe, one after another ---- */
+@keyframes fx-dot-pulse {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50%      { transform: scale(1.35); filter: brightness(1.35); }
+}
+.legend .dot { animation: fx-dot-pulse 2.6s ease-in-out infinite; }
+.legend > div:nth-child(2) .dot { animation-delay: 0.3s; }
+.legend > div:nth-child(3) .dot { animation-delay: 0.6s; }
+.legend > div:nth-child(4) .dot { animation-delay: 0.9s; }
+
+/* ---- Sidebar panels: hover lift + tilt handled by fx.js ---- */
+.sidebar > .panel,
+.catalog-card {
+  transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.sidebar > .panel:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+body.theme-day .sidebar > .panel:hover {
+  box-shadow: 0 8px 24px rgba(20, 50, 100, 0.2);
+}
+.fx-tilt { will-change: transform; }
+
+/* ---- Cursor spotlight over the stage (div injected by fx.js) ---- */
+.fx-spotlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  background: radial-gradient(
+    340px circle at var(--fx-mx, 50%) var(--fx-my, 50%),
+    rgba(88, 166, 255, 0.075),
+    transparent 62%
+  );
+  z-index: 1;
+}
+.fx-spotlight.is-on { opacity: 1; }
+body.theme-day .fx-spotlight {
+  background: radial-gradient(
+    340px circle at var(--fx-mx, 50%) var(--fx-my, 50%),
+    rgba(255, 255, 255, 0.28),
+    transparent 62%
+  );
+}
+
+/* ---- Attack drama: quick stage shake when the assault begins ---- */
+@keyframes fx-shake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-5px, 2px); }
+  30% { transform: translate(4px, -3px); }
+  45% { transform: translate(-3px, -2px); }
+  60% { transform: translate(3px, 2px); }
+  75% { transform: translate(-2px, 1px); }
+  90% { transform: translate(1px, -1px); }
+}
+.stage.fx-shake { animation: fx-shake 0.5s ease; }
+
+/* ---- Toasts / hints pop and float ---- */
+@keyframes fx-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px) scale(0.94); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+.holo-toast:not([hidden]) { animation: fx-toast-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* .hint is centered with translateX(-50%), so the float keeps it in place */
+@keyframes fx-hint-float {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50%      { transform: translateX(-50%) translateY(-4px); }
+}
+.hint { animation: fx-hint-float 5s ease-in-out infinite; }
+
+/* ---- Modals ease in rather than snap ---- */
+@keyframes fx-modal-card-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.attack-modal:not([hidden]) .attack-modal-card,
+.wizard-modal:not([hidden]) .wizard-modal-card {
+  animation: fx-modal-card-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes fx-menu-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.zb-menu:not([hidden]) { animation: fx-menu-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1); }
+
+/* ---- Wizard panes slide in when activated ---- */
+.wizard-pane.is-active { animation: fx-page-in 0.4s cubic-bezier(0.2, 0.9, 0.3, 1); }
+
+/* ---- Keyboard focus: visible glow ring everywhere ---- */
+.btn:focus-visible,
+.seg-btn:focus-visible,
+.tour-btn:focus-visible,
+.asm-pill:focus-visible,
+.wizard-step:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+/* ---- Sound toggle button states ---- */
+.fx-sound-btn.is-muted { opacity: 0.55; }
+.fx-sound-float {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  box-shadow: var(--shadow);
+}
+
+/* ---- Reduced motion: kill every FX animation, keep final states ---- */
+@media (prefers-reduced-motion: reduce) {
+  body.fx-page-enter .topbar,
+  body.fx-page-enter .layout,
+  body.fx-page-enter .wizard-layout,
+  body.fx-page-enter .ref-wrap,
+  body.fx-page-enter .sidebar > .panel,
+  .fx-view-enter,
+  .btn.primary:hover::after,
+  .seg-btn.is-active,
+  .brand-mark,
+  .legend .dot,
+  .stage.fx-shake,
+  .holo-toast:not([hidden]),
+  .hint,
+  .attack-modal:not([hidden]) .attack-modal-card,
+  .wizard-modal:not([hidden]) .wizard-modal-card,
+  .zb-menu:not([hidden]),
+  .wizard-pane.is-active,
+  .fx-ripple {
+    animation: none !important;
+  }
+  .btn:hover { transform: none; }
+  .fx-spotlight { display: none; }
+}
