@@ -4561,8 +4561,11 @@ function attachHoloPointer() {
     holo.camera.position.setLength(next);
     holo.camera.lookAt(0, 1.5, 0);
   }, { passive: false });
-  dom.addEventListener("mouseenter", () => { holo.hoverPause = true; });
-  dom.addEventListener("mouseleave", () => {
+  // Pause the idle orbit while the pointer is anywhere over the stage —
+  // listening on the container (not the canvas) means hovering a floating
+  // card also pauses, instead of the scene spinning under the cursor.
+  holo.container.addEventListener("mouseenter", () => { holo.hoverPause = true; });
+  holo.container.addEventListener("mouseleave", () => {
     holo.hoverPause = false;
     const tip = document.getElementById("holo-hover-tip");
     if (tip) tip.hidden = true;
@@ -4720,7 +4723,10 @@ function onHoloDblClick(ev) {
 function holoAnimate() {
   if (!holo.initialized) return;
   const now = performance.now();
-  if (holo.rotate && !holo.hoverPause && holo.state.level === 0) {
+  // Slow orbit whenever the pointer is outside the rendering area — at
+  // every level, so the scene keeps living while the user reads panels.
+  // Entering the stage (canvas OR a floating card) pauses it.
+  if (holo.rotate && !holo.hoverPause && !_reducedMotion3D.matches) {
     holo.drag.rotY += 0.0025;
   }
   // Smooth camera dolly when navigating between levels.

@@ -4154,9 +4154,16 @@ body.theme-day .fx-spotlight {
   padding: 4px 10px 4px 7px;
   border-width: 1.5px;
   border-radius: 9px;
+  /* Translucent so the scene stays visible through the pills; the
+     backdrop blur keeps the text readable. Hovering firms it up. */
+  background: rgba(7, 16, 31, 0.62);
   pointer-events: auto;
   cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.stage-holo .holo-card:hover,
+.stage-holo .holo-card.is-hot {
+  background: rgba(7, 16, 31, 0.88);
 }
 .stage-holo .holo-card:hover,
 .stage-holo .holo-card.is-hot {
@@ -4209,7 +4216,13 @@ body.theme-day .fx-spotlight {
   animation: fx-lock-blink 1.6s steps(2, start) infinite;
 }
 /* Collapsed to the blinking title by default; the data rows unfold on hover. */
-.stage-holo .holo-lock-card { pointer-events: auto; min-width: 0; }
+.stage-holo .holo-lock-card {
+  pointer-events: auto;
+  min-width: 0;
+  background: rgba(4, 10, 22, 0.66);
+  transition: background 0.2s ease;
+}
+.stage-holo .holo-lock-card:hover { background: rgba(4, 10, 22, 0.9); }
 .holo-lock-more {
   overflow: hidden;
   max-height: 0;
