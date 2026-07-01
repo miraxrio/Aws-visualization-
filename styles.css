@@ -4143,19 +4143,46 @@ body.theme-day .fx-spotlight {
 
 /* Compact card sizing inside the 3D stage — the original card scale was
    tuned for a single callout; with a card per holon they must be small
-   enough that a dozen can share the viewport. */
+   enough that a dozen can share the viewport. Cards are collapsed to
+   icon + title by default; the status/meta lines (.holo-card-more) unfold
+   on hover of the card itself or of its sphere (.is-hot, set by the
+   canvas raycaster). Cards are clickable and navigate like their sphere. */
 .stage-holo .holo-card {
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
   max-width: 250px;
-  padding: 6px 11px 7px 9px;
+  padding: 4px 10px 4px 7px;
   border-width: 1.5px;
-  border-radius: 10px;
+  border-radius: 9px;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.stage-holo .holo-card-icon { font-size: 21px; }
-.stage-holo .holo-card-title { font-size: 12.5px; max-width: 200px; }
+.stage-holo .holo-card:hover,
+.stage-holo .holo-card.is-hot {
+  z-index: 14;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 16px rgba(88, 166, 255, 0.25);
+}
+.stage-holo .holo-card-icon { font-size: 17px; }
+.stage-holo .holo-card-title { font-size: 12px; max-width: 200px; }
 .stage-holo .holo-card-sub { font-size: 9.5px; letter-spacing: 0.06em; }
 .stage-holo .holo-card-meta { font-size: 9px; max-width: 200px; }
+.holo-card-more {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin-top 0.25s ease;
+  margin-top: 0;
+}
+.stage-holo .holo-card:hover .holo-card-more,
+.stage-holo .holo-card.is-hot .holo-card-more {
+  max-height: 48px;
+  opacity: 1;
+  margin-top: 3px;
+}
 
 /* Level-2 "target lock" readout beside the selected holon. */
 .holo-lock-card {
@@ -4179,8 +4206,21 @@ body.theme-day .fx-spotlight {
   font-weight: 800;
   letter-spacing: 0.22em;
   color: #8fc6ff;
-  margin-bottom: 6px;
   animation: fx-lock-blink 1.6s steps(2, start) infinite;
+}
+/* Collapsed to the blinking title by default; the data rows unfold on hover. */
+.stage-holo .holo-lock-card { pointer-events: auto; min-width: 0; }
+.holo-lock-more {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin-top 0.25s ease;
+}
+.stage-holo .holo-lock-card:hover .holo-lock-more {
+  max-height: 220px;
+  opacity: 1;
+  margin-top: 6px;
 }
 .holo-lock-row {
   display: flex;

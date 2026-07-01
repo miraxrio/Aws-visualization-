@@ -4362,6 +4362,23 @@ function holoBurst(ev, count) {
 }
 
 /**
+ * Expand the entity card belonging to the hovered sphere (and collapse the
+ * previous one). Cards also expand on direct CSS :hover; .is-hot mirrors
+ * that state for sphere-driven hovering.
+ * @param {string|null} id
+ */
+function syncHotCard(id) {
+  if (!holo.container) return;
+  holo.container.querySelectorAll(".holo-card.is-hot")
+    .forEach((c) => c.classList.remove("is-hot"));
+  if (!id) return;
+  const card = holo.container.querySelector(
+    `.holo-card[data-holo-id="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`,
+  );
+  if (card) card.classList.add("is-hot");
+}
+
+/**
  * Initialise the holographic 3D scene inside a container element.
  * Safe to call multiple times — re-init is a no-op.
  * @param {HTMLElement} container
@@ -4549,6 +4566,7 @@ function attachHoloPointer() {
     holo.hoverPause = false;
     const tip = document.getElementById("holo-hover-tip");
     if (tip) tip.hidden = true;
+    if (holo.hoverId) { holo.hoverId = null; syncHotCard(null); }
   });
   dom.addEventListener("click", onHoloClick);
   dom.addEventListener("dblclick", onHoloDblClick);
@@ -4574,7 +4592,7 @@ function onHoloHover(ev) {
   const hits = holo.raycaster.intersectObjects(meshes, false);
   if (!hits.length) {
     tip.hidden = true;
-    holo.hoverId = null;
+    if (holo.hoverId) { holo.hoverId = null; syncHotCard(null); }
     holo.renderer.domElement.style.cursor = "grab";
     return;
   }
@@ -4582,13 +4600,14 @@ function onHoloHover(ev) {
   const entity = lookupHoloEntity(id);
   if (!entity) {
     tip.hidden = true;
-    holo.hoverId = null;
+    if (holo.hoverId) { holo.hoverId = null; syncHotCard(null); }
     holo.renderer.domElement.style.cursor = "grab";
     return;
   }
   if (id !== holo.hoverId) {
     holo.hoverId = id;
     holoSfx("hover");
+    syncHotCard(id);
   }
   holo.renderer.domElement.style.cursor = "pointer";
   tip.innerHTML = renderHoloHoverTip(entity);
@@ -5274,16 +5293,29 @@ function addHoloEntityCard(entity, position, parent) {
   if (entity.target && !isHolonic) metaBits.push(entity.target);
   const el = document.createElement("div");
   el.className = `holo-card status-${status}`;
+  // Collapsed by default: just icon + title. The status and meta lines sit
+  // in .holo-card-more, revealed on hover (of the card or of its sphere —
+  // onHoloHover toggles .is-hot) so cards don't blanket the scene.
   el.innerHTML = `
     <div class="holo-card-icon" style="color: ${escHolo(props.baseColor || "#cbd5e1")}">${escHolo(emoji)}</div>
     <div class="holo-card-text">
       <div class="holo-card-title">${escHolo(entity.label || entity.id)}</div>
-      <div class="holo-card-sub">${escHolo(parts.join(" · "))}</div>
-      ${metaBits.length ? `<div class="holo-card-meta">${escHolo(metaBits.join(" · "))}</div>` : ""}
+      <div class="holo-card-more">
+        <div class="holo-card-sub">${escHolo(parts.join(" · "))}</div>
+        ${metaBits.length ? `<div class="holo-card-meta">${escHolo(metaBits.join(" · "))}</div>` : ""}
+      </div>
     </div>
   `;
   el.style.position = "absolute";
-  el.style.pointerEvents = "none";
+  el.dataset.holoId = entity.id;
+  // Cards are interactive: hover expands, click navigates to the entity —
+  // same as clicking its sphere.
+  el.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    holoBurst(ev, 10);
+    if (isHolonic) holoNavigate(1, entity.id, null);
+    else holoNavigate(2, holo.state.holonicId, entity.id);
+  });
   holo.container.appendChild(el);
   holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
 }
@@ -5713,13 +5745,16 @@ function addHoloLockCard(holon, position, parent) {
   if (holon.timestamp) push("seen", String(holon.timestamp).slice(0, 10));
   const el = document.createElement("div");
   el.className = `holo-lock-card status-${escHolo(holon.status || "unknown")}`;
+  // Title row always visible; the data rows expand on hover so the lock
+  // readout doesn't blanket the scene.
   el.innerHTML =
     `<div class="holo-lock-title">◎ TARGET LOCK</div>` +
+    `<div class="holo-lock-more">` +
     rows.map(([k, v]) =>
       `<div class="holo-lock-row"><span>${escHolo(k)}</span><b>${escHolo(v)}</b></div>`,
-    ).join("");
+    ).join("") +
+    `</div>`;
   el.style.position = "absolute";
-  el.style.pointerEvents = "none";
   holo.container.appendChild(el);
   holo.labels.push({ el, position: position.clone(), parent: parent || holo.group });
 }
