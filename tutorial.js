@@ -120,6 +120,115 @@
       speech: "Press Start tour, and I'll explain every component of this network to you.",
       cta: "Click “Start tour”",
       advanceOn: "target",
+      // Hide the tutorial while the network tour runs; resume with the next
+      // step once the tour bar closes.
+      resumeAfterTour: true,
+    },
+
+    // --- The security-system timeline walk --------------------------------
+    // Steps 11–16 scrub through the network's recorded versions one by one
+    // (selectVersion is silent so the app's own generated narration doesn't
+    // talk over these clips). Each step auto-advances when its clip ends.
+    {
+      targets: ["#boundary-panel", "#timeline-panel"],
+      onEnter: () => { if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("2d"); },
+      scrollIntoView: true,
+      scrollBlock: "start",
+      audioBases: ["assets/tutorial/line 10", "line 10"],
+      text:
+        "Now let's review the security system timeline.\n" +
+        "Every change to this network was recorded here — who made it, when, and whether it left the system healthy.",
+      speech:
+        "Now let's review the security system timeline. Every change to this network is recorded here — " +
+        "who made it, when, and whether it left the system healthy. Let's walk through it together.",
+      autoAdvance: true,
+    },
+    {
+      target: '.version-item[data-version-id="v1"]',
+      onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v1", { silent: true }); },
+      scrollIntoView: true,
+      audioBases: ["assets/tutorial/line 11", "line 11"],
+      text:
+        "Jan 15 — Alice's initial three-tier deployment.\n" +
+        "Load balancer, app tasks in two zones, Aurora underneath. All green.",
+      speech:
+        "The story opens on January fifteenth, with Alice's original deployment: a load balancer out front, " +
+        "application tasks spread across two availability zones, and an Aurora database underneath. " +
+        "Clean, production ready, and green across the board.",
+      autoAdvance: true,
+    },
+    {
+      target: '.version-item[data-version-id="v2"]',
+      onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v2", { silent: true }); },
+      scrollIntoView: true,
+      audioBases: ["assets/tutorial/line 12", "line 12"],
+      text:
+        "Feb 3 — the red dot. Bob expanded into a third zone but forgot its NAT gateway.\n" +
+        "Webhooks timed out, and zone 1c depended on 1a for its internet access.",
+      speech:
+        "Then February third — the red dot. Bob expanded the network into a third availability zone, " +
+        "but he forgot to give the new zone its own NAT gateway. Its traffic had to borrow the NAT in zone one A, " +
+        "so webhook calls started timing out, every request paid a cross-zone toll, and if zone one A ever went down, " +
+        "the new zone would lose the internet completely. This one was on Bob.",
+      autoAdvance: true,
+    },
+    {
+      target: '.version-item[data-version-id="v3"]',
+      onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v3", { silent: true }); },
+      scrollIntoView: true,
+      audioBases: ["assets/tutorial/line 13", "line 13"],
+      text:
+        "Feb 4 — Alice shipped the fix the very next morning:\n" +
+        "a proper NAT gateway inside 1c, with the route table pointed at it.",
+      speech:
+        "The very next morning, Alice shipped the fix. She provisioned a proper NAT gateway inside the new zone, " +
+        "gave it its own elastic IP, and repointed the route table to it. Webhooks recovered on the spot, " +
+        "the extra transfer charges vanished, and the zone could finally stand on its own.",
+      autoAdvance: true,
+    },
+    {
+      target: '.version-item[data-version-id="v4"]',
+      onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v4", { silent: true }); },
+      scrollIntoView: true,
+      audioBases: ["assets/tutorial/line 14", "line 14"],
+      text:
+        "Mar 12 — Carol added a search service and a Redis cache.\n" +
+        "Reads got faster, and Aurora got a break.",
+      speech:
+        "On March twelfth, Carol added some muscle: a dedicated search service backed by OpenSearch, " +
+        "plus a Redis cache sitting in front of the database. Reads got noticeably faster, " +
+        "and Aurora finally caught its breath.",
+      autoAdvance: true,
+    },
+    {
+      target: '.version-item[data-version-id="v5"]',
+      onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v5", { silent: true }); },
+      scrollIntoView: true,
+      audioBases: ["assets/tutorial/line 15", "line 15"],
+      text:
+        "Apr 5 — Bob retired the webhook Lambda.\n" +
+        "CloudFront now fronts the site, and partners get their own API gateway.",
+      speech:
+        "In early April, Bob made up for the earlier slip. He retired the aging webhook Lambda, " +
+        "put a CloudFront edge in front of the whole site, and gave partners a dedicated API gateway " +
+        "for their integrations.",
+      autoAdvance: true,
+    },
+    {
+      target: '.version-item[data-version-id="v6"]',
+      onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v6", { silent: true }); },
+      scrollIntoView: true,
+      audioBases: ["assets/tutorial/line 16", "line 16"],
+      text:
+        "May 1 — audit storage and a session store, ready for SOC 2.\n" +
+        "Heads-up: the WAF is out for maintenance right now.\n" +
+        "That's the full history — one bad day in February, fixed within 24 hours.",
+      speech:
+        "Finally, on the first of May, Carol prepared the network for its audit: a storage bucket for " +
+        "compliance evidence, and a dedicated session store so the app servers no longer need sticky sessions. " +
+        "One heads-up — the web application firewall is temporarily out while its rules are rewritten. " +
+        "And that's the whole story: six versions, one bad day in February, and a fix that landed " +
+        "within twenty-four hours.",
     },
   ];
 
@@ -133,6 +242,7 @@
   let root, masks, ring, stage, bubble, textEl, ctaEl, dotsEl, nextBtn, replayBtn, presenter, presenterImg;
   let built = false;
   let active = false;
+  let suspended = false;          // hidden while the network tour runs
   let index = 0;
   let showSeq = 0;
   let currentTarget = null;
@@ -246,9 +356,15 @@
     place(ring, top, left, w, h);
   }
 
+  function targetAlive(t) {
+    if (!t) return false;
+    if (t.elements) return t.elements.every((e) => document.body.contains(e));
+    return document.body.contains(t);
+  }
+
   function reposition() {
-    if (!active) return;
-    positionSpotlight(currentTarget && document.body.contains(currentTarget) ? currentTarget : null);
+    if (!active || suspended) return;
+    positionSpotlight(targetAlive(currentTarget) ? currentTarget : null);
   }
 
   // --- Narration --------------------------------------------------------
@@ -270,13 +386,17 @@
     reflectSpeaking(false);
   }
 
-  function speakFallback(step) {
+  function speakFallback(step, onDone) {
     const text = (step && (step.speech || step.text)) || "";
     if (text && window.AwsSpeak && window.AwsSpeak.enabled && window.AwsSpeak.enabled()) {
       reflectSpeaking(true);
-      window.AwsSpeak.speak(text, () => reflectSpeaking(false));
+      window.AwsSpeak.speak(text, () => {
+        reflectSpeaking(false);
+        if (onDone) onDone("spoken");
+      });
     } else {
       reflectSpeaking(false);
+      if (onDone) onDone("unavailable");
     }
   }
 
@@ -289,22 +409,27 @@
     return out;
   }
 
-  function playNarration(step) {
+  // onDone (optional) fires once when the narration finishes — with "played"
+  // (clip ended), "spoken" (TTS ended) or "unavailable" (no narration at all).
+  function playNarration(step, onDone) {
     stopNarration();
     if (!step) return;
     const cands = audioCandidates(step);
-    if (!cands.length) { speakFallback(step); return; }
+    if (!cands.length) { speakFallback(step, onDone); return; }
 
     let i = 0;
     const attempt = () => {
-      if (i >= cands.length) { speakFallback(step); return; }
+      if (i >= cands.length) { speakFallback(step, onDone); return; }
       const src = encodeURI(cands[i++]);   // encode spaces, e.g. "line 1.mp3"
       const a = new Audio(src);
       let settled = false;
       const fail = () => { if (!settled) { settled = true; attempt(); } };
       a.addEventListener("error", fail);
       a.addEventListener("playing", () => { settled = true; reflectSpeaking(true); });
-      a.addEventListener("ended", () => reflectSpeaking(false));
+      a.addEventListener("ended", () => {
+        reflectSpeaking(false);
+        if (onDone) onDone("played");
+      });
       currentAudio = a;
       const p = a.play();
       if (p && p.catch) p.catch(fail);
@@ -328,6 +453,11 @@
     const seq = ++showSeq;
     detachTargetClick();
 
+    // Per-step side effect (switch view mode, select a timeline version, …).
+    if (typeof step.onEnter === "function") {
+      try { step.onEnter(); } catch (_) {}
+    }
+
     if (step.loadNetwork) maybeLoadNetwork(step.loadNetwork);
 
     textEl.textContent = step.text || "";
@@ -341,22 +471,56 @@
     void bubble.offsetWidth;
     bubble.classList.add("pop");
 
-    playNarration(step);
+    playNarration(step, (how) => {
+      // Auto-advancing steps move on once their narration finishes. If there
+      // was no narration at all, allow a reading pause instead of flashing by.
+      if (!step.autoAdvance || !active || suspended || seq !== showSeq) return;
+      const delay = how === "unavailable" ? 6500 : 800;
+      setTimeout(() => {
+        if (active && !suspended && seq === showSeq) next();
+      }, delay);
+    });
 
     // Dim everything while we (possibly) wait for an async-rendered target.
-    const immediate = step.target ? document.querySelector(step.target) : null;
-    if (!immediate) { currentTarget = null; positionSpotlight(null); }
+    if (!queryStepTarget(step)) { currentTarget = null; positionSpotlight(null); }
 
     resolveTarget(step, seq, (target) => {
       if (seq !== showSeq) return;             // user moved on while we waited
       currentTarget = target;
       if (target && step.scrollIntoView) {
-        try { target.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
+        const scrollEl = target.elements ? target.elements[0] : target;
+        try { scrollEl.scrollIntoView({ block: step.scrollBlock || "center", inline: "nearest" }); } catch (_) {}
       }
       positionSpotlight(target);
-      if (target && step.advanceOn === "target") attachTargetClick(target);
+      if (target && step.advanceOn === "target" && !target.elements) attachTargetClick(target);
       settleReposition(seq);                   // re-measure after transitions settle
     });
+  }
+
+  // A step can spotlight one element (`target`) or the union of several
+  // (`targets`, e.g. the security-state panel + the versions timeline). The
+  // union is a lightweight facade exposing the combined bounding box.
+  function makeUnionTarget(els) {
+    return {
+      elements: els,
+      getBoundingClientRect() {
+        let top = Infinity, left = Infinity, right = -Infinity, bottom = -Infinity;
+        els.forEach((e) => {
+          const r = e.getBoundingClientRect();
+          top = Math.min(top, r.top); left = Math.min(left, r.left);
+          right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom);
+        });
+        return { top, left, right, bottom, width: right - left, height: bottom - top };
+      },
+    };
+  }
+
+  function queryStepTarget(step) {
+    if (step.targets) {
+      const els = step.targets.map((s) => document.querySelector(s));
+      return els.every(Boolean) ? makeUnionTarget(els) : null;
+    }
+    return step.target ? document.querySelector(step.target) : null;
   }
 
   // Resolve a step's target, polling briefly for ones that render asynchronously
@@ -364,9 +528,12 @@
   // boolean (poll for the target itself) or a selector string (poll for that to
   // exist — e.g. wait for a task card before framing the whole board area).
   function resolveTarget(step, seq, cb) {
-    if (!step.target) { cb(null); return; }
-    const waitSel = typeof step.waitFor === "string" ? step.waitFor : step.target;
-    const get = () => (step.waitFor && !document.querySelector(waitSel)) ? null : document.querySelector(step.target);
+    if (!step.target && !step.targets) { cb(null); return; }
+    const waitSel = typeof step.waitFor === "string" ? step.waitFor : null;
+    const get = () => {
+      if (step.waitFor && waitSel && !document.querySelector(waitSel)) return null;
+      return queryStepTarget(step);
+    };
     const now = get();
     if (now || !step.waitFor) { cb(now); return; }
     const t0 = Date.now();
@@ -374,7 +541,7 @@
       if (seq !== showSeq || !active) return;
       const el = get();
       if (el) { cb(el); return; }
-      if (Date.now() - t0 > 6000) { cb(document.querySelector(step.target)); return; }
+      if (Date.now() - t0 > 6000) { cb(queryStepTarget(step)); return; }
       setTimeout(tick, 120);
     };
     setTimeout(tick, 120);
@@ -408,8 +575,53 @@
     targetHandlerEl = target;
     // No { once } — the target's own handlers run first (e.g. opening the
     // ZeroBias modal); we then advance the tutorial.
-    targetHandler = () => next();
+    targetHandler = () => {
+      const step = STEPS[index];
+      if (step && step.resumeAfterTour) suspendForTour();
+      else next();
+    };
     target.addEventListener("click", targetHandler);
+  }
+
+  // Step 9 hands the stage to the network tour: hide the tutorial, wait for
+  // the tour bar to open and then close again, then resume with the next step
+  // (the security-system timeline walk).
+  function suspendForTour() {
+    if (suspended || !active) return;
+    suspended = true;
+    stopNarration();
+    detachTargetClick();
+    currentTarget = null;
+    root.classList.remove("show");
+    root.hidden = true;
+
+    const started = Date.now();
+    const barOpen = () => {
+      const bar = document.getElementById("tour-bar");
+      return !!(bar && bar.classList.contains("open"));
+    };
+    const waitForOpen = () => {
+      if (!active || !suspended) return;
+      if (barOpen()) { waitForClose(); return; }
+      // Tour never opened (e.g. no data) — don't stay hidden forever.
+      if (Date.now() - started > 5000) { resumeTutorial(); return; }
+      setTimeout(waitForOpen, 250);
+    };
+    const waitForClose = () => {
+      if (!active || !suspended) return;
+      if (!barOpen()) { resumeTutorial(); return; }
+      setTimeout(waitForClose, 350);
+    };
+    waitForOpen();
+  }
+
+  function resumeTutorial() {
+    if (!active || !suspended) return;
+    suspended = false;
+    root.hidden = false;
+    void root.offsetWidth;
+    root.classList.add("show");
+    show(index + 1);
   }
 
   function detachTargetClick() {
@@ -448,6 +660,7 @@
     build();
     if (active) return;
     active = true;
+    suspended = false;
     index = 0;
     loadedNets.clear();
     root.hidden = false;
@@ -462,6 +675,7 @@
   function finish() {
     if (!active) return;
     active = false;
+    suspended = false;
     stopNarration();
     detachTargetClick();
     currentTarget = null;
@@ -475,6 +689,9 @@
 
   function onKey(e) {
     if (!active) return;
+    // While the network tour is running the tutorial is hidden — let the
+    // tour own the keyboard (its Escape closes the tour, which resumes us).
+    if (suspended) return;
     if (e.key === "Escape") { e.preventDefault(); finish(); }
     else if (e.key === "ArrowRight") { e.preventDefault(); next(); }
   }

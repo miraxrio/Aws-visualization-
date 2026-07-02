@@ -90,6 +90,9 @@
     load: (data) => loadData(data),
     // Deep-link a ZeroBias task to the finding (holon) it tracks.
     focusHolon: (id) => focusHolon(id),
+    // Programmatic version selection (the tutorial's timeline walk uses this
+    // with { silent: true } so its own narration isn't talked over).
+    selectVersion: (id, opts) => selectVersion(id, opts),
   };
 
   function loadData(data) {

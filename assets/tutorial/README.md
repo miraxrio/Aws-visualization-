@@ -30,6 +30,22 @@ Five clips ship today:
 | `line 3.mp3` | Sample data / tasks & rewards | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 | `line 4.mp3` | Opportunities / posted bids | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 | `line 5.mp3` | Switch to the 2D Network View | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 6.mp3` | The 2D view of the sample network | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 7.mp3` | Switch to the Holographic view | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 8.mp3` | Moving around in 3D | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 9.mp3` | Hand-off to the network tour | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 10.mp3` | Security-system timeline intro | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 11.mp3` | v1 — Alice's initial deployment | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 12.mp3` | v2 — Bob's broken third-AZ expansion | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 13.mp3` | v3 — Alice's next-morning NAT fix | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 14.mp3` | v4 — Carol's search + cache | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 15.mp3` | v5 — Bob's API gateway + CDN | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 16.mp3` | v6 — audit prep & wrap-up | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+
+Steps 10–16 run **after the network tour**: the tutorial hides itself while the
+tour plays and resumes with the timeline walk once the tour bar is closed.
+Each version step selects that version silently (no double narration) and
+auto‑advances when its clip ends.
 
 Lines 2–5 were generated with `fal-ai/qwen-3-tts/text-to-speech/1.7b`. To
 re‑record any of them, just drop a replacement `line N.mp3` in here. Step 1 says:
