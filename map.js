@@ -148,8 +148,14 @@
   let map = null;
   let ready = false;
   let theme = "dark";
-  let satellite = false;
+  let satellite = true; // satellite globe is the default view
   let projection = "globe";
+  const reducedMotion = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : { matches: false };
+  let spinPaused = false;  // pointer inside the rendering area pauses the globe
+  let spinRaf = null;
+  let linkRevealTimer = null;
   // Other network files in the repo to show on the map alongside whatever's
   // loaded, so the map is a fleet view rather than a single-network view.
   const DEFAULT_NETWORK_FILES = ["complex-network.json", "azure-network.json"];
@@ -445,10 +451,13 @@
       paint: {
         "line-color": "#5ad0ff",
         "line-width": 1.4,
-        "line-opacity": 0.55,
+        "line-opacity": 0,   // faded in after the markers finish spawning
         "line-dasharray": [2, 2],
       },
     });
+    try {
+      map.setPaintProperty("aws-links-line", "line-opacity-transition", { duration: 900 });
+    } catch (_) {}
   }
 
   // --- HTML markers: 3D cubes (networks) and atoms (boundaries) -----------
@@ -501,7 +510,16 @@
   }
 
   function applySatellite() {
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
+    // The style can still be settling when "load" fires (sprites/glyphs
+    // pending) — retry when the map goes idle instead of silently
+    // skipping, or the satellite-by-default start would come up as the
+    // dark basemap. ("styledata" is unreliable here: it can fire while
+    // the style is still mid-update and never again after.)
+    if (!map.isStyleLoaded()) {
+      map.once("idle", applySatellite);
+      return;
+    }
     const has = map.getSource("satellite");
     if (satellite) {
       if (!has) {
@@ -567,6 +585,7 @@
       warp.querySelector(".map-warp-label").textContent = "Entering holographic view — " + (item.label || "");
       warp.classList.add("is-on");
     }
+    if (window.FX && window.FX.sound) window.FX.sound("whoosh");
     // Load the right payload so the holographic view shows the right scene:
     // a network → 3D city; a guild boundary → holographic boundary view.
     let raw = null;
@@ -575,12 +594,29 @@
       const g = guilds.find((x) => x.id === item.guildId);
       raw = g && g.raw;
     }
+    // Ask the 3D city to replay its build-in choreography on arrival, so the
+    // dive lands on a city assembling itself rather than a static scene.
+    if (window.AwsViz3D && window.AwsViz3D.cinematicNext) window.AwsViz3D.cinematicNext();
     if (raw && window.AwsApp && window.AwsApp.load) window.AwsApp.load(raw);
 
-    map.flyTo({ center: item.coord, zoom: Math.max(map.getZoom() + 1.4, ZOOM_DRILL + 1), pitch: 55, duration: 950 });
+    // Cinematic dive: plunge deeper, tilt the horizon up and roll the bearing
+    // slightly — reads as "falling into the scene" instead of a plain zoom.
+    const dive = reducedMotion.matches
+      ? { center: item.coord, zoom: ZOOM_DRILL + 1, duration: 300 }
+      : {
+          center: item.coord,
+          zoom: Math.max(map.getZoom() + 2.2, ZOOM_DRILL + 1.8),
+          pitch: 62,
+          bearing: map.getBearing() + 28,
+          duration: 1350,
+          essential: true,
+        };
+    map.flyTo(dive);
+    const handoff = reducedMotion.matches ? 320 : 1250;
+    setTimeout(() => { if (warp) warp.classList.add("is-flash"); }, Math.max(0, handoff - 180));
     setTimeout(() => {
       if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("3d");
-    }, 900);
+    }, handoff);
   }
 
   // Re-arm after returning to the map: clear the warp, level the camera and
@@ -589,9 +625,9 @@
   function armDrill() {
     if (!ready || !map) return;
     drilling = false;
-    if (warp) warp.classList.remove("is-on");
+    if (warp) warp.classList.remove("is-on", "is-flash");
     try {
-      map.easeTo({ pitch: 0, duration: 0 });
+      map.easeTo({ pitch: 0, bearing: 0, duration: 0 });
     } catch (_) {}
     fit(); // deliberate re-frame to the fleet overview on return
     hasFitted = true; // ...but don't let the next render re-fit on top of it
@@ -613,11 +649,30 @@
     els.emptyDefault = els.empty ? els.empty.innerHTML : "";
     const canvas = container.querySelector("#map-canvas") || container;
 
-    // Transition overlay used during the zoom-to-drill hand-off.
+    // Transition overlay used during the zoom-to-drill hand-off: expanding
+    // warp rings + streaks around the label, then a white flash at hand-off.
     warp = document.createElement("div");
     warp.className = "map-warp";
-    warp.innerHTML = '<div class="map-warp-label"></div>';
+    warp.innerHTML =
+      '<div class="map-warp-rings"><i></i><i></i><i></i></div>' +
+      '<div class="map-warp-streaks"></div>' +
+      '<div class="map-warp-label"></div>';
     container.appendChild(warp);
+
+    // Idle globe rotation — spins while the cursor is OUTSIDE the rendering
+    // area, and yields to any user gesture or camera animation.
+    container.addEventListener("mouseenter", () => { spinPaused = true; });
+    container.addEventListener("mouseleave", () => { spinPaused = false; });
+    const spinStep = () => {
+      spinRaf = requestAnimationFrame(spinStep);
+      if (!ready || !map || spinPaused || drilling || reducedMotion.matches) return;
+      if (container.hidden) return;
+      if (map.isMoving && map.isMoving()) return;   // don't fight flyTo / drags
+      if (map.getZoom() > 4.6) return;              // only spin at globe scale
+      const c = map.getCenter();
+      map.jumpTo({ center: [c.lng + 0.05, c.lat] });
+    };
+    spinStep();
 
     map = new maplibregl.Map({
       container: canvas,
@@ -641,6 +696,7 @@
     map.on("zoom", onZoom);
 
     if (els.styleBtn) els.styleBtn.addEventListener("click", toggleSatellite);
+    syncStyleBtn(); // reflect the satellite-by-default state on the toggle
     if (els.projBtn) els.projBtn.addEventListener("click", toggleProjection);
     if (els.fitBtn) els.fitBtn.addEventListener("click", () => fit(visiblePoints()));
     if (els.filAll) els.filAll.addEventListener("click", () => setProviderFilter("all"));
@@ -678,12 +734,23 @@
     networkRaw = {};
 
     // Networks → rotating cubes (one per VPC), plus their flow links.
+    // Every element spawns onto the globe with a staggered pop-in; the flow
+    // links fade in last, once the markers have landed.
+    let spawnIdx = 0;
+    const spawn = (el) => {
+      if (reducedMotion.matches) return;
+      el.classList.add("map-spawn");
+      el.style.setProperty("--spawn-delay", (0.2 + Math.min(spawnIdx * 0.13, 1.3)).toFixed(2) + "s");
+      spawnIdx++;
+    };
     const { points, lines } = buildFeatures(extras);
     extras.forEach((n) => (networkRaw[n.id] = n.raw));
     map.getSource("aws-links").setData(lines);
     points.features.forEach((f) => {
       const p = f.properties;
-      const m = new maplibregl.Marker({ element: cubeMarkerEl(p), anchor: "bottom" })
+      const el = cubeMarkerEl(p);
+      spawn(el);
+      const m = new maplibregl.Marker({ element: el, anchor: "bottom" })
         .setLngLat(f.geometry.coordinates)
         .addTo(map);
       m.getElement().addEventListener("click", () => approach(f.geometry.coordinates));
@@ -694,7 +761,9 @@
 
     // Guild boundaries → animated atoms across the USA.
     guilds.forEach((g) => {
-      const m = new maplibregl.Marker({ element: atomMarkerEl(g), anchor: "bottom" })
+      const el = atomMarkerEl(g);
+      spawn(el);
+      const m = new maplibregl.Marker({ element: el, anchor: "bottom" })
         .setLngLat(g.coord)
         .addTo(map);
       m.getElement().addEventListener("click", () => approach(g.coord));
@@ -702,6 +771,13 @@
       markerMeta.push({ marker: m, provider: g.provider });
       placedItems.push({ coord: g.coord, kind: "boundary", provider: g.provider, guildId: g.id, label: g.name });
     });
+
+    // Links appear after the last marker has popped in.
+    clearTimeout(linkRevealTimer);
+    map.setPaintProperty("aws-links-line", "line-opacity", 0);
+    linkRevealTimer = setTimeout(() => {
+      try { map.setPaintProperty("aws-links-line", "line-opacity", 0.55); } catch (_) {}
+    }, reducedMotion.matches ? 0 : 400 + Math.min(spawnIdx * 130, 1300));
 
     // Respect the active provider filter for the freshly-built markers.
     applyProviderVisibility();
@@ -756,13 +832,16 @@
     map.flyTo({ center: coord, zoom: ZOOM_DRILL - 0.8, duration: 1100, essential: true });
   }
 
+  function syncStyleBtn() {
+    if (!els.styleBtn) return;
+    els.styleBtn.textContent = satellite ? "🌑 Dark map" : "🛰️ Satellite";
+    els.styleBtn.classList.toggle("is-active", satellite);
+  }
+
   function toggleSatellite() {
     satellite = !satellite;
     applySatellite();
-    if (els.styleBtn) {
-      els.styleBtn.textContent = satellite ? "🌑 Dark map" : "🛰️ Satellite";
-      els.styleBtn.classList.toggle("is-active", satellite);
-    }
+    syncStyleBtn();
   }
 
   function toggleProjection() {

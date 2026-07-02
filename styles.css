@@ -4254,3 +4254,78 @@ body.theme-day .fx-spotlight {
   .holo-lock-title { animation: none; }
   .holo-lock-card { animation: none; }
 }
+
+/* ---- Map view: spawn choreography, idle globe, drill transition ---- */
+/* Markers pop onto the globe one after another. Uses the standalone
+   `scale`/`opacity` properties (NOT transform) because MapLibre positions
+   each marker via an inline transform we must not override. */
+@keyframes map-spawn-in {
+  0%   { scale: 0; opacity: 0; }
+  70%  { scale: 1.18; opacity: 1; }
+  100% { scale: 1; opacity: 1; }
+}
+.map-marker.map-spawn {
+  transform-origin: bottom center;
+  animation: map-spawn-in 0.55s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+  animation-delay: var(--spawn-delay, 0s);
+}
+
+/* Drill warp: expanding rings + rotating streaks while diving, and a
+   white flash right at the hand-off into the holographic view. */
+.map-warp-rings {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+}
+.map-warp.is-on .map-warp-rings { display: block; }
+.map-warp-rings i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30vmin;
+  height: 30vmin;
+  margin: -15vmin 0 0 -15vmin;
+  border: 2px solid rgba(90, 208, 255, 0.55);
+  border-radius: 50%;
+  animation: map-warp-ring 1.4s ease-out infinite;
+}
+.map-warp-rings i:nth-child(2) { animation-delay: 0.45s; }
+.map-warp-rings i:nth-child(3) { animation-delay: 0.9s; }
+@keyframes map-warp-ring {
+  from { scale: 0.2; opacity: 0.9; }
+  to   { scale: 3.2; opacity: 0; }
+}
+.map-warp-streaks {
+  position: absolute;
+  inset: -20%;
+  display: none;
+  pointer-events: none;
+  background: repeating-conic-gradient(
+    from 0deg,
+    transparent 0deg 9deg,
+    rgba(90, 208, 255, 0.07) 9deg 10.5deg
+  );
+  -webkit-mask-image: radial-gradient(circle, transparent 22%, #000 60%);
+  mask-image: radial-gradient(circle, transparent 22%, #000 60%);
+  animation: map-warp-spin 2.4s linear infinite;
+}
+.map-warp.is-on .map-warp-streaks { display: block; }
+@keyframes map-warp-spin {
+  to { rotate: 360deg; }
+}
+.map-warp::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #eaf6ff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease-in;
+}
+.map-warp.is-flash::after { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .map-marker.map-spawn { animation: none; }
+  .map-warp-rings, .map-warp-streaks { display: none !important; }
+}

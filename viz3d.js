@@ -70,6 +70,9 @@ let flowReveal = null;    // { delay, dur, items: [{ mat, target }] }
 let collectFlowReveal = null; // addFlow() pushes fade-in mats here during build
 // Hover glow — the element under the cursor pulses its emissive.
 let hoverFx = null;       // { mesh, mat, baseI }
+// One-shot flag: the next render() replays the full build-in choreography
+// even if a city already exists (set by the map view's drill hand-off).
+let forceCinematic = false;
 // Idle cinematography — slow auto-orbit after the user goes quiet.
 let lastUserActionAt = performance.now();
 
@@ -336,7 +339,9 @@ function render(data, opts) {
   // Fresh (non-diff) city → choreograph a staggered build-in: platforms
   // rise out of the floor, buildings sprout outward from the centre, the
   // internet portal descends, then the traffic flows fade in last.
-  const choreograph = !hadPreviousCity && !diff && !_reducedMotion3D.matches;
+  const cinematicRequested = forceCinematic;
+  forceCinematic = false;
+  const choreograph = (!hadPreviousCity || cinematicRequested) && !diff && !_reducedMotion3D.matches;
   buildAnims = [];
   buildStartAt = null;
   flowReveal = null;
@@ -377,7 +382,8 @@ function render(data, opts) {
   // Frame the city on the *first* render only. Version transitions keep
   // whatever camera angle / zoom the user had set — resetting on every
   // click is jarring and discards the user's framing of the city.
-  if (!hadPreviousCity) {
+  // A cinematic request (map drill) re-frames with the fly-in as well.
+  if (!hadPreviousCity || cinematicRequested) {
     const dist = Math.max(CITY.w, CITY.d) + 80;
     const toPos = new THREE.Vector3(dist * 0.35, dist * 0.55, dist * 0.85);
     if (choreograph) {
@@ -4287,6 +4293,8 @@ window.AwsViz3D = {
     id: d.id, name: d.name, icon: d.icon, description: d.description,
   })),
   isReady: () => initialized,
+  // Map drill hand-off: replay the build-in choreography on the next render.
+  cinematicNext: () => { forceCinematic = true; },
 };
 
 // ============================================================
