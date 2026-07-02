@@ -129,9 +129,14 @@
     // Steps 11–16 scrub through the network's recorded versions one by one
     // (selectVersion is silent so the app's own generated narration doesn't
     // talk over these clips). Each step auto-advances when its clip ends.
+    // The walk plays over the holographic view with the network left fully
+    // visible (dim: false — ring only), and the presenter docked on the left
+    // so she doesn't cover the timeline she's narrating.
     {
       targets: ["#boundary-panel", "#timeline-panel"],
-      onEnter: () => { if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("2d"); },
+      onEnter: () => { if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("3d"); },
+      dim: false,
+      stageSide: "left",
       scrollIntoView: true,
       scrollBlock: "start",
       audioBases: ["assets/tutorial/line 10", "line 10"],
@@ -146,6 +151,8 @@
     {
       target: '.version-item[data-version-id="v1"]',
       onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v1", { silent: true }); },
+      dim: false,
+      stageSide: "left",
       scrollIntoView: true,
       audioBases: ["assets/tutorial/line 11", "line 11"],
       text:
@@ -160,6 +167,8 @@
     {
       target: '.version-item[data-version-id="v2"]',
       onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v2", { silent: true }); },
+      dim: false,
+      stageSide: "left",
       scrollIntoView: true,
       audioBases: ["assets/tutorial/line 12", "line 12"],
       text:
@@ -175,6 +184,8 @@
     {
       target: '.version-item[data-version-id="v3"]',
       onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v3", { silent: true }); },
+      dim: false,
+      stageSide: "left",
       scrollIntoView: true,
       audioBases: ["assets/tutorial/line 13", "line 13"],
       text:
@@ -189,6 +200,8 @@
     {
       target: '.version-item[data-version-id="v4"]',
       onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v4", { silent: true }); },
+      dim: false,
+      stageSide: "left",
       scrollIntoView: true,
       audioBases: ["assets/tutorial/line 14", "line 14"],
       text:
@@ -203,6 +216,8 @@
     {
       target: '.version-item[data-version-id="v5"]',
       onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v5", { silent: true }); },
+      dim: false,
+      stageSide: "left",
       scrollIntoView: true,
       audioBases: ["assets/tutorial/line 15", "line 15"],
       text:
@@ -217,6 +232,8 @@
     {
       target: '.version-item[data-version-id="v6"]',
       onEnter: () => { if (window.AwsApp && window.AwsApp.selectVersion) window.AwsApp.selectVersion("v6", { silent: true }); },
+      dim: false,
+      stageSide: "left",
       scrollIntoView: true,
       audioBases: ["assets/tutorial/line 16", "line 16"],
       text:
@@ -466,6 +483,12 @@
     nextBtn.textContent = i >= STEPS.length - 1 ? "Got it" : "Next ›";
     renderDots();
 
+    // Step presentation flags: `dim: false` keeps the page fully visible
+    // (glowing ring only); `stageSide: "left"` docks the presenter + bubble
+    // on the left with the presenter mirrored to face the content.
+    root.classList.toggle("tut-no-dim", step.dim === false);
+    root.classList.toggle("tut-stage-left", step.stageSide === "left");
+
     // Re-trigger the pop animation each step.
     bubble.classList.remove("pop");
     void bubble.offsetWidth;
@@ -679,7 +702,7 @@
     stopNarration();
     detachTargetClick();
     currentTarget = null;
-    root.classList.remove("show");
+    root.classList.remove("show", "tut-no-dim", "tut-stage-left");
     root.hidden = true;
     window.removeEventListener("resize", reposition, { passive: true });
     window.removeEventListener("scroll", reposition, { passive: true, capture: true });

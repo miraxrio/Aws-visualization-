@@ -3834,11 +3834,38 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
 .tut-next:hover { filter: brightness(1.18); }
 .tut-next:active { transform: scale(0.96); }
 
+/* No-dim steps: the page stays fully visible and interactive — only the
+   glowing ring frames the target (used by the timeline walk so the
+   holographic network stays watchable while versions change). */
+.tut-root.show.tut-no-dim .tut-mask {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Left-docked stage: presenter on the left edge, mirrored so she faces the
+   page, bubble to her right with the tail flipped toward her. */
+.tut-root.tut-stage-left .tut-stage {
+  right: auto;
+  left: 22px;
+  flex-direction: row-reverse;
+}
+.tut-root.tut-stage-left .tut-presenter-img { transform: scaleX(-1); }
+.tut-root.tut-stage-left .tut-bubble { margin-right: 0; margin-left: -104px; }
+.tut-root.tut-stage-left .tut-tail {
+  right: auto;
+  left: -18px;
+  border-left: none;
+  border-right: 26px solid #f6b86a;
+  transform: rotate(-10deg);
+  transform-origin: right center;
+  filter: drop-shadow(-2px 1px 0 rgba(120, 70, 0, 0.12));
+}
+
 /* Narrow screens: drop the presenter, center the bubble. */
 @media (max-width: 720px) {
-  .tut-stage { right: 12px; left: 12px; bottom: 12px; justify-content: center; max-width: none; }
+  .tut-stage, .tut-root.tut-stage-left .tut-stage { right: 12px; left: 12px; bottom: 12px; justify-content: center; max-width: none; }
   .tut-presenter { display: none; }
-  .tut-bubble { width: 100%; margin: 0; }
+  .tut-bubble, .tut-root.tut-stage-left .tut-bubble { width: 100%; margin: 0; }
   .tut-tail { display: none; }
 }
 
