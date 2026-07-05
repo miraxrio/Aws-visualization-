@@ -5165,6 +5165,34 @@ function renderHoloLevel0(boundaryData) {
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
       new THREE.Vector3(x + radius * 0.9, radius + 0.3, z));
   });
+
+  // Also surface the boundary's holons as orbiters around the nucleus, tagged
+  // by assembly level. Without this, Level 0 shows only the level-1 holonic
+  // spheres, so the assembly-level filter (Atoms / Subsystems / Systems / …)
+  // has nothing to isolate and appears to do nothing. The orbiters reuse the
+  // exact Level-1 rendering path, and the assembly filter hides the ones whose
+  // level isn't selected.
+  const looseHolons = (boundaryData.loose_holons || []).filter((h) => h && h.id);
+  if (looseHolons.length) {
+    holo.orbitGroup = new THREE.Group();
+    holo.group.add(holo.orbitGroup);
+    const dirs = fibSphere(looseHolons.length, 1);
+    const bodyR = (h) => (HOLO_SEVERITY_RADIUS[h.severity] || 0.6) * 1.15;
+    const SHELL_GAP = 0.55;
+    let shellR = 2.2;
+    const radii = looseHolons.map((h, i) => {
+      shellR += bodyR(h) + (i > 0 ? bodyR(looseHolons[i - 1]) + SHELL_GAP : 0);
+      return shellR;
+    });
+    const rCap = ringR - 2.0;                 // stay inside the holonic ring
+    const overflow = radii.length && radii[radii.length - 1] > rCap
+      ? rCap / radii[radii.length - 1] : 1;
+    looseHolons.forEach((holon, i) =>
+      addHoloOrbiter(holon, dirs[i].multiplyScalar(Math.max(2.2, radii[i] * overflow)), i));
+    buildOrbitEdges(looseHolons);
+    updateOrbitEdges();
+  }
+
   holoApplyAssemblyFilter(holo.asmFilter);
   setQuantumBackground(false);
   holoZoomTo(HOLO_LEVEL_DISTANCE[0]);

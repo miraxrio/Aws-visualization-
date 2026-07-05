@@ -331,7 +331,9 @@
         "Want to get closer? Explore mode drops you right inside the network, in first person. " +
         "Just use the arrow keys on your keyboard to walk around and wander between your services, " +
         "like rooms in a building.",
-      autoAdvance: true,
+      cta: "Click “Explore”, walk around — press Esc to come back",
+      advanceOn: "target",
+      resumeAfterExplore: true,
     },
     {
       target: "#load-boundary",
@@ -784,6 +786,7 @@
       const step = STEPS[index];
       if (step && step.resumeAfterTour) suspendUntil(tourBarOpen);
       else if (step && step.resumeAfterAttack) suspendUntil(attackRunning);
+      else if (step && step.resumeAfterExplore) suspendUntil(exploreRunning);
       else next();
     };
     target.addEventListener("click", targetHandler);
@@ -797,6 +800,9 @@
     const hud = document.getElementById("attack-hud");
     const sum = document.getElementById("attack-summary");
     return !!((hud && !hud.hidden) || (sum && !sum.hidden));
+  }
+  function exploreRunning() {
+    return !!(window.AwsViz3D && window.AwsViz3D.isExploring && window.AwsViz3D.isExploring());
   }
 
   // Hand the stage to another feature (the network tour, or the attack sim):
@@ -870,6 +876,9 @@
 
   function onNextButton() {
     const step = STEPS[index];
+    // Explore is optional immersion — Next skips it rather than dropping the
+    // user into first-person view.
+    if (step && step.resumeAfterExplore) { next(); return; }
     // For a "click the target" step, the footer button does the same thing as
     // clicking the target so the user can proceed either way.
     if (step && step.advanceOn === "target" && currentTarget && document.body.contains(currentTarget)) {

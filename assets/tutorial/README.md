@@ -60,10 +60,17 @@ tour plays and resumes with the timeline walk once the tour bar is closed.
 Each version step selects that version silently (no double narration) and
 auto‑advances when its clip ends. Steps 17–21 continue into the Builder
 (edit mode) and the attack simulator; step 21 hides the tutorial while the
-DDoS runs and resumes once its summary is dismissed. Steps 22–28 cover
-Explore mode and a walk of the holons view's assembly layers — biggest
+DDoS runs and resumes once its summary is dismissed. Step 22 hands off to
+Explore mode — clicking Explore hides the tutorial and drops you into the
+first-person view; pressing Esc leaves Explore and the tutorial resumes.
+Steps 23–28 cover the holons view: a walk of the assembly layers — biggest
 (System of Systems) to smallest (Atom) — each filtering the holographic view
 to a single level and auto‑advancing when its clip ends.
+
+Note: the holographic Level-0 view now renders the boundary's loose holons
+as orbiters (tagged by assembly level) so the assembly-level filter can
+actually isolate each layer; previously only the level-1 holonic spheres were
+drawn, so filtering to any other level appeared to do nothing.
 
 ## Attack-simulator narration (`assets/tutorial/attack/`)
 
