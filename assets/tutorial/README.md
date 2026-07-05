@@ -42,11 +42,28 @@ Five clips ship today:
 | `line 15.mp3` | v5 — Bob's API gateway + CDN | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 | `line 16.mp3` | v6 — audit prep & wrap-up | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 
+| `line 17.mp3` | Builder — enter edit mode | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 18.mp3` | Builder — drag an element onto a subnet | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 19.mp3` | Changes also show in the 3D view | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 20.mp3` | Simulate attack | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 21.mp3` | Attack picker → DDoS flood | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 22.mp3` | Explore mode (first-person) | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 23.mp3` | Load boundary → holons view | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 24.mp3` | Holon layer — System of Systems | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 25.mp3` | Holon layer — System | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 26.mp3` | Holon layer — Subsystem | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 27.mp3` | Holon layer — Component | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 28.mp3` | Holon layer — Atom | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+
 Steps 10–16 run **after the network tour**: the tutorial hides itself while the
 tour plays and resumes with the timeline walk once the tour bar is closed.
 Each version step selects that version silently (no double narration) and
 auto‑advances when its clip ends. Steps 17–21 continue into the Builder
-(edit mode) and the attack simulator.
+(edit mode) and the attack simulator; step 21 hides the tutorial while the
+DDoS runs and resumes once its summary is dismissed. Steps 22–28 cover
+Explore mode and a walk of the holons view's assembly layers — biggest
+(System of Systems) to smallest (Atom) — each filtering the holographic view
+to a single level and auto‑advancing when its clip ends.
 
 ## Attack-simulator narration (`assets/tutorial/attack/`)
 

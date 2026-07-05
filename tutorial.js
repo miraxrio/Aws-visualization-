@@ -302,7 +302,8 @@
     },
     {
       // The scenario picker fills in when the modal opens; clicking the DDoS
-      // card starts the simulation and ends the tutorial.
+      // card starts the simulation. The tutorial hides while the attack plays
+      // and resumes once its summary is dismissed.
       target: '.attack-card[data-attack="ddos"]',
       waitFor: true,
       audioBases: ["assets/tutorial/line 21", "line 21"],
@@ -314,6 +315,114 @@
         "Let's try the DDoS volumetric flood.",
       cta: "Click “DDoS Volumetric Flood”",
       advanceOn: "target",
+      resumeAfterAttack: true,
+    },
+
+    // --- Explore mode & the holons view ------------------------------------
+    {
+      target: "#explore-btn",
+      waitFor: true,
+      onEnter: () => { if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("3d"); },
+      audioBases: ["assets/tutorial/line 22", "line 22"],
+      text:
+        "Want to get closer? Explore mode drops you inside the network, in first person.\n" +
+        "Use the arrow keys on your keyboard to walk around and wander between your services.",
+      speech:
+        "Want to get closer? Explore mode drops you right inside the network, in first person. " +
+        "Just use the arrow keys on your keyboard to walk around and wander between your services, " +
+        "like rooms in a building.",
+      autoAdvance: true,
+    },
+    {
+      target: "#load-boundary",
+      audioBases: ["assets/tutorial/line 23", "line 23"],
+      text:
+        "Now press Load boundary to open the holons view —\n" +
+        "a living map of your system, organised into layers.",
+      speech:
+        "Now press Load boundary to enter the holons view — a living map of your whole system, " +
+        "organised into layers, from the big picture right down to the smallest part.",
+      cta: "Click “Load boundary”",
+      advanceOn: "target",
+    },
+    // The layer walk: filter the holographic view to one assembly level at a
+    // time, biggest first. dim:false keeps the 3D holons visible; the
+    // presenter docks left so she doesn't cover the scene.
+    {
+      target: '.asm-pill[data-asm="4"]',
+      waitFor: "#asm-filter-bar:not([hidden])",
+      onEnter: () => setHoloLevel(4),
+      dim: false,
+      stageSide: "left",
+      audioBases: ["assets/tutorial/line 24", "line 24"],
+      text:
+        "We'll start at the very top: the System of Systems.\n" +
+        "The widest view, where whole systems act as single building blocks working together.",
+      speech:
+        "We'll start at the very top. This is the System of Systems — the widest view of all, " +
+        "where entire systems are treated as single building blocks that work together.",
+      autoAdvance: true,
+    },
+    {
+      target: '.asm-pill[data-asm="3"]',
+      waitFor: "#asm-filter-bar:not([hidden])",
+      onEnter: () => setHoloLevel(3),
+      dim: false,
+      stageSide: "left",
+      audioBases: ["assets/tutorial/line 25", "line 25"],
+      text:
+        "Drop down a layer and each block opens into a System —\n" +
+        "a complete, self-contained piece that does a real job on its own.",
+      speech:
+        "Drop down one layer, and each of those blocks opens into a System — " +
+        "a complete, self-contained piece that does a real job on its own.",
+      autoAdvance: true,
+    },
+    {
+      target: '.asm-pill[data-asm="2"]',
+      waitFor: "#asm-filter-bar:not([hidden])",
+      onEnter: () => setHoloLevel(2),
+      dim: false,
+      stageSide: "left",
+      audioBases: ["assets/tutorial/line 26", "line 26"],
+      text:
+        "Inside every system sit Subsystems —\n" +
+        "the major sections that each take care of one part of the work.",
+      speech:
+        "Inside every system sit Subsystems — the major sections that each take care of " +
+        "one distinct part of the work.",
+      autoAdvance: true,
+    },
+    {
+      target: '.asm-pill[data-asm="1"]',
+      waitFor: "#asm-filter-bar:not([hidden])",
+      onEnter: () => setHoloLevel(1),
+      dim: false,
+      stageSide: "left",
+      audioBases: ["assets/tutorial/line 27", "line 27"],
+      text:
+        "Go deeper still and you reach Components —\n" +
+        "the individual, replaceable parts that make up each subsystem.",
+      speech:
+        "Go deeper still, and you reach Components — the individual, replaceable parts " +
+        "that make up each subsystem.",
+      autoAdvance: true,
+    },
+    {
+      target: '.asm-pill[data-asm="0"]',
+      waitFor: "#asm-filter-bar:not([hidden])",
+      onEnter: () => setHoloLevel(0),
+      dim: false,
+      stageSide: "left",
+      audioBases: ["assets/tutorial/line 28", "line 28"],
+      text:
+        "And right at the bottom: Atoms.\n" +
+        "The smallest indivisible pieces — the ones you can't break down any further.\n" +
+        "That's the whole hierarchy, from the big picture all the way down to the atoms.",
+      speech:
+        "And right at the bottom are the Atoms — the smallest, indivisible pieces, " +
+        "the ones you simply can't break down any further. And that's the whole hierarchy: " +
+        "from the big picture, all the way down to the atoms. Enjoy exploring.",
     },
   ];
 
@@ -673,42 +782,49 @@
     // ZeroBias modal); we then advance the tutorial.
     targetHandler = () => {
       const step = STEPS[index];
-      if (step && step.resumeAfterTour) suspendForTour();
+      if (step && step.resumeAfterTour) suspendUntil(tourBarOpen);
+      else if (step && step.resumeAfterAttack) suspendUntil(attackRunning);
       else next();
     };
     target.addEventListener("click", targetHandler);
   }
 
-  // Step 9 hands the stage to the network tour: hide the tutorial, wait for
-  // the tour bar to open and then close again, then resume with the next step
-  // (the security-system timeline walk).
-  function suspendForTour() {
+  function tourBarOpen() {
+    const bar = document.getElementById("tour-bar");
+    return !!(bar && bar.classList.contains("open"));
+  }
+  function attackRunning() {
+    const hud = document.getElementById("attack-hud");
+    const sum = document.getElementById("attack-summary");
+    return !!((hud && !hud.hidden) || (sum && !sum.hidden));
+  }
+
+  // Hand the stage to another feature (the network tour, or the attack sim):
+  // hide the tutorial, wait for that feature to start and then finish, then
+  // resume with the next step. `isRunning` reports whether it's on screen.
+  function suspendUntil(isRunning) {
     if (suspended || !active) return;
     suspended = true;
     stopNarration();
     detachTargetClick();
     currentTarget = null;
-    root.classList.remove("show");
+    root.classList.remove("show", "tut-no-dim", "tut-stage-left");
     root.hidden = true;
 
     const started = Date.now();
-    const barOpen = () => {
-      const bar = document.getElementById("tour-bar");
-      return !!(bar && bar.classList.contains("open"));
-    };
-    const waitForOpen = () => {
+    const waitForStart = () => {
       if (!active || !suspended) return;
-      if (barOpen()) { waitForClose(); return; }
-      // Tour never opened (e.g. no data) — don't stay hidden forever.
-      if (Date.now() - started > 5000) { resumeTutorial(); return; }
-      setTimeout(waitForOpen, 250);
+      if (isRunning()) { waitForEnd(); return; }
+      // Never started (e.g. no data) — don't stay hidden forever.
+      if (Date.now() - started > 6000) { resumeTutorial(); return; }
+      setTimeout(waitForStart, 250);
     };
-    const waitForClose = () => {
+    const waitForEnd = () => {
       if (!active || !suspended) return;
-      if (!barOpen()) { resumeTutorial(); return; }
-      setTimeout(waitForClose, 350);
+      if (!isRunning()) { resumeTutorial(); return; }
+      setTimeout(waitForEnd, 350);
     };
-    waitForOpen();
+    waitForStart();
   }
 
   function resumeTutorial() {
@@ -718,6 +834,30 @@
     void root.offsetWidth;
     root.classList.add("show");
     show(index + 1);
+  }
+
+  // Filter the holographic view to a single assembly level via the pill bar,
+  // re-applying once the 3D holo scene has finished initialising.
+  function setHoloLevel(level) {
+    const bar = document.getElementById("asm-filter-bar");
+    if (!bar) return;
+    const clickLevel = () => {
+      const all = bar.querySelector('[data-asm="all"]');
+      const pill = bar.querySelector('[data-asm="' + level + '"]');
+      if (all) all.click();     // clear any prior selection
+      if (pill) pill.click();   // show only this level
+    };
+    clickLevel();
+    const ready = () => window.AwsHoloViz3D && window.AwsHoloViz3D.isReady && window.AwsHoloViz3D.isReady();
+    if (!ready()) {
+      let tries = 12;
+      const poll = () => {
+        if (tries-- <= 0 || !active) return;
+        if (ready()) { clickLevel(); return; }
+        setTimeout(poll, 350);
+      };
+      setTimeout(poll, 350);
+    }
   }
 
   function detachTargetClick() {
