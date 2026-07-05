@@ -246,6 +246,74 @@
         "One heads-up — the web application firewall is temporarily out while its rules are rewritten. " +
         "And that's the whole story: six versions, one bad day in February, and a fix that landed " +
         "within twenty-four hours.",
+      autoAdvance: true,
+    },
+
+    // --- Builder & attack-simulation chapter -------------------------------
+    {
+      target: "#builder-btn",
+      onEnter: () => { if (window.AwsMode && window.AwsMode.set) window.AwsMode.set("2d"); },
+      audioBases: ["assets/tutorial/line 17", "line 17"],
+      text:
+        "You can also edit your network.\n" +
+        "Press Builder to enter the edit mode.",
+      speech: "You can also edit your networks. Press Builder to enter the edit mode.",
+      cta: "Click “Builder”",
+      advanceOn: "target",
+    },
+    {
+      // The inventory drawer opens on the left; leave the page undimmed so the
+      // drag from the drawer onto a subnet actually works during the step.
+      target: "#builder-drawer",
+      waitFor: true,
+      dim: false,
+      audioBases: ["assets/tutorial/line 18", "line 18"],
+      text:
+        "Drag an element from the inventory onto a subnet.\n" +
+        "Watch how it wires into the rest of the network.",
+      speech:
+        "Now drag an element from the inventory and drop it into a subnet, " +
+        "then watch how it connects and interacts with the rest of the network.",
+      cta: "Try a drag, then press Next",
+    },
+    {
+      target: "#mode-3d",
+      audioBases: ["assets/tutorial/line 19", "line 19"],
+      text:
+        "Your changes in the 2D view also appear in the 3D holographic view.\n" +
+        "Click Holographic View to see them.",
+      speech:
+        "By the way, your changes in the 2D view also appear in the 3D holographic view. " +
+        "Let's switch over and take a look.",
+      cta: "Click “Holographic View”",
+      advanceOn: "target",
+    },
+    {
+      // The Simulate-attack button only exists in the 3D view — wait for it.
+      target: "#attack-btn",
+      waitFor: true,
+      audioBases: ["assets/tutorial/line 20", "line 20"],
+      text:
+        "Good — now let's watch a simulation of a cyber attack.\n" +
+        "Press Simulate attack.",
+      speech: "Good. Now let's watch a simulation of a cyber attack. Press Simulate attack.",
+      cta: "Click “Simulate attack”",
+      advanceOn: "target",
+    },
+    {
+      // The scenario picker fills in when the modal opens; clicking the DDoS
+      // card starts the simulation and ends the tutorial.
+      target: '.attack-card[data-attack="ddos"]',
+      waitFor: true,
+      audioBases: ["assets/tutorial/line 21", "line 21"],
+      text:
+        "Here's a list of cyber attacks you can simulate against your network.\n" +
+        "Let's try the DDoS flood.",
+      speech:
+        "Here you have a list of cyber attacks to simulate against your network. " +
+        "Let's try the DDoS volumetric flood.",
+      cta: "Click “DDoS Volumetric Flood”",
+      advanceOn: "target",
     },
   ];
 
@@ -458,6 +526,11 @@
 
   function renderDots() {
     if (STEPS.length < 2) { dotsEl.innerHTML = ""; return; }
+    // With many steps a dot per step overflows the bubble — show a counter.
+    if (STEPS.length > 16) {
+      dotsEl.innerHTML = '<span class="tut-count">' + (index + 1) + " / " + STEPS.length + "</span>";
+      return;
+    }
     dotsEl.innerHTML = STEPS
       .map((_, i) => '<span class="tut-dot' + (i === index ? " is-active" : "") + '"></span>')
       .join("");

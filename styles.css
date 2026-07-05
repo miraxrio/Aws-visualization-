@@ -3816,9 +3816,10 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
   0%   { box-shadow: 0 0 0 0 rgba(90, 55, 0, 0.45); }
   100% { box-shadow: 0 0 0 9px rgba(90, 55, 0, 0); }
 }
-.tut-dots { display: flex; gap: 6px; }
+.tut-dots { display: flex; gap: 6px; align-items: center; }
 .tut-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(74, 44, 0, 0.3); }
 .tut-dot.is-active { background: #6b3f00; }
+.tut-count { font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: rgba(74, 44, 0, 0.6); }
 .tut-next {
   margin-left: auto;
   border: 0;

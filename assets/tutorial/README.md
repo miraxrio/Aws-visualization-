@@ -45,7 +45,27 @@ Five clips ship today:
 Steps 10–16 run **after the network tour**: the tutorial hides itself while the
 tour plays and resumes with the timeline walk once the tour bar is closed.
 Each version step selects that version silently (no double narration) and
-auto‑advances when its clip ends.
+auto‑advances when its clip ends. Steps 17–21 continue into the Builder
+(edit mode) and the attack simulator.
+
+## Attack-simulator narration (`assets/tutorial/attack/`)
+
+The cyber-attack simulator narrates the opening, each phase and the verdict.
+Those lines are pre‑recorded (Qwen3‑TTS · **Vivian**) and driven from the
+`ATTACK_VOICE` table in `app.js`, so the spoken words match the clips. If a
+clip can't load, the browser voice reads the same line. Naming per attack id
+(`ddos`, `bruteforce`, `ransomware`, `portscan`, `exfil`):
+
+```
+assets/tutorial/attack/<id>-start.mp3     ← opening line
+assets/tutorial/attack/<id>-p0.mp3 … -pN  ← one per phase (index-aligned to ATTACK_DEFS)
+assets/tutorial/attack/<id>-ok.mp3        ← "defended" verdict
+assets/tutorial/attack/<id>-warn.mp3      ← "partly got through" verdict
+assets/tutorial/attack/<id>-danger.mp3    ← "breach" verdict
+```
+
+To re-voice a beat, edit its line in `app.js` (`ATTACK_VOICE`) and drop in a
+replacement clip with the matching name.
 
 Lines 2–5 were generated with `fal-ai/qwen-3-tts/text-to-speech/1.7b`. To
 re‑record any of them, just drop a replacement `line N.mp3` in here. Step 1 says:

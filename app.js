@@ -737,15 +737,141 @@
       window.AwsSpeak.speak(text);
     }
   }
+
+  // Human narration for the attack simulator. Each attack has a start line,
+  // one line per phase (index-aligned with its ATTACK_DEFS phases), and one
+  // line per outcome bucket. Pre-recorded clips live at
+  // assets/tutorial/attack/<id>-{start|p<N>|ok|warn|danger}.mp3; if a clip
+  // can't play, the same line is read by the browser voice instead — so the
+  // spoken words match the recordings either way.
+  const ATTACK_VOICE = {
+    ddos: {
+      start: "Here comes the flood — a botnet is aiming a wall of traffic at your front door.",
+      phases: [
+        "First, quiet reconnaissance — they're measuring your edge.",
+        "The first wave is rolling in. Requests are stacking up fast.",
+        "Peak surge — thousands of bogus requests are hammering the edge at once.",
+        "The WAF has locked on — rate limits are shredding the flood.",
+        "The storm is passing. Traffic is settling back to normal.",
+      ],
+      outcomes: {
+        ok: "Clean defense — the firewall swallowed the entire flood, and your users never noticed a thing.",
+        warn: "Mostly held — the firewall caught the bulk of it, but a slice of junk traffic still slipped through.",
+        danger: "That one hurt — the flood overwhelmed your defenses, and real traffic paid the price.",
+      },
+    },
+    bruteforce: {
+      start: "A botnet is at the gates, trying stolen passwords against your login.",
+      phases: [
+        "It starts slow — a few careful guesses to stay under the radar.",
+        "Now the volume ramps up. Login attempts are multiplying.",
+        "Peak stuffing — credential pairs are being fired as fast as they'll go.",
+        "Throttling kicked in — failed logins are being slowed and locked out.",
+        "The botnet is giving up. Attempts are fading.",
+      ],
+      outcomes: {
+        ok: "No break-ins — every stolen credential bounced off. Your lockout policy did its job.",
+        warn: "Close call — a handful of logins got through before the throttle caught up. Force resets on those accounts.",
+        danger: "Bad news — the botnet cracked multiple accounts. Time for resets, and multi-factor everywhere.",
+      },
+    },
+    ransomware: {
+      start: "Ransomware just landed inside — one compromised workload, looking to spread.",
+      phases: [
+        "It has a foothold. One machine is infected and calling home.",
+        "It's scouting — mapping which neighbours it can reach.",
+        "Lateral movement — the infection is hopping between workloads.",
+        "It's escalating privileges, hunting for the keys to everything.",
+        "Encryption has started. Files are being locked.",
+      ],
+      outcomes: {
+        ok: "Contained — segmentation stopped it at one machine. Wipe it, restore, and move on.",
+        warn: "It spread, but not far — a few workloads need restoring from backups.",
+        danger: "Severe — the infection swept the network and encrypted its way through. This is a restore-everything day.",
+      },
+    },
+    portscan: {
+      start: "Someone is casing the joint — a port scan is sweeping your perimeter.",
+      phases: [
+        "They're knocking on the edge, port by port.",
+        "Now they're fingerprinting — figuring out what's running behind each door.",
+        "Deep probe — anything that answered is getting a closer look.",
+        "And they're gone. Quiet, but they've taken notes.",
+      ],
+      outcomes: {
+        ok: "Nothing to see — your surface stayed dark, and the scanner left almost empty-handed.",
+        warn: "They learned a few things — some services waved back. Worth tightening those security groups.",
+        danger: "Wide open — that scan mapped far too much of your network. Lock those ports down.",
+      },
+    },
+    exfil: {
+      start: "An insider is quietly siphoning data toward the exit.",
+      phases: [
+        "Quiet reconnaissance — they're finding where the valuable data lives.",
+        "The first files are trickling out. Small, easy to miss.",
+        "Bulk transfer — data is streaming out in volume now.",
+        "Loss-prevention alerts are firing — the leak has been spotted.",
+        "They're covering their tracks and slipping away.",
+      ],
+      outcomes: {
+        ok: "Caught in time — barely anything left the building. The alarms earned their keep.",
+        warn: "Partial leak — a real chunk of data escaped before the alerts landed. Audit what's gone.",
+        danger: "Full breach — the crown jewels walked out the door. Incident response starts now.",
+      },
+    },
+  };
+
+  let _attackDef = null;
+  let _attackClip = null;
+  function stopAttackClip() {
+    if (_attackClip) {
+      try { _attackClip.pause(); } catch (_) {}
+      _attackClip = null;
+    }
+  }
+
+  // Speak one attack beat ("start" | "phase" | "outcome"): play the
+  // pre-recorded clip when available, otherwise read the same human line —
+  // and only if narration is enabled. A new beat always cuts off the last.
+  function attackNarrate(kind, arg, fallbackText) {
+    if (!(window.AwsSpeak && window.AwsSpeak.enabled())) return;
+    stopAttackClip();
+    window.AwsSpeak.stop();
+
+    const id = _attackDef && _attackDef.id;
+    const voice = (id && ATTACK_VOICE[id]) || null;
+    let clipBase = null;
+    let line = null;
+    if (voice) {
+      if (kind === "start") { clipBase = `assets/tutorial/attack/${id}-start`; line = voice.start; }
+      else if (kind === "phase" && arg >= 0 && voice.phases[arg]) { clipBase = `assets/tutorial/attack/${id}-p${arg}`; line = voice.phases[arg]; }
+      else if (kind === "outcome" && voice.outcomes[arg]) { clipBase = `assets/tutorial/attack/${id}-${arg}`; line = voice.outcomes[arg]; }
+    }
+    const spoken = line || fallbackText;
+    if (!clipBase) { attackSpeak(spoken); return; }
+
+    const a = new Audio(encodeURI(clipBase + ".mp3"));
+    _attackClip = a;
+    const fallBack = () => {
+      if (_attackClip !== a) return;   // superseded by a newer beat
+      _attackClip = null;
+      attackSpeak(spoken);
+    };
+    a.addEventListener("error", fallBack);
+    const p = a.play();
+    if (p && p.catch) p.catch(fallBack);
+  }
+
   window.AwsAttack = {
     onStart(def) {
       els.attackHudIcon.textContent = def.icon || "!";
       els.attackHudName.textContent = def.name;
       els.attackHudPhase.textContent = "Starting…";
       _attackLastSpokenPhase = null;
-      // Narrate the attack name once at start so the user knows what's
-      // unfolding without having to read the HUD.
-      attackSpeak(def.name + ".");
+      _attackDef = def;
+      // Narrate the attack opening so the user knows what's unfolding
+      // without having to read the HUD.
+      attackNarrate("start", null, def.name + ".");
     },
     onTick(state) {
       if (!state) return;
@@ -755,12 +881,17 @@
       setAttackStat(els.attackStatBlocked, state.stats.blocked);
       setAttackStat(els.attackStatArrived, state.stats.arrived);
       renderAttackLog(state.events);
-      // Speak each new phase label exactly once. Skip the first one if
-      // the start-narration is still ringing — give the synth ~1.2s.
+      // Narrate each new phase exactly once. Skip the first one if the
+      // start-narration is still ringing — give it ~1.2s.
       if (state.phaseLabel && state.phaseLabel !== _attackLastSpokenPhase) {
         const first = _attackLastSpokenPhase === null;
         _attackLastSpokenPhase = state.phaseLabel;
-        if (!first || state.elapsed > 1200) attackSpeak(state.phaseLabel + ".");
+        if (!first || state.elapsed > 1200) {
+          const idx = _attackDef && _attackDef.phases
+            ? _attackDef.phases.findIndex((p) => p.label === state.phaseLabel)
+            : -1;
+          attackNarrate("phase", idx, state.phaseLabel + ".");
+        }
       }
     },
     onEnd(summary) {
@@ -768,11 +899,12 @@
       els.attackHud.hidden = true;
       renderAttackSummary(summary);
       els.attackSummary.hidden = false;
-      // Narrate the outcome so the user gets the verdict without reading.
-      attackSpeak(summary.outcome);
+      // Narrate the verdict (the modal still shows the exact numbers).
+      attackNarrate("outcome", summary.outcomeStatus || "warn", summary.outcome);
     },
     onStop() {
       els.attackHud.hidden = true;
+      stopAttackClip();
       if (window.AwsSpeak && window.AwsSpeak.enabled()) window.AwsSpeak.stop();
     },
   };
