@@ -4893,6 +4893,11 @@ function updateHoloLabels() {
   const cards = [];
   holo.labels.forEach((entry) => {
     const parent = entry.parent || holo.group;
+    // Hide the card when its anchor (or any ancestor) has been filtered out —
+    // otherwise assembly-filtered spheres vanish but their labels linger.
+    for (let a = parent; a; a = a.parent) {
+      if (a.visible === false) { entry.el.style.display = "none"; return; }
+    }
     const v = entry.position.clone().applyMatrix4(parent.matrixWorld);
     v.project(holo.camera);
     const inFront = v.z < 1;
@@ -5161,17 +5166,20 @@ function renderHoloLevel0(boundaryData) {
     holoSpawn(sph, 160 + i * 110);
     // One unified card per sphere: icon + label + status. Sits next to
     // the sphere so the user can read what each glowing orb actually is.
-    addHoloEntityCard(hc, new THREE.Vector3(x, radius + 1.4, z));
+    // Card + badge ride the sphere's own group so the assembly filter (which
+    // toggles sph.visible) hides their labels along with the sphere.
+    addHoloEntityCard(hc, new THREE.Vector3(0, radius + 1.4, 0), sph);
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
-      new THREE.Vector3(x + radius * 0.9, radius + 0.3, z));
+      new THREE.Vector3(radius * 0.9, radius + 0.3, 0), sph);
   });
 
-  // Also surface the boundary's holons as orbiters around the nucleus, tagged
-  // by assembly level. Without this, Level 0 shows only the level-1 holonic
-  // spheres, so the assembly-level filter (Atoms / Subsystems / Systems / …)
-  // has nothing to isolate and appears to do nothing. The orbiters reuse the
-  // exact Level-1 rendering path, and the assembly filter hides the ones whose
-  // level isn't selected.
+  // Surface the boundary's holons as orbiters around the nucleus, tagged by
+  // assembly level, so the assembly-level filter (Atoms / Subsystems / Systems
+  // / …) has something to isolate — without them Level 0 shows only the
+  // level-1 holonic spheres and the filter appears to do nothing. They're
+  // flagged `looseAtL0` and hidden by default (see holoApplyAssemblyFilter):
+  // the plain boundary view stays the clean ring of holonics, and each pill
+  // reveals just that layer. Reuses the exact Level-1 orbiter path.
   const looseHolons = (boundaryData.loose_holons || []).filter((h) => h && h.id);
   if (looseHolons.length) {
     holo.orbitGroup = new THREE.Group();
@@ -5189,8 +5197,9 @@ function renderHoloLevel0(boundaryData) {
       ? rCap / radii[radii.length - 1] : 1;
     looseHolons.forEach((holon, i) =>
       addHoloOrbiter(holon, dirs[i].multiplyScalar(Math.max(2.2, radii[i] * overflow)), i));
-    buildOrbitEdges(looseHolons);
-    updateOrbitEdges();
+    holo.orbitGroup.children.forEach((c) => {
+      if (c.userData && c.userData.asmLevel != null) c.userData.looseAtL0 = true;
+    });
   }
 
   holoApplyAssemblyFilter(holo.asmFilter);
@@ -5902,17 +5911,22 @@ function holoZoomTo(targetLen, dur) {
  */
 function holoApplyAssemblyFilter(levels) {
   holo.asmFilter = levels && levels.size ? levels : null;
-  const ok = (lvl) => !holo.asmFilter || holo.asmFilter.has(lvl);
-  // Level 0 — holonic core + halo meshes carry userData.asmLevel.
+  // With a filter: show only the selected level(s). Without one: show the
+  // normal view but hide the extra Level-0 loose orbiters (they exist purely
+  // so each pill has a layer to reveal — showing them all at once is noise).
+  const vis = (c) => holo.asmFilter
+    ? holo.asmFilter.has(c.userData.asmLevel)
+    : !c.userData.looseAtL0;
+  // Level 0 — holonic spheres carry userData.holoKind + asmLevel.
   holo.group.children.forEach((c) => {
     if (c.userData && c.userData.holoKind === "holonic" && c.userData.asmLevel != null) {
-      c.visible = ok(c.userData.asmLevel);
+      c.visible = vis(c);
     }
   });
-  // Level 1 — each holon satellite carries userData.asmLevel.
+  // Orbiting satellites (Level-1 holons, and the Level-0 loose holons).
   if (holo.orbitGroup) {
     holo.orbitGroup.children.forEach((c) => {
-      if (c.userData && c.userData.asmLevel != null) c.visible = ok(c.userData.asmLevel);
+      if (c.userData && c.userData.asmLevel != null) c.visible = vis(c);
     });
   }
 }

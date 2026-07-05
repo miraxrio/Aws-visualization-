@@ -67,10 +67,13 @@ Steps 23–28 cover the holons view: a walk of the assembly layers — biggest
 (System of Systems) to smallest (Atom) — each filtering the holographic view
 to a single level and auto‑advancing when its clip ends.
 
-Note: the holographic Level-0 view now renders the boundary's loose holons
+Note: the holographic Level-0 view also renders the boundary's loose holons
 as orbiters (tagged by assembly level) so the assembly-level filter can
-actually isolate each layer; previously only the level-1 holonic spheres were
-drawn, so filtering to any other level appeared to do nothing.
+isolate each layer; previously only the level-1 holonic spheres were drawn, so
+filtering to any other level appeared to do nothing. The orbiters are hidden
+by default (the plain boundary view stays the clean ring of holonics) and each
+pill reveals just its layer. Assembly-filtered spheres now hide their HTML
+labels too, so a filtered view is no longer buried under every entity's card.
 
 ## Attack-simulator narration (`assets/tutorial/attack/`)
 
