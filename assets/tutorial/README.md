@@ -52,6 +52,9 @@ Five clips ship today:
 | `line 24.mp3` | Holons — the whole boundary (biggest) | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 | `line 25.mp3` | Holons — zoom into one cluster | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 | `line 26.mp3` | Holons — a single control (smallest) | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 27.mp3` | Map view — open the Map tab | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 28.mp3` | Map view — the view controls | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 29.mp3` | Map view — zoom into a network (finale) | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 
 Steps 10–16 run **after the network tour**: the tutorial hides itself while the
 tour plays and resumes with the timeline walk once the tour bar is closed.
@@ -68,6 +71,11 @@ boundary, into one cluster, down to a single control (via
 chapter (drilling in is the clearer mechanism) and restored when the tutorial
 ends. The presenter is hidden for these steps (`hidePresenter: true`) and the
 bubble docks in the bottom-right corner so nothing covers the 3D scene.
+Steps 27–29 finish on the Map view (presenter back): open the Map tab, tour
+the view controls (cloud filter / flat-vs-globe / satellite / fit), and prompt
+the user to scroll-zoom into a network to drill into its holographic view.
+Switching into Map or Board now also exits boundary mode in the app, so the
+holon overlays (breadcrumb, assembly bar, detail card) don't linger over them.
 
 ## Attack-simulator narration (`assets/tutorial/attack/`)
 

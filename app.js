@@ -485,6 +485,10 @@
   function setMode(next) {
     if (next === mode) return;
     mode = next;
+    // Map and Board aren't boundary (holographic) views — leave boundary mode
+    // so its overlays (breadcrumb, assembly-level bar, holon detail card,
+    // watermark, starfield) don't linger on top of them.
+    if ((next === "map" || next === "board") && currentBoundary) exitBoundaryMode();
     const is2d = mode === "2d", is3d = mode === "3d", isMap = mode === "map", isBoard = mode === "board";
     document.body.classList.toggle("mode-3d", is3d);
     document.body.classList.toggle("mode-map", isMap);

@@ -389,8 +389,49 @@
         "The smallest piece — one check, with its status and full detail.",
       speech:
         "And we zoom in one last time, onto a single control. This is the smallest piece of all: " +
-        "one check, with its status and every detail laid out. From the whole system, all the way down " +
-        "to a single item. That's the tour — enjoy exploring.",
+        "one check, with its status and every detail laid out — from the whole system, all the way " +
+        "down to a single item.",
+      autoAdvance: true,
+    },
+
+    // --- Map view ----------------------------------------------------------
+    {
+      target: "#mode-map",
+      audioBases: ["assets/tutorial/line 27", "line 27"],
+      text:
+        "Last stop — the Map.\n" +
+        "Click Map to see all your networks placed on the globe, wherever they actually run.",
+      speech:
+        "For our last stop, let's open the Map. Click the Map tab to see all of your networks " +
+        "placed on the globe, right where they actually run in the world.",
+      cta: "Click “Map”",
+      advanceOn: "target",
+    },
+    {
+      target: "#map-controls",
+      waitFor: true,
+      audioBases: ["assets/tutorial/line 28", "line 28"],
+      text:
+        "Up here you control the view.\n" +
+        "Filter by cloud — AWS or Azure — flip between a flat map and a spinning globe, add satellite imagery, or fit every network on screen.",
+      speech:
+        "Up here you control the view. You can filter by cloud, AWS or Azure, flip between a flat map " +
+        "and a spinning globe, drop in satellite imagery, or fit every network neatly on the screen.",
+      autoAdvance: true,
+    },
+    {
+      // dim:false so the user can actually scroll/zoom the map during the prompt.
+      target: "#map-drill-hint",
+      waitFor: true,
+      dim: false,
+      audioBases: ["assets/tutorial/line 29", "line 29"],
+      text:
+        "And here's the best part: scroll to zoom straight into any network,\n" +
+        "and you'll dive right into its holographic assessment view. Give it a try — that's the whole tour!",
+      speech:
+        "And here's the best part. Scroll to zoom straight into any network on the map, and you'll dive " +
+        "right into its holographic assessment view. Go ahead and give it a try. And that's the whole tour — " +
+        "thanks for following along, and enjoy exploring.",
     },
   ];
 
@@ -412,6 +453,7 @@
     { label: "Edit with the Builder", step: 16, setup: () => { loadSampleNet(); setViewMode("2d"); } },
     { label: "Cyber-attack simulation", step: 19, setup: () => { loadSampleNet(); setViewMode("3d"); } },
     { label: "Explore & the holons view", step: 21, setup: () => { loadSampleNet(); setViewMode("3d"); } },
+    { label: "Map view · the globe", step: 26, setup: () => ensureMapView() },
   ];
 
   let root, masks, ring, stage, bubble, textEl, ctaEl, nextBtn, replayBtn, presenter, presenterImg;
@@ -697,6 +739,15 @@
   function loadSampleNet() { maybeLoadNetwork("sample-network.json"); }
   function setViewMode(m) {
     try { if (window.AwsMode && window.AwsMode.set) window.AwsMode.set(m); } catch (_) {}
+  }
+  // Map needs a connection to plot the fleet — connect the demo tenant if
+  // needed, then switch to the map view.
+  function ensureMapView() {
+    try {
+      const st = window.ZeroBias && window.ZeroBias.getState ? window.ZeroBias.getState() : null;
+      if ((!st || !st.connected) && window.ZeroBias && window.ZeroBias.connectDemo) window.ZeroBias.connectDemo();
+      setViewMode("map");
+    } catch (_) {}
   }
 
   function show(i) {
