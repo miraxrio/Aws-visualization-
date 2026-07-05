@@ -347,84 +347,50 @@
       cta: "Click “Load boundary”",
       advanceOn: "target",
     },
-    // The layer walk: filter the holographic view to one assembly level at a
-    // time, biggest first. dim:false keeps the 3D holons visible; the
-    // presenter docks left so she doesn't cover the scene.
+    // The layer walk uses the holons view's real zoom hierarchy — biggest to
+    // smallest: the whole boundary → into one cluster → down to a single
+    // control. The 3D scene itself is the subject, so there's no spotlight
+    // target: keep it fully visible (dim:false) with the presenter docked left.
+    // The assembly-level pill bar is hidden for this chapter (drilling in is
+    // the clearer mechanism); it's restored when the tutorial ends.
     {
-      target: '.asm-pill[data-asm="4"]',
-      waitFor: "#asm-filter-bar:not([hidden])",
-      onEnter: () => setHoloLevel(4),
+      onEnter: () => { hideAsmBar(); holoNav(0, null, null); },
       dim: false,
       stageSide: "left",
       audioBases: ["assets/tutorial/line 24", "line 24"],
       text:
-        "We'll start at the very top: the System of Systems.\n" +
-        "The widest view, where whole systems act as single building blocks working together.",
+        "We start at the top — the whole boundary.\n" +
+        "Every control in your system lives in here, gathered into these glowing clusters.",
       speech:
-        "We'll start at the very top. This is the System of Systems — the widest view of all, " +
-        "where entire systems are treated as single building blocks that work together.",
+        "We start at the very top, with the whole boundary. Every control in your system lives in here, " +
+        "gathered into these glowing clusters. This is the big picture — your entire system at a glance.",
       autoAdvance: true,
     },
     {
-      target: '.asm-pill[data-asm="3"]',
-      waitFor: "#asm-filter-bar:not([hidden])",
-      onEnter: () => setHoloLevel(3),
+      onEnter: () => holoNav(1, "holonic-checkout-service", null),
       dim: false,
       stageSide: "left",
       audioBases: ["assets/tutorial/line 25", "line 25"],
       text:
-        "Drop down a layer and each block opens into a System —\n" +
-        "a complete, self-contained piece that does a real job on its own.",
+        "Now we zoom into one cluster.\n" +
+        "Watch it open up — inside, each individual control orbits the core.",
       speech:
-        "Drop down one layer, and each of those blocks opens into a System — " +
-        "a complete, self-contained piece that does a real job on its own.",
+        "Now let's zoom into one of those clusters. Watch it open up: inside, each individual control " +
+        "orbits its core, so you can see exactly what this part of the system is made of.",
       autoAdvance: true,
     },
     {
-      target: '.asm-pill[data-asm="2"]',
-      waitFor: "#asm-filter-bar:not([hidden])",
-      onEnter: () => setHoloLevel(2),
+      onEnter: () => holoNav(2, "holonic-checkout-service", "cve-vm-kernel-2026-0142"),
       dim: false,
       stageSide: "left",
       audioBases: ["assets/tutorial/line 26", "line 26"],
       text:
-        "Inside every system sit Subsystems —\n" +
-        "the major sections that each take care of one part of the work.",
+        "And we zoom in one last time, onto a single control.\n" +
+        "The smallest piece — one check, with its status and full detail.",
       speech:
-        "Inside every system sit Subsystems — the major sections that each take care of " +
-        "one distinct part of the work.",
-      autoAdvance: true,
-    },
-    {
-      target: '.asm-pill[data-asm="1"]',
-      waitFor: "#asm-filter-bar:not([hidden])",
-      onEnter: () => setHoloLevel(1),
-      dim: false,
-      stageSide: "left",
-      audioBases: ["assets/tutorial/line 27", "line 27"],
-      text:
-        "Go deeper still and you reach Components —\n" +
-        "the individual, replaceable parts that make up each subsystem.",
-      speech:
-        "Go deeper still, and you reach Components — the individual, replaceable parts " +
-        "that make up each subsystem.",
-      autoAdvance: true,
-    },
-    {
-      target: '.asm-pill[data-asm="0"]',
-      waitFor: "#asm-filter-bar:not([hidden])",
-      onEnter: () => setHoloLevel(0),
-      dim: false,
-      stageSide: "left",
-      audioBases: ["assets/tutorial/line 28", "line 28"],
-      text:
-        "And right at the bottom: Atoms.\n" +
-        "The smallest indivisible pieces — the ones you can't break down any further.\n" +
-        "That's the whole hierarchy, from the big picture all the way down to the atoms.",
-      speech:
-        "And right at the bottom are the Atoms — the smallest, indivisible pieces, " +
-        "the ones you simply can't break down any further. And that's the whole hierarchy: " +
-        "from the big picture, all the way down to the atoms. Enjoy exploring.",
+        "And we zoom in one last time, onto a single control. This is the smallest piece of all: " +
+        "one check, with its status and every detail laid out. From the whole system, all the way down " +
+        "to a single item. That's the tour — enjoy exploring.",
     },
   ];
 
@@ -842,28 +808,32 @@
     show(index + 1);
   }
 
-  // Filter the holographic view to a single assembly level via the pill bar,
-  // re-applying once the 3D holo scene has finished initialising.
-  function setHoloLevel(level) {
-    const bar = document.getElementById("asm-filter-bar");
-    if (!bar) return;
-    const clickLevel = () => {
-      const all = bar.querySelector('[data-asm="all"]');
-      const pill = bar.querySelector('[data-asm="' + level + '"]');
-      if (all) all.click();     // clear any prior selection
-      if (pill) pill.click();   // show only this level
+  // Drive the holographic view's zoom hierarchy (Boundary → Holonic → Holon),
+  // waiting for the 3D holo scene to be ready first.
+  function holoNav(level, holonicId, holonId) {
+    const go = () => {
+      try { window.AwsHoloViz3D.navigate(level, holonicId || null, holonId || null); } catch (_) {}
     };
-    clickLevel();
     const ready = () => window.AwsHoloViz3D && window.AwsHoloViz3D.isReady && window.AwsHoloViz3D.isReady();
-    if (!ready()) {
-      let tries = 12;
-      const poll = () => {
-        if (tries-- <= 0 || !active) return;
-        if (ready()) { clickLevel(); return; }
-        setTimeout(poll, 350);
-      };
-      setTimeout(poll, 350);
-    }
+    if (ready()) { go(); return; }
+    let tries = 20;
+    const poll = () => {
+      if (tries-- <= 0 || !active) return;
+      if (ready()) { go(); return; }
+      setTimeout(poll, 300);
+    };
+    setTimeout(poll, 300);
+  }
+
+  // The assembly-level pill bar is hidden during the holon-drill chapter and
+  // restored when the tutorial ends.
+  function hideAsmBar() {
+    const bar = document.getElementById("asm-filter-bar");
+    if (bar) bar.style.display = "none";
+  }
+  function showAsmBar() {
+    const bar = document.getElementById("asm-filter-bar");
+    if (bar) bar.style.display = "";
   }
 
   function detachTargetClick() {
@@ -921,6 +891,7 @@
     if (!active) return;
     active = false;
     suspended = false;
+    showAsmBar();
     stopNarration();
     detachTargetClick();
     currentTarget = null;

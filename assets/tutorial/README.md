@@ -49,11 +49,9 @@ Five clips ship today:
 | `line 21.mp3` | Attack picker → DDoS flood | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 | `line 22.mp3` | Explore mode (first-person) | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 | `line 23.mp3` | Load boundary → holons view | Qwen3‑TTS · voice **Vivian** (fal.ai) |
-| `line 24.mp3` | Holon layer — System of Systems | Qwen3‑TTS · voice **Vivian** (fal.ai) |
-| `line 25.mp3` | Holon layer — System | Qwen3‑TTS · voice **Vivian** (fal.ai) |
-| `line 26.mp3` | Holon layer — Subsystem | Qwen3‑TTS · voice **Vivian** (fal.ai) |
-| `line 27.mp3` | Holon layer — Component | Qwen3‑TTS · voice **Vivian** (fal.ai) |
-| `line 28.mp3` | Holon layer — Atom | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 24.mp3` | Holons — the whole boundary (biggest) | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 25.mp3` | Holons — zoom into one cluster | Qwen3‑TTS · voice **Vivian** (fal.ai) |
+| `line 26.mp3` | Holons — a single control (smallest) | Qwen3‑TTS · voice **Vivian** (fal.ai) |
 
 Steps 10–16 run **after the network tour**: the tutorial hides itself while the
 tour plays and resumes with the timeline walk once the tour bar is closed.
@@ -63,17 +61,12 @@ auto‑advances when its clip ends. Steps 17–21 continue into the Builder
 DDoS runs and resumes once its summary is dismissed. Step 22 hands off to
 Explore mode — clicking Explore hides the tutorial and drops you into the
 first-person view; pressing Esc leaves Explore and the tutorial resumes.
-Steps 23–28 cover the holons view: a walk of the assembly layers — biggest
-(System of Systems) to smallest (Atom) — each filtering the holographic view
-to a single level and auto‑advancing when its clip ends.
-
-Note: the holographic Level-0 view also renders the boundary's loose holons
-as orbiters (tagged by assembly level) so the assembly-level filter can
-isolate each layer; previously only the level-1 holonic spheres were drawn, so
-filtering to any other level appeared to do nothing. The orbiters are hidden
-by default (the plain boundary view stays the clean ring of holonics) and each
-pill reveals just its layer. Assembly-filtered spheres now hide their HTML
-labels too, so a filtered view is no longer buried under every entity's card.
+Steps 23–26 cover the holons view: after loading the boundary, the walk uses
+the view's real zoom hierarchy — biggest to smallest — drilling from the whole
+boundary, into one cluster, down to a single control (via
+`AwsHoloViz3D.navigate`). The assembly-level pill bar is hidden for this
+chapter (drilling in is the clearer mechanism) and restored when the tutorial
+ends.
 
 ## Attack-simulator narration (`assets/tutorial/attack/`)
 

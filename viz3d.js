@@ -5166,42 +5166,10 @@ function renderHoloLevel0(boundaryData) {
     holoSpawn(sph, 160 + i * 110);
     // One unified card per sphere: icon + label + status. Sits next to
     // the sphere so the user can read what each glowing orb actually is.
-    // Card + badge ride the sphere's own group so the assembly filter (which
-    // toggles sph.visible) hides their labels along with the sphere.
-    addHoloEntityCard(hc, new THREE.Vector3(0, radius + 1.4, 0), sph);
+    addHoloEntityCard(hc, new THREE.Vector3(x, radius + 1.4, z));
     addHoloAssemblyBadge(hc.assemblyLevel != null ? hc.assemblyLevel : 1,
-      new THREE.Vector3(radius * 0.9, radius + 0.3, 0), sph);
+      new THREE.Vector3(x + radius * 0.9, radius + 0.3, z));
   });
-
-  // Surface the boundary's holons as orbiters around the nucleus, tagged by
-  // assembly level, so the assembly-level filter (Atoms / Subsystems / Systems
-  // / …) has something to isolate — without them Level 0 shows only the
-  // level-1 holonic spheres and the filter appears to do nothing. They're
-  // flagged `looseAtL0` and hidden by default (see holoApplyAssemblyFilter):
-  // the plain boundary view stays the clean ring of holonics, and each pill
-  // reveals just that layer. Reuses the exact Level-1 orbiter path.
-  const looseHolons = (boundaryData.loose_holons || []).filter((h) => h && h.id);
-  if (looseHolons.length) {
-    holo.orbitGroup = new THREE.Group();
-    holo.group.add(holo.orbitGroup);
-    const dirs = fibSphere(looseHolons.length, 1);
-    const bodyR = (h) => (HOLO_SEVERITY_RADIUS[h.severity] || 0.6) * 1.15;
-    const SHELL_GAP = 0.55;
-    let shellR = 2.2;
-    const radii = looseHolons.map((h, i) => {
-      shellR += bodyR(h) + (i > 0 ? bodyR(looseHolons[i - 1]) + SHELL_GAP : 0);
-      return shellR;
-    });
-    const rCap = ringR - 2.0;                 // stay inside the holonic ring
-    const overflow = radii.length && radii[radii.length - 1] > rCap
-      ? rCap / radii[radii.length - 1] : 1;
-    looseHolons.forEach((holon, i) =>
-      addHoloOrbiter(holon, dirs[i].multiplyScalar(Math.max(2.2, radii[i] * overflow)), i));
-    holo.orbitGroup.children.forEach((c) => {
-      if (c.userData && c.userData.asmLevel != null) c.userData.looseAtL0 = true;
-    });
-  }
-
   holoApplyAssemblyFilter(holo.asmFilter);
   setQuantumBackground(false);
   holoZoomTo(HOLO_LEVEL_DISTANCE[0]);
@@ -5911,22 +5879,17 @@ function holoZoomTo(targetLen, dur) {
  */
 function holoApplyAssemblyFilter(levels) {
   holo.asmFilter = levels && levels.size ? levels : null;
-  // With a filter: show only the selected level(s). Without one: show the
-  // normal view but hide the extra Level-0 loose orbiters (they exist purely
-  // so each pill has a layer to reveal — showing them all at once is noise).
-  const vis = (c) => holo.asmFilter
-    ? holo.asmFilter.has(c.userData.asmLevel)
-    : !c.userData.looseAtL0;
-  // Level 0 — holonic spheres carry userData.holoKind + asmLevel.
+  const ok = (lvl) => !holo.asmFilter || holo.asmFilter.has(lvl);
+  // Level 0 — holonic core + halo meshes carry userData.asmLevel.
   holo.group.children.forEach((c) => {
     if (c.userData && c.userData.holoKind === "holonic" && c.userData.asmLevel != null) {
-      c.visible = vis(c);
+      c.visible = ok(c.userData.asmLevel);
     }
   });
-  // Orbiting satellites (Level-1 holons, and the Level-0 loose holons).
+  // Level 1 — each holon satellite carries userData.asmLevel.
   if (holo.orbitGroup) {
     holo.orbitGroup.children.forEach((c) => {
-      if (c.userData && c.userData.asmLevel != null) c.visible = vis(c);
+      if (c.userData && c.userData.asmLevel != null) c.visible = ok(c.userData.asmLevel);
     });
   }
 }
