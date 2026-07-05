@@ -3924,6 +3924,23 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
   filter: drop-shadow(-2px 1px 0 rgba(120, 70, 0, 0.12));
 }
 
+/* Presenter-off steps (e.g. the holons drill-down): hide the guide and dock
+   the bubble in the bottom-right corner so it doesn't cover the 3D scene. */
+.tut-root.tut-no-presenter .tut-presenter { display: none; }
+.tut-root.tut-no-presenter .tut-stage {
+  left: auto;
+  right: 18px;
+  bottom: 18px;
+  flex-direction: row;
+  align-items: flex-end;
+  max-width: none;
+}
+.tut-root.tut-no-presenter .tut-bubble {
+  width: clamp(260px, 30vw, 400px);
+  margin: 0;
+}
+.tut-root.tut-no-presenter .tut-tail { display: none; }
+
 /* Narrow screens: drop the presenter, center the bubble. */
 @media (max-width: 720px) {
   .tut-stage, .tut-root.tut-stage-left .tut-stage { right: 12px; left: 12px; bottom: 12px; justify-content: center; max-width: none; }

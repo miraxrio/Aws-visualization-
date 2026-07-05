@@ -66,7 +66,8 @@ the view's real zoom hierarchy — biggest to smallest — drilling from the who
 boundary, into one cluster, down to a single control (via
 `AwsHoloViz3D.navigate`). The assembly-level pill bar is hidden for this
 chapter (drilling in is the clearer mechanism) and restored when the tutorial
-ends.
+ends. The presenter is hidden for these steps (`hidePresenter: true`) and the
+bubble docks in the bottom-right corner so nothing covers the 3D scene.
 
 ## Attack-simulator narration (`assets/tutorial/attack/`)
 

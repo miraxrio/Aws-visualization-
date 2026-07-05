@@ -356,7 +356,7 @@
     {
       onEnter: () => { hideAsmBar(); holoNav(0, null, null); },
       dim: false,
-      stageSide: "left",
+      hidePresenter: true,
       audioBases: ["assets/tutorial/line 24", "line 24"],
       text:
         "We start at the top — the whole boundary.\n" +
@@ -369,7 +369,7 @@
     {
       onEnter: () => holoNav(1, "holonic-checkout-service", null),
       dim: false,
-      stageSide: "left",
+      hidePresenter: true,
       audioBases: ["assets/tutorial/line 25", "line 25"],
       text:
         "Now we zoom into one cluster.\n" +
@@ -382,7 +382,7 @@
     {
       onEnter: () => holoNav(2, "holonic-checkout-service", "cve-vm-kernel-2026-0142"),
       dim: false,
-      stageSide: "left",
+      hidePresenter: true,
       audioBases: ["assets/tutorial/line 26", "line 26"],
       text:
         "And we zoom in one last time, onto a single control.\n" +
@@ -725,6 +725,7 @@
     // on the left with the presenter mirrored to face the content.
     root.classList.toggle("tut-no-dim", step.dim === false);
     root.classList.toggle("tut-stage-left", step.stageSide === "left");
+    root.classList.toggle("tut-no-presenter", step.hidePresenter === true);
 
     // Re-trigger the pop animation each step.
     bubble.classList.remove("pop");
@@ -870,7 +871,7 @@
     stopNarration();
     detachTargetClick();
     currentTarget = null;
-    root.classList.remove("show", "tut-no-dim", "tut-stage-left");
+    root.classList.remove("show", "tut-no-dim", "tut-stage-left", "tut-no-presenter");
     root.hidden = true;
 
     const started = Date.now();
@@ -985,7 +986,7 @@
     stopNarration();
     detachTargetClick();
     currentTarget = null;
-    root.classList.remove("show", "tut-no-dim", "tut-stage-left");
+    root.classList.remove("show", "tut-no-dim", "tut-stage-left", "tut-no-presenter");
     root.hidden = true;
     window.removeEventListener("resize", reposition, { passive: true });
     window.removeEventListener("scroll", reposition, { passive: true, capture: true });
