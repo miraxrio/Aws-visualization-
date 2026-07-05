@@ -3816,10 +3816,72 @@ body.theme-day .zb-bg-colhead { background: linear-gradient(180deg, #eef3fb 70%,
   0%   { box-shadow: 0 0 0 0 rgba(90, 55, 0, 0.45); }
   100% { box-shadow: 0 0 0 9px rgba(90, 55, 0, 0); }
 }
-.tut-dots { display: flex; gap: 6px; align-items: center; }
-.tut-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(74, 44, 0, 0.3); }
-.tut-dot.is-active { background: #6b3f00; }
-.tut-count { font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: rgba(74, 44, 0, 0.6); }
+/* Sections (jump-to) menu — lives where the progress dots used to be. */
+.tut-sections { position: relative; flex: 1 1 auto; min-width: 0; display: flex; justify-content: center; }
+.tut-sections-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  border: 1px solid rgba(74, 44, 0, 0.22);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(74, 44, 0, 0.08);
+  color: #5a3700;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.tut-sections-btn:hover { background: rgba(74, 44, 0, 0.16); border-color: rgba(74, 44, 0, 0.38); }
+.tut-sec-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tut-sec-caret { width: 13px; height: 13px; fill: currentColor; flex: 0 0 auto; opacity: 0.7; }
+.tut-sections-btn[aria-expanded="true"] .tut-sec-caret { transform: rotate(180deg); }
+
+.tut-sections-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max(240px, 100%);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 14px;
+  background: #fff4e0;
+  border: 1px solid rgba(74, 44, 0, 0.18);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  z-index: 3;
+}
+.tut-sections-menu[hidden] { display: none; }
+.tut-sec-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: transparent;
+  color: #4a2c00;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.tut-sec-item:hover { background: rgba(74, 44, 0, 0.10); }
+.tut-sec-item.is-active { background: rgba(217, 127, 0, 0.18); }
+.tut-sec-num {
+  flex: 0 0 auto;
+  width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: #1a1300; color: #ffd79e;
+  font-size: 11px; font-weight: 800;
+}
+.tut-sec-item.is-active .tut-sec-num { background: #d97f00; color: #1a1300; }
+.tut-sec-name { flex: 1 1 auto; }
 .tut-next {
   margin-left: auto;
   border: 0;

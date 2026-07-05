@@ -1126,6 +1126,9 @@
     openBoundary,
     openModal,
     closeModal,
+    // Connect with the bundled demo tenant (used by the tutorial's section
+    // jump to reach the assessor board without the connect modal).
+    connectDemo: () => continueDemo(),
     isReady: () => inited,
     getState: () => ({
       connected: conn.connected,

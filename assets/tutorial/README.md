@@ -137,3 +137,12 @@ Steps live in `tutorial.js` (`STEPS` array near the top). Each step supports:
 - `waitFor: true` — poll for a target that renders asynchronously (after a view
   switch or data load).
 - `scrollIntoView: true` — scroll the target into view before spotlighting it.
+
+## Sections (jump-to) menu
+
+The bubble footer has a **sections** dropdown (where the progress dots used to
+be) so you can jump straight to any chapter. Sections live in the `SECTIONS`
+array in `tutorial.js` — each has a `label`, the `step` index it starts at, and
+a `setup()` that prepares app state when jumped to directly (load the sample
+network, switch 2D/3D, connect the demo tenant), so a section works even if you
+skip the steps before it.

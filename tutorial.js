@@ -401,14 +401,27 @@
   const PRESENTER_SRCS = ["assets/tutorial/presenter.png", "presenter.png", "assets/tutorial/presenter.svg"];
   const SEEN_KEY = "aws-viz.tutorial.seen";
 
-  let root, masks, ring, stage, bubble, textEl, ctaEl, dotsEl, nextBtn, replayBtn, presenter, presenterImg;
+  // Named sections for the jump-to menu. `step` is the 0-based index the
+  // section starts at; `setup` prepares app state so the section works when
+  // jumped to directly (load the sample network, switch view, connect demo…).
+  const SECTIONS = [
+    { label: "Connect to ZeroBias", step: 0, setup: () => zbCloseModal() },
+    { label: "Your task board", step: 2, setup: () => zbConnectDemo() },
+    { label: "Network views · 2D & 3D", step: 5, setup: () => { loadSampleNet(); setViewMode("2d"); } },
+    { label: "Security-system timeline", step: 9, setup: () => { loadSampleNet(); setViewMode("3d"); } },
+    { label: "Edit with the Builder", step: 16, setup: () => { loadSampleNet(); setViewMode("2d"); } },
+    { label: "Cyber-attack simulation", step: 19, setup: () => { loadSampleNet(); setViewMode("3d"); } },
+    { label: "Explore & the holons view", step: 21, setup: () => { loadSampleNet(); setViewMode("3d"); } },
+  ];
+
+  let root, masks, ring, stage, bubble, textEl, ctaEl, nextBtn, replayBtn, presenter, presenterImg;
+  let sectionsBtn, sectionsMenu, secLabel;
   let built = false;
   let active = false;
   let suspended = false;          // hidden while the network tour runs
   let index = 0;
   let showSeq = 0;
   let currentTarget = null;
-  const loadedNets = new Set();   // network files already loaded this run (load once)
   let currentAudio = null;
   let targetHandler = null;
   let targetHandlerEl = null;
@@ -438,7 +451,13 @@
       '        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06a9 9 0 0 0 0-17.54z"/></svg>' +
       '        <span>Replay</span>' +
       '      </button>' +
-      '      <div class="tut-dots" aria-hidden="true"></div>' +
+      '      <div class="tut-sections">' +
+      '        <button class="tut-sections-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Jump to a section">' +
+      '          <span class="tut-sec-label"></span>' +
+      '          <svg class="tut-sec-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg>' +
+      '        </button>' +
+      '        <div class="tut-sections-menu" role="menu" hidden></div>' +
+      '      </div>' +
       '      <button class="tut-next" type="button">Next ›</button>' +
       '    </div>' +
       '    <span class="tut-tail"></span>' +
@@ -460,17 +479,24 @@
     bubble = root.querySelector(".tut-bubble");
     textEl = root.querySelector(".tut-text");
     ctaEl = root.querySelector(".tut-cta");
-    dotsEl = root.querySelector(".tut-dots");
     nextBtn = root.querySelector(".tut-next");
     replayBtn = root.querySelector(".tut-replay");
     presenter = root.querySelector(".tut-presenter");
     presenterImg = root.querySelector(".tut-presenter-img");
+    sectionsBtn = root.querySelector(".tut-sections-btn");
+    sectionsMenu = root.querySelector(".tut-sections-menu");
+    secLabel = root.querySelector(".tut-sec-label");
 
     loadPresenter(0);
+    buildSectionsMenu();
 
     root.querySelector(".tut-close").addEventListener("click", finish);
     replayBtn.addEventListener("click", () => playNarration(STEPS[index]));
     nextBtn.addEventListener("click", onNextButton);
+    sectionsBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleSectionsMenu(); });
+    document.addEventListener("click", (e) => {
+      if (!sectionsMenu.hidden && !root.querySelector(".tut-sections").contains(e.target)) closeSectionsMenu();
+    });
     // Clicking the dimmed area nudges the bubble — the rest of the UI is locked
     // until the highlighted action is taken.
     Object.values(masks).forEach((m) => m.addEventListener("click", nudge));
@@ -601,16 +627,76 @@
 
   // --- Step rendering ---------------------------------------------------
 
+  // --- Sections (jump-to) menu -----------------------------------------
+
+  function escHtml(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  function buildSectionsMenu() {
+    sectionsMenu.innerHTML = SECTIONS.map((s, i) =>
+      '<button class="tut-sec-item" type="button" role="menuitem" data-sec="' + i + '">' +
+        '<span class="tut-sec-num">' + (i + 1) + "</span>" +
+        '<span class="tut-sec-name">' + escHtml(s.label) + "</span></button>",
+    ).join("");
+    sectionsMenu.querySelectorAll(".tut-sec-item").forEach((el) =>
+      el.addEventListener("click", () => jumpToSection(Number(el.getAttribute("data-sec")))));
+  }
+
+  function currentSectionIndex() {
+    let s = 0;
+    for (let i = 0; i < SECTIONS.length; i++) if (index >= SECTIONS[i].step) s = i;
+    return s;
+  }
+
+  // Update the sections button label + active menu item (was: progress dots).
   function renderDots() {
-    if (STEPS.length < 2) { dotsEl.innerHTML = ""; return; }
-    // With many steps a dot per step overflows the bubble — show a counter.
-    if (STEPS.length > 16) {
-      dotsEl.innerHTML = '<span class="tut-count">' + (index + 1) + " / " + STEPS.length + "</span>";
-      return;
-    }
-    dotsEl.innerHTML = STEPS
-      .map((_, i) => '<span class="tut-dot' + (i === index ? " is-active" : "") + '"></span>')
-      .join("");
+    if (!secLabel) return;
+    const si = currentSectionIndex();
+    secLabel.textContent = SECTIONS[si].label + " · " + (index + 1) + "/" + STEPS.length;
+    sectionsMenu.querySelectorAll(".tut-sec-item").forEach((el, i) =>
+      el.classList.toggle("is-active", i === si));
+  }
+
+  function toggleSectionsMenu() { sectionsMenu.hidden ? openSectionsMenu() : closeSectionsMenu(); }
+  function openSectionsMenu() {
+    renderDots();
+    sectionsMenu.hidden = false;
+    sectionsBtn.setAttribute("aria-expanded", "true");
+  }
+  function closeSectionsMenu() {
+    if (!sectionsMenu) return;
+    sectionsMenu.hidden = true;
+    sectionsBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function jumpToSection(i) {
+    const sec = SECTIONS[i];
+    if (!sec) return;
+    closeSectionsMenu();
+    if (sec.setup) { try { sec.setup(); } catch (_) {} }
+    // Give async setup (network load / view switch / demo connect) a beat to
+    // settle before showing the step (the step's own waitFor covers the rest).
+    setTimeout(() => { if (active) show(sec.step); }, 300);
+  }
+
+  // --- Section jump-setup helpers --------------------------------------
+  function zbCloseModal() {
+    try { if (window.ZeroBias && window.ZeroBias.closeModal) window.ZeroBias.closeModal(); } catch (_) {}
+  }
+  function zbConnectDemo() {
+    try {
+      const st = window.ZeroBias && window.ZeroBias.getState ? window.ZeroBias.getState() : null;
+      if (window.ZeroBias && window.ZeroBias.connectDemo && (!st || !st.connected)) {
+        window.ZeroBias.connectDemo();          // connects demo tenant → assessor board
+      } else if (window.AwsMode && window.AwsMode.set) {
+        window.AwsMode.set("board");
+      }
+    } catch (_) {}
+  }
+  function loadSampleNet() { maybeLoadNetwork("sample-network.json"); }
+  function setViewMode(m) {
+    try { if (window.AwsMode && window.AwsMode.set) window.AwsMode.set(m); } catch (_) {}
   }
 
   function show(i) {
@@ -619,6 +705,7 @@
     index = i;
     const seq = ++showSeq;
     detachTargetClick();
+    closeSectionsMenu();
 
     // Per-step side effect (switch view mode, select a timeline version, …).
     if (typeof step.onEnter === "function") {
@@ -728,15 +815,18 @@
     }, ms));
   }
 
-  // Load a network file into the app once (so the tutorial's 2D/3D/tour steps
-  // all show the same known topology). Re-measures once it has rendered.
+  // Load a network file into the app unless it's already the one showing (so
+  // the tutorial's 2D/3D/tour steps share one known topology, and a section
+  // jump re-loads it if a prior section swapped in a different network).
   function maybeLoadNetwork(url) {
-    if (loadedNets.has(url)) return;
-    loadedNets.add(url);
     if (!(window.AwsApp && window.AwsApp.load)) return;
     fetch(url)
       .then((r) => r.json())
       .then((data) => {
+        const cur = window.AwsApp.getData && window.AwsApp.getData();
+        const curName = cur && typeof cur.name === "string" ? cur.name : "";
+        const marker = String(data.name || "").split(" · ")[0];   // e.g. "Three-Tier Web App"
+        if (marker && curName.indexOf(marker) === 0) return;      // already loaded
         try { window.AwsApp.load(data); } catch (_) {}
         if (active) reposition();
       })
@@ -877,7 +967,6 @@
     active = true;
     suspended = false;
     index = 0;
-    loadedNets.clear();
     root.hidden = false;
     show(0);                          // set geometry while the masks are still transparent
     void root.offsetWidth;            // flush, then fade the dimming in
@@ -892,6 +981,7 @@
     active = false;
     suspended = false;
     showAsmBar();
+    closeSectionsMenu();
     stopNarration();
     detachTargetClick();
     currentTarget = null;
